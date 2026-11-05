@@ -43,7 +43,7 @@ GENERATED_MARKER = re.compile(
     r"auto-?generated (by|from|file|code)|this file (is|was|has been) (automatically |auto-?)?generated", re.I)
 TESTS = re.compile(
     r"(\.(test|spec)\.[^/]+$|(^|/)(__tests__|tests?|e2e|testdata|fixtures)/|_test\.go$|"
-    r"(^|/)test_[^/]+\.py$|_test\.py$|(^|/)conftest\.py$)"
+    r"(^|/)test_[^/]+\.py$|_test\.py$|(^|/)conftest\.py$|(^|/)spec/|_spec\.rb$)"
 )
 AGENT_GUIDANCE = re.compile(r"(^|/)(CLAUDE\.md|AGENTS\.md|GEMINI\.md|\.claude/|\.cursor/|\.github/copilot)")
 DOCS = re.compile(r"(\.(md|mdx|rst|adoc)$|(^|/)docs?/)")
@@ -441,18 +441,22 @@ def risk_hints(path):
 ASSERTION = re.compile(
     r"\b(assert\w*|expect\(|self\.assert\w+|t\.(Error|Errorf|Fatal|Fatalf)\(|require\.\w+\(|assert\.\w+\(|"
     r"\.should\b|\.to(Be|Equal|Have|Throw|Contain|Match)\w*\()")
-TEST_DEF = re.compile(r"^\s*(def test_\w+|func Test\w+|(it|test)\(\s*[\"'`])")
+TEST_DEF = re.compile(r"^\s*(def test_\w+|func Test\w+|(it|test)\(\s*[\"'`]|(it|specify|test)\s+[\"']|#\[test\]|@Test\b)")
 # (kind, label, side, tests only, JS/TS only, pattern). Narrow on purpose: a noisy list stops being read.
 TELL_RULES = [(k, label, side, tests, js, re.compile(rx)) for k, label, side, tests, js, rx in (
     ("skip", "test skipped", "+", True, False,
-     r"\b(it|test|describe|context)\.(skip|todo)\(|\bx(it|describe|test)\(|@pytest\.mark\.(skip|xfail)\b|"
-     r"@unittest\.skip|\bpytest\.skip\(|\bt\.Skip(Now|f)?\("),
-    ("focus", "focused test left in", "+", True, False, r"\b(it|test|describe|context)\.only\(|\bf(it|describe)\("),
+     r"\b(it|test|describe|context)\.(skip|todo)\(|(?<![.\w])x(it|describe|context|specify|test)\s*\(?\s*[\"'`]|"
+     r"@pytest\.mark\.(skip|xfail)\b|@unittest\.skip|\bpytest\.skip\(|\bt\.Skip(Now|f)?\(|#\[ignore\b|"
+     r"@(Disabled|Ignore)\b|^\s*(skip|pending)\s*\(?\s*[\"']"),
+    # Only with a test name after it, so `fit(x, y)` or `model.fit(x)` in a test is not a focused test.
+    ("focus", "focused test left in", "+", True, False,
+     r"\b(it|test|describe|context)\.only\(|(?<![.\w])f(it|describe|context)\s*\(?\s*[\"'`]"),
     ("debug", "debug output left in", "+", False, False,
-     r"\bconsole\.(log|debug|trace|dir)\(|\bdebugger\b|\bbreakpoint\(\)|\bpdb\.set_trace\(|^\s*import pdb\b|\bdbg!\("),
+     r"\bconsole\.(log|debug|trace|dir)\(|\bdebugger\b|\bbreakpoint\(\)|\bpdb\.set_trace\(|^\s*import pdb\b|\bdbg!\(|"
+     r"\bbinding\.(pry|irb)\b|\bbyebug\b"),
     ("silenced", "check silenced", "+", False, False,
      r"@ts-(ignore|nocheck|expect-error)|eslint-disable|biome-ignore|#\s*noqa\b|#\s*type:\s*ignore|//\s*nolint|"
-     r"#\s*pylint:\s*disable|#\[allow\("),
+     r"#\s*pylint:\s*disable|#\[allow\(|#\s*rubocop:\s*disable|@SuppressWarnings\b"),
     ("any", "typed as any", "+", False, True, r"\bas\s+any\b|:\s*any\b|<any>"),
     ("todo", "new TODO", "+", False, False, r"(//|#|/\*|^\s*\*)\s*(TODO|FIXME|XXX|HACK)\b"),
     ("commented-code", "commented-out code", "+", False, False,
@@ -931,6 +935,14 @@ def self_test():
     t = tf("tests/test_auth.py", "test", [["-", 1, None, "def test_refresh_rejected():"], ["-", 2, None, "    assert r.status == 401"]])
     assert t["test-removed"]["line"] == "L1" and t["assertion"]["label"] == "assertion removed", t
     assert tf("tests/test_auth.py", "test", [["-", 1, None, "x"]], status="deleted")["test-removed"]["label"] == "test file deleted"
+    assert categorise("spec/models/user_spec.rb", {}, None)[0] == "test"
+    t = tf("spec/user_spec.rb", "test", [["+", None, 1, "  xit 'saves' do"], ["+", None, 2, "  binding.pry"],
+                                         ["+", None, 3, "  fit 'loads' do"], ["+", None, 4, "  # rubocop:disable Metrics"]])
+    assert set(t) == {"skip", "debug", "focus", "silenced"}, t
+    t = tf("tests/api.rs", "test", [["+", None, 1, "#[ignore]"], ["-", 2, None, "#[test]"], ["-", 3, None, "fn saves() {}"]])
+    assert set(t) == {"skip", "test-removed"}, t
+    assert set(tf("src/test/java/AppTest.java", "test", [["+", None, 1, "  @Disabled"]])) == {"skip"}
+    assert tf("tests/test_model.py", "test", [["+", None, 1, "model.fit(x)"], ["+", None, 2, "fit(x, y)"]]) == {}
     assert risk_hints("migrations/0042_add_index.py") == ["migration"]
     assert risk_hints("src/store/auth/tokenChannel.ts") == ["auth"] and risk_hints("web/package.json") == ["dependencies"]
     assert risk_hints("src/components/Button.tsx") == []

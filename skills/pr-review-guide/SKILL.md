@@ -82,8 +82,8 @@ Read the thread with `ArtifactComments` `action: "read"`; a long review comes in
 
 `collect.py` flags a short list of lines a reviewer should not have to find, on implementation and test files only:
 
-- in tests: a skipped or focused test, a removed test, an assertion removed or changed (changed expected values are fine when behaviour was meant to change, but worth a look), a deleted test file
-- anywhere: debug output (`console.log`, `debugger`, `breakpoint()`, `pdb`), a silenced check (`@ts-ignore`, `eslint-disable`, `# noqa`, `# type: ignore`, `//nolint` and the like), `any` in JS and TS, a new TODO, commented-out code
+- in tests: a skipped or focused test (Jest, Mocha, pytest, Go, Rust, JUnit and RSpec), a removed test, an assertion removed or changed (changed expected values are fine when behaviour was meant to change, but worth a look), a deleted test file
+- anywhere: debug output (`console.log`, `debugger`, `breakpoint()`, `pdb`, `dbg!`, `binding.pry`, `byebug`), a silenced check (`@ts-ignore`, `eslint-disable`, `# noqa`, `# type: ignore`, `//nolint`, `#[allow(...)]`, `rubocop:disable`, `@SuppressWarnings` and the like), `any` in JS and TS, a new TODO, commented-out code
 
 The list is narrow on purpose. Every published account of AI review says noise, not missed bugs, is what makes people stop reading flags, so add a rule only when it is nearly always worth a look.
 
