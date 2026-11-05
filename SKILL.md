@@ -1,0 +1,108 @@
+---
+name: pr-review-guide
+description: Use when the user wants to self-review a PR or branch section by section rather than file by file, asks for a review guide, guided review, "Linear-style guide", or a page that splits a diff into logical sections with explanations, line-count breakdown and notes on lines, including one page for a whole stack of PRs. Also use when the user says to work through, address or act on the notes or comments they left on a review guide page, or when a review guide page sends its notes to Claude.
+---
+
+# PR review guide
+
+A page that does what Linear's Guide tab does for a PR, built locally: the diff split into logical sections, each with why it exists and how it works, formatting-only changes and lock or generated files kept out of the way, a line-count breakdown, and notes on lines that come back to this session in one comment. It is for reviewing your own work before someone else does, and it opens with what to settle before marking the PR ready: size, CI, missing tests, lines that look like an agent's leftovers, where the description and the diff disagree, which sections need a careful read, and whether the PR should be several.
+
+Build it last, on the diff that will merge: after the agent's work is done and after `/code-review` and `/simplify`, whose fixes are themselves worth reading. Once you share the page, it is also the reviewer's map of the change.
+
+The scripts do everything mechanical. The models only do the reading: Haiku digests large diffs, Opus writes the sections, and the main session publishes and later acts on the notes. Opus is worth its extra 10 to 15 seconds there: in a side-by-side on three PRs it split files across sections by purpose where Sonnet kept them whole, and Sonnet's grouping changed between runs on the same diff. Haiku was as fast as Opus on the digests and good enough, so it stays.
+
+## What it needs
+
+- A local clone of the repo, `git`, and `gh` logged in. No Linear access, no checkout of the PR branch (the PR's commits are fetched by ref).
+- `python3`, standard library only.
+- The Artifact tool and its `comments` capability. If you run more than one Claude account, publish from the one your team can see: an artifact belongs to the account that published it. A publish helper that cannot declare capabilities still publishes a readable page, but without notes on lines or the way to send them.
+
+## Building a guide
+
+Work in a fresh directory under the scratchpad, `WORK` below. `SCRIPTS` is this skill's `scripts/`.
+
+1. Collect. For a PR: `python3 SCRIPTS/collect.py --pr N --repo PATH --out WORK`. For a branch that has no PR yet, give `--head BRANCH` (default `HEAD`) and optionally `--base REF`; without one it takes the branch's PR base, then `origin/dev`, then `origin/main`. It prints the line breakdown, the reviewable lines and how that size reads (with the guide, up to 800 lines fits one sitting and over 2,000 is too many; the bands are `SIZE_BANDS` in `collect.py`), CI status, whether tests changed, and any flagged lines. It writes the PR description and commit messages to `WORK/description.md`, separate from the diff. At 0, the change is all formatting, lock and generated files: write `{"sections": []}` to `WORK/guide.json` and go straight to step 7.
+
+2. Digest, only above about 1,200 reviewable lines. Spawn one Agent per `WORK/batches/batch-N.diff`, all in one message, with `model: "haiku"` and the prompt in `reference/digest-prompt.md`. Each writes `WORK/digests/batch-N.json`. Below the threshold skip this: the guide worker reads the diff directly and does better for it.
+
+3. Guide, and the description check alongside it. In one message, spawn two Agents, both `model: "opus"`: the guide worker with `effort: "medium"` and `reference/guide-prompt.md`, its `{SOURCE}` line chosen by whether step 2 ran, and the description checker with `reference/description-prompt.md` at default effort. The description checker needs only the diff and the description, so it runs while the guide is written, and can afford the extra effort: at medium it found one of two omissions on a test PR, at default both, in 53 seconds against the guide's 37. It reads the diff before the description, so the author's account cannot steer it, and writes `WORK/description.json`: claims the diff does not bear out, and changes the description leaves out. The guide worker writes `WORK/guide.json` and runs the check itself, coverage and then warnings. Besides the sections it adds a risk note to any section that needs a careful read, and on a PR that is long for one review a suggested split.
+
+4. Check. Spawn a fresh Agent, `model: "opus"`, `effort: "medium"`, with `reference/verify-prompt.md`, giving it the clone's path and the head sha from `hunks.json`. It did not write the guide, which is the point: it goes hunk by hunk and sentence by sentence against the diff and writes `WORK/verify.json`, moves and corrected sentences it can justify, not style. It judges against the diff and the changed files at the head commit, and does not search the rest of the repository or other repositories; anything it cannot confirm from those it reports as unconfirmed. Steps 3 to 5 take about two minutes on a 664-line PR: under a minute for the guide and the description check side by side, a minute for the check, a few seconds to apply. With every worker at high effort and the checker free to search the repository, the same PR took over seven, for guides of much the same quality.
+
+5. Apply. Send the guide worker the message at the end of `reference/guide-prompt.md`. It applies the issues it agrees with and lists the rest, with a reason each, in `WORK/disputes.json`. If it reports back without a passing check, send it the output of `render.py WORK --check` once; if that fails too, fix `guide.json` yourself rather than looping.
+
+6. Read `disputes.json` and decide each one yourself against the diff: the worker and the checker disagree, and you are the tie-break. Then read the section titles and text once more. `description.json` is not for the guide: it is for the author's PR description, and goes on the page as is. Edit `guide.json` directly and re-run the check for anything you change.
+
+7. Render: `python3 SCRIPTS/render.py WORK --out SCRATCHPAD/<repo>-<n>-guide.html`.
+
+8. Publish. Look the PR up in `~/.claude/pr-review-guide/artifacts.json` (`{"owner/repo#N": url}`, or `owner/repo@branch` for a branch) first.
+   - Not there: publish with the Artifact tool, that file path, `icon: "code"`, a one-line description naming the PR and `capabilities: {"comments": {}}`, then add the URL to the file.
+   - There, and published from this session: publish the same file path again.
+   - There, from an earlier session: read the artifact with `action: "read"`, then publish the new file with `url` set to it. Without `url` the publish makes a second page, and the review threads stay behind on the first.
+
+Hand over the link with the section titles, the line breakdown, one line per dispute you settled and which way, and the ready check in a sentence or two: flagged lines, description mismatches, risky sections and any suggested split. Those are what the author fixes before marking the PR ready; fix none of them yourself unless asked.
+
+## A stack of PRs
+
+For a stack, where each PR is based on the one below it as gh-stack, Graphite or hand-made stacks leave them, one page holds every layer. A panel at the top lists the layers top first, each with its line count, CI, flags, description mismatches, careful reads and what it does in the stack, beside the issues that only show across the stack. Clicking a layer, or ↑ and ↓ above each one, switches layers in place; and a row under a hunk names what it shares with other layers ("`LoginCard` used further up the stack: #1013 §05") and jumps there. `SCRATCHPAD` and `SCRIPTS` are as above; `STACK` is a fresh directory.
+
+1. Collect: `python3 SCRIPTS/stack.py --pr N --repo PATH --out STACK`, where N is any layer. It finds the other layers from the PRs' bases, so it needs no checkout, runs `collect.py` once per layer into `STACK/<pr>/`, and writes `STACK/stack.json`: the layers bottom to top, the cross-layer links, churn (lines a layer adds that a later one removes again) and which layers need a rebase. Walking down is never ambiguous; where two open PRs share a base further up, it stops there and says so, and you pass the top PR of the branch you want.
+2. Steps 2 to 6 above for every layer at once, with `WORK` being `STACK/<pr>`: every layer's digest workers in one message, then every guide worker and description checker in one message, and each checker as soon as its guide is in. A layer whose head has not moved since you built its guide earlier in this session can reuse that guide's `guide.json`, `verify.json`, `description.json` and `disputes.json`: the same base and head give the same hunk ids, which `cmp` on the two `review.diff` files confirms.
+3. The stack check, the last step before rendering. Spawn one Agent, `model: "opus"` at default effort, with `reference/stack-prompt.md`. It reads every layer's guide and description findings with `stack.json`, and writes `STACK/stack-guide.json`: what each layer does in the stack, and the issues only the whole stack shows, such as code a later layer rewrites, a hunk that belongs in another layer, or a layer that cannot merge without a later one. It also edits the guides: a clause linking into another layer where that explains a section, as `[phrase](1013:f42h1)`, a sentence another layer contradicts, and a `stack` note on a description finding another layer explains. Its `edits` list says what it changed; read that and the summaries once, as you read the disputes, and run `render.py STACK --check` after anything you change. It is the slowest step: six minutes on a four-layer stack of about 3,900 reviewable lines, against about four for all the layers before it.
+4. Render: `python3 SCRIPTS/render.py STACK --out SCRATCHPAD/<repo>-<top>-stack.html`. It checks every layer as `--check` does, and every link into another layer.
+5. Publish as step 8 does, keyed `owner/repo#N stack` for each layer N. Look up every layer's key and use the first URL found, then record every layer's key against the page. Rebuilding from any layer then finds it, and a layer that merges and drops out of the stack does not start a new page.
+
+Hand over the link with one line per layer, its summary and its ready check in brief, then the stack's issues and the edits the stack check made.
+
+## Working through the notes
+
+The usual setup is this session in a terminal, watching the page, and the page open in a browser tab. The user leaves notes on lines, kept in their browser until they press Send N notes to Claude. That posts one comment holding every note and sends it to whichever session is watching the page (the one that published it, or one that watches it with `ArtifactComments`), and it arrives here as a turn. The report goes in this session, since that is where the user wants it; the platform may already have posted a short automatic reply on the page, so leave that.
+
+Read the thread with `ArtifactComments` `action: "read"`; a long review comes in parts, the first saying how many, so read again until all of them are there. Or the user pressed Copy notes and pasted the same text into this session as their own message, with no thread on the page and no automatic reply. Then:
+
+1. Each note opens with its location: `path:R<n>@<sha>` for a line in the new file, `path:L<n>@<sha>` for a removed line numbered in the base, prefixed with the layer on a stack page, `#1014 src/store/auth.ts:R42@c3e8b96`. The sha is the head the page was built from; if the branch has moved since, find the line by content rather than trusting the number. A thread left through the shell's own comment mode carries no location, so ask which line it means rather than guessing.
+2. Treat each note as the user's review note, and the code as the source of truth. Make the change in the working tree and leave it unstaged; if a note is a question rather than an ask, answer it in the report instead of changing code. On a stack, fix only the layer whose branch is checked out and list the rest by layer, since uncommitted fixes cannot follow a checkout and restacking is the user's.
+3. Report in the session, one line per note: the location and what you did or why you didn't. If the notes came as a comment, resolve that thread once done; any thread not sent to Claude stays open for the user to resolve, so say which.
+4. Rebuild once the fixes are committed or pushed, from step 1; step 8 finds the existing page and updates it.
+
+## The page
+
+`reference/page-template.html` holds the whole page: the Command theme tokens, the layout and the script. `render.py` only fills in the title and one JSON blob, so a change to how the page looks or behaves goes in the template.
+
+- Each section shows its text and file list on the left, sticky, and its file cards on the right. A file split across sections is tagged `part`, and a gap that hides another section's hunks says so and links there.
+- Formatting-only lines inside a real hunk are dimmed and marked `fmt`. Whole hunks of formatting go to the closing "Formatting only" section, and lock and generated files to "Lock and generated files", collapsed.
+- Notes, not comments, from the `+` beside a line number: each is kept in the viewer's browser as it is typed, shows under its line with Edit and Delete, and is listed in a Your notes panel at the top, so the whole review can be read and changed before it goes anywhere. Send N notes to Claude posts them as one comment sent to Claude through the `comments` capability (the first send asks the viewer's permission), which reaches the session watching the page, and clears them once posted. A comment holds 4 KB, so a long review goes as several parts in one thread, the first sent to Claude and saying how many follow. Copy notes puts the same text on the clipboard to paste into the session instead, which leaves nothing on the page and needs no watching session; copied notes stay, marked, until Clear copied, since the page cannot tell whether they were pasted. The `room` capability's hand-off to the viewer's own Claude is not used: it reaches a Claude beside the page (the desktop app, or claude.ai), not a terminal session, and from a plain browser tab it can start a new claude.ai conversation that has no access to the repository. Notes live in one browser until sent, and survive reloads and republishes there.
+- "Before you mark it ready" sits under the header: size, CI and test chips, flagged lines grouped by file and linked to the line (marked `!` in the diff too), the description check, the sections with risk notes, and the suggested split.
+- Reviewed ticks, per file and per section, live in the viewer's browser storage, keyed by head sha, so a republish after new commits starts clean.
+- A button at the top right cycles the theme through system, light and dark, and is remembered in the viewer's browser.
+- The headline count is implementation lines without formatting noise, like Linear's; the `(*)` popover has every category and the total.
+
+## What gets flagged
+
+`collect.py` flags a short list of lines a reviewer should not have to find, on implementation and test files only:
+
+- in tests: a skipped or focused test, a removed test, an assertion removed or changed (changed expected values are fine when behaviour was meant to change, but worth a look), a deleted test file
+- anywhere: debug output (`console.log`, `debugger`, `breakpoint()`, `pdb`), a silenced check (`@ts-ignore`, `eslint-disable`, `# noqa`, `# type: ignore`, `//nolint` and the like), `any` in JS and TS, a new TODO, commented-out code
+
+The list is narrow on purpose. Every published account of AI review says noise, not missed bugs, is what makes people stop reading flags, so add a rule only when it is nearly always worth a look.
+
+## What counts as noise
+
+`collect.py` decides this, mechanically:
+
+- whitespace: a block that is the same once whitespace outside string literals is removed, which covers re-indenting and re-wrapping. In Python, YAML, Makefiles and the other indentation-sensitive languages, each line's indentation has to match too, so a dedent or a re-nesting stays a change.
+- re-indented: inside a real change, a line that `git diff -w` does not call changed, which is how GitHub's hide-whitespace view counts it. Removing an `if` and dedenting its body leaves only the `if` as a change: the body is counted as formatting and shown once, as context, on the page and to the guide workers. In indentation-sensitive languages this needs the same hunk to change a line opening that level, so a statement quietly moved out of a block stays a change.
+- formatting: the same once quote style is ignored (JS, TS and Python), and semicolons, trailing commas and parentheses around a single arrow parameter (JS and TS only, where Prettier settles them). Template literals, SQL quotes and Python's trailing commas mean something, so they are left alone.
+- reordered: imports in a different order. Any other reordered lines are a change.
+- moved: imports removed in one place and added unchanged elsewhere in the file. Moved code stays a change, since the same line can mean something else in another function.
+- lock and generated files: by name (lock files, `*.gen.*`, `*_pb2.py`, snapshots, minified bundles, top-level `dist/`, `build/` and `vendor/`, `node_modules/`), by a "generated, do not edit" header, or by `.gitattributes` (`linguist-generated`, `review-generated`, and `-linguist-generated` to take a path back out)
+
+A rename is not noise: it changes what the code says, so it stays in its section. `.gitattributes` also takes Linear's `review-test`, `review-documentation` and the rest for categories, including the `-review-test` form to take a path out of one.
+
+`collect.py --self-test` and `render.py --self-test` check the normaliser, the categories, the diff parser, the hunk connections, the coverage rules and the warnings.
+
+## Common mistakes
+
+- Running the check in the guide worker's own context, or skipping it because `--check` passed. Coverage only proves every hunk is somewhere; the checker is what catches a hunk in the wrong section or a sentence the code does not bear out.
+- Running the digest step on a small diff. It costs a round of workers and the guide comes out vaguer, because the guide worker then reads summaries instead of code.
+- Asking the guide worker to review the code. It describes and groups; review is the user's job on the page, and their notes are where findings come from.
