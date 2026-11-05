@@ -19,6 +19,6 @@ Write `{WORKDIR}/description.json`:
 
 - `unsupported`: a claim the diff contradicts or does not contain, quoted as written.
 - `missing`: a change a reviewer needs to know about that the description leaves out: a behaviour change, a removal, a new dependency, a migration, a security-relevant change. Write `what` as a short phrase. Not every detail; a description is a summary.
-- Empty lists if it matches. If there is no PR description, check the commit messages.
+- Empty lists if it matches. If there is no PR description, or it only points at an issue (`Closes #12`, `PROJ-123`, a tracker link), check the commit messages: the issue itself is not fetched.
 
 Reply with one line per finding, or "matches", and nothing else.

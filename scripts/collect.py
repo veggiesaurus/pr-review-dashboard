@@ -13,8 +13,8 @@ description and commit messages, kept apart so a checker can read the diff
 without the author's account of it.
 
 The diff is three-dot, as GitHub shows it: merge-base of base and head, to head.
-Without --pr, the base is the branch's PR base when one exists, else origin/dev,
-else origin/main.
+Without --pr, the base is the branch's PR base when one exists, else the remote's
+default branch (origin/HEAD), else origin/main.
 """
 import argparse
 import codecs
@@ -97,10 +97,11 @@ def resolve(a):
             if pr:
                 base_label = "origin/" + pr["baseRefName"]
             else:
-                base_label = next((b for b in ("origin/dev", "origin/main", "origin/master")
-                                   if git(repo, "rev-parse", "-q", "--verify", b, check=False).strip()), None)
+                default = git(repo, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD", check=False).strip()
+                base_label = next((b for b in (default, "origin/main", "origin/master")
+                                   if b and git(repo, "rev-parse", "-q", "--verify", b, check=False).strip()), None)
                 if not base_label:
-                    sys.exit("no --base given and no PR, origin/dev or origin/main to compare against")
+                    sys.exit("no --base given and no PR, origin/HEAD or origin/main to compare against")
         base = git(repo, "rev-parse", base_label).strip()
     merge_base = git(repo, "merge-base", base, head).strip()
     log = git(repo, "log", "--reverse", "--format=%h %s%n%b%x00", f"{merge_base}..{head}")

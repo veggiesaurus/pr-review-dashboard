@@ -13,7 +13,7 @@ The scripts do everything mechanical. The models only do the reading: Haiku dige
 
 ## What it needs
 
-- A local clone of the repo, `git`, and `gh` logged in. No Linear access, no checkout of the PR branch (the PR's commits are fetched by ref).
+- A local clone of the repo, `git`, and `gh` logged in. No issue tracker access (Linear, Jira or GitHub issues), no checkout of the PR branch (the PR's commits are fetched by ref).
 - `python3`, standard library only.
 - The Artifact tool and its `comments` capability. If you run more than one Claude account, publish from the one your team can see: an artifact belongs to the account that published it. A publish helper that cannot declare capabilities still publishes a readable page, but without notes on lines or the way to send them.
 
@@ -21,7 +21,7 @@ The scripts do everything mechanical. The models only do the reading: Haiku dige
 
 Work in a fresh directory under the scratchpad, `WORK` below. `SCRIPTS` is this skill's `scripts/`.
 
-1. Collect. For a PR: `python3 SCRIPTS/collect.py --pr N --repo PATH --out WORK`. For a branch that has no PR yet, give `--head BRANCH` (default `HEAD`) and optionally `--base REF`; without one it takes the branch's PR base, then `origin/dev`, then `origin/main`. It prints the line breakdown, the reviewable lines and how that size reads (with the guide, up to 800 lines fits one sitting and over 2,000 is too many; the bands are `SIZE_BANDS` in `collect.py`), CI status, whether tests changed, and any flagged lines. It writes the PR description and commit messages to `WORK/description.md`, separate from the diff. At 0, the change is all formatting, lock and generated files: write `{"sections": []}` to `WORK/guide.json` and go straight to step 7.
+1. Collect. For a PR: `python3 SCRIPTS/collect.py --pr N --repo PATH --out WORK`. For a branch that has no PR yet, give `--head BRANCH` (default `HEAD`) and optionally `--base REF`; without one it takes the branch's PR base, then the remote's default branch (`origin/HEAD`), then `origin/main`. It prints the line breakdown, the reviewable lines and how that size reads (with the guide, up to 800 lines fits one sitting and over 2,000 is too many; the bands are `SIZE_BANDS` in `collect.py`), CI status, whether tests changed, and any flagged lines. It writes the PR description and commit messages to `WORK/description.md`, separate from the diff. At 0, the change is all formatting, lock and generated files: write `{"sections": []}` to `WORK/guide.json` and go straight to step 7.
 
 2. Digest, only above about 1,200 reviewable lines. Spawn one Agent per `WORK/batches/batch-N.diff`, all in one message, with `model: "haiku"` and the prompt in `reference/digest-prompt.md`. Each writes `WORK/digests/batch-N.json`. Below the threshold skip this: the guide worker reads the diff directly and does better for it.
 
@@ -67,7 +67,7 @@ Read the thread with `ArtifactComments` `action: "read"`; a long review comes in
 
 ## The page
 
-`reference/page-template.html` holds the whole page: the Command theme tokens, the layout and the script. `render.py` only fills in the title and one JSON blob, so a change to how the page looks or behaves goes in the template.
+`reference/page-template.html` holds the whole page: the theme tokens, the layout and the script. `render.py` only fills in the title and one JSON blob, so a change to how the page looks or behaves goes in the template.
 
 - Each section shows its text and file list on the left, sticky, and its file cards on the right. A file split across sections is tagged `part`, and a gap that hides another section's hunks says so and links there.
 - Formatting-only lines inside a real hunk are dimmed and marked `fmt`. Whole hunks of formatting go to the closing "Formatting only" section, and lock and generated files to "Lock and generated files", collapsed.
