@@ -1,0 +1,24 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Self-tests
+        run: for s in collect render stack; do python skills/pr-review-guide/scripts/$s.py --self-test; done
+      - name: Page script parses
+        run: |
+          awk '/^<script>$/{f=1;next} /^<\/script>/{f=0} f' skills/pr-review-guide/reference/page-template.html > page.js
+          node --check page.js
