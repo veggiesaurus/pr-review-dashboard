@@ -16,9 +16,9 @@ Write `{WORKDIR}/guide.json`:
 
 ```json
 {"sections": [
-  {"title": "Switch groups from the user menu",
-   "why": "Users with several entry groups can pick one from the [user menu](f4h2).",
-   "how": "The choice becomes the session group through a [switch mutation](f7), and the menu reports success or failure.",
+  {"title": "Switch workspaces from the user menu",
+   "why": "Users in several workspaces can pick one from the [user menu](f4h2).",
+   "how": "The choice becomes the session's workspace through a [switch mutation](f7), and the menu reports success or failure.",
    "items": ["f4", "f7", "f9h1"],
    "risk": "Re-mints the access token and fences off in-flight refreshes."}
  ],
@@ -46,7 +46,7 @@ Risk and size, so the reviewer's attention goes where it matters:
 
 Text, for the person who wrote the code:
 
-- `title`: the outcome in a few words, sentence case, no file or function names. "Reset tabs after a switch", not "Update orgChange.ts".
+- `title`: the outcome in a few words, sentence case, no file or function names. "Reset tabs after a switch", not "Update workspaceChange.ts".
 - `why`: one or two sentences on what this part achieves and why it exists.
 - `how`: one or two sentences on how it does it, naming the moving parts in plain words.
 - Link one to three phrases across `why` and `how` to the hunk or file that implements them: `[phrase](f4h2)`. Link words already in the sentence; do not add "see here".

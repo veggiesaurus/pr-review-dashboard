@@ -157,28 +157,28 @@ def main():
 
 def self_test():
     pr = lambda n, base, head: {"number": n, "baseRefName": base, "headRefName": head}
-    prs = [pr(1, "dev", "a"), pr(2, "a", "b"), pr(3, "b", "c"), pr(9, "dev", "x")]
+    prs = [pr(1, "main", "a"), pr(2, "a", "b"), pr(3, "b", "c"), pr(9, "main", "x")]
     assert [p["number"] for p in find_stack(prs, 2)[0]] == [1, 2, 3]
     forked = prs + [pr(4, "b", "d")]
     chain, forks = find_stack(forked, 1)
     assert [p["number"] for p in chain] == [1, 2] and forks == [3, 4], (chain, forks)
     assert [p["number"] for p in find_stack(forked, 4)[0]] == [1, 2, 4]
-    lookalike = prs + [dict(pr(5, "dev", "b"), isCrossRepository=True), dict(pr(6, "c", "z"), isCrossRepository=True)]
+    lookalike = prs + [dict(pr(5, "main", "b"), isCrossRepository=True), dict(pr(6, "c", "z"), isCrossRepository=True)]
     assert [p["number"] for p in find_stack(lookalike, 3)[0]] == [1, 2, 3], "fork PRs are never layers"
 
     def layer(path, defines, rows):
         return {"files": [{"path": path, "noise": False,
                            "hunks": [{"id": "f1h1", "noise": None, "defines": defines, "lines": rows}]}]}
-    low = layer("src/store.ts", ["switchOrg", "resetTab"], [["+", None, 1, "export const switchOrg = async (orgId) => {"],
-                                                             ["+", None, 2, "  await refreshSession(orgId, 'switch');"],
-                                                             ["+", None, 3, "  broadcastChange(orgId, 'switch');"],
+    low = layer("src/store.ts", ["switchWorkspace", "resetTab"], [["+", None, 1, "export const switchWorkspace = async (workspaceId) => {"],
+                                                             ["+", None, 2, "  await refreshSession(workspaceId, 'switch');"],
+                                                             ["+", None, 3, "  broadcastChange(workspaceId, 'switch');"],
                                                              ["+", None, 4, "  queryClient.clear('every-key');"]])
-    high = layer("src/store.ts", ["resetTab"], [["-", 2, None, "  await refreshSession(orgId, 'switch');"],
-                                                 ["-", 3, None, "  broadcastChange(orgId, 'switch');"],
+    high = layer("src/store.ts", ["resetTab"], [["-", 2, None, "  await refreshSession(workspaceId, 'switch');"],
+                                                 ["-", 3, None, "  broadcastChange(workspaceId, 'switch');"],
                                                  ["-", 4, None, "  queryClient.clear('every-key');"],
-                                                 ["+", None, 2, "  await switchOrg(id); resetTab();"]])
+                                                 ["+", None, 2, "  await switchWorkspace(id); resetTab();"]])
     links = cross_links([(10, low), (11, high)])
-    assert links == [{"name": "switchOrg", "from": "10:f1h1", "usedIn": ["11:f1h1"]}], links
+    assert links == [{"name": "switchWorkspace", "from": "10:f1h1", "usedIn": ["11:f1h1"]}], links
     assert cross_links([(11, high), (10, low)]) == [], "a use below the definition is not a link"
     got = churn([(10, low), (11, high)])
     assert got == [{"added": ["10:f1h1"], "removed": ["11:f1h1"], "lines": 3, "path": "src/store.ts",

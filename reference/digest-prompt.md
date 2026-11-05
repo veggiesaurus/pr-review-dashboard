@@ -12,11 +12,11 @@ Write `{OUT}` as JSON:
 
 ```json
 [
-  {"file": "f3", "path": "src/store/auth/orgChange.ts",
-   "summary": "New module that clears cached data and sends each tab back to a safe route after an org change.",
+  {"file": "f3", "path": "src/store/auth/workspaceChange.ts",
+   "summary": "New module that clears cached data and sends each tab back to a safe route after a workspace switch.",
    "hunks": [
-     {"id": "f3h1", "does": "Adds resetForOrgChange, which clears the query cache and navigates to the same top-level section or the navigator.",
-      "symbols": ["resetForOrgChange", "isProtectedSection"]}
+     {"id": "f3h1", "does": "Adds resetForWorkspaceChange, which clears the query cache and navigates to the same top-level section or the home page.",
+      "symbols": ["resetForWorkspaceChange", "isProtectedSection"]}
    ]}
 ]
 ```

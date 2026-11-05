@@ -298,7 +298,7 @@ def self_test():
     assert "<" not in blob and json.loads(blob)["meta"]["body"] == "<!-- template --> </script>"
     lines = lambda n: [["+", None, k, "x"] for k in range(n)]
     data = {"files": [
-        {"id": "f1", "path": "src/store/orgChange.ts", "category": "implementation", "noise": False, "hunks": [
+        {"id": "f1", "path": "src/store/workspaceChange.ts", "category": "implementation", "noise": False, "hunks": [
             {"id": "f1h1", "noise": None, "lines": lines(30), "usedBy": {"f3h1": ["resetTab"]}},
             {"id": "f1h2", "noise": None, "lines": lines(2)}]},
         {"id": "f2", "path": "e2e/switch.spec.ts", "category": "test", "noise": False, "hunks": [
@@ -308,7 +308,7 @@ def self_test():
             {"id": "f3h2", "noise": None, "lines": lines(5)}]},
     ]}
     secs, probs = build_sections(data, {"sections": [
-        {"title": "Update orgChange", "why": "w [a](f3h1)", "how": "h \u2014 robust", "items": ["f1h1", "f3h2"]},
+        {"title": "Update workspaceChange", "why": "w [a](f3h1)", "how": "h \u2014 robust", "items": ["f1h1", "f3h2"]},
         {"title": "Tests", "why": "w", "how": "h", "items": ["f2"]},
         {"title": "Wire it", "why": "w [b](f3h1)", "how": "h", "items": ["f3h1"]},
         {"title": "Tidy", "why": "w [c](f1h2)", "how": "h", "items": ["f1h2"]}]})
@@ -331,9 +331,9 @@ def self_test():
     assert not probs and not sp and split["prs"] == [[1], [2]], (probs, sp)
     assert sw == ["split: PR 1 uses mintToken from section 2, which lands later in PR 2"], sw
     assert check_split(sd, dict(g, split={"prs": [[1]]}), secs)[1], "a split that drops a section must fail"
-    sd["files"][0]["hunks"][0]["defines"] = ["switchOrg"]
-    sd["files"][1]["hunks"][0]["defines"] = ["switchOrg"]
-    assert "split: switchOrg is defined in sections 1, 2, which land in different PRs" in check_split(sd, g, secs)[2]
+    sd["files"][0]["hunks"][0]["defines"] = ["switchWorkspace"]
+    sd["files"][1]["hunks"][0]["defines"] = ["switchWorkspace"]
+    assert "split: switchWorkspace is defined in sections 1, 2, which land in different PRs" in check_split(sd, g, secs)[2]
     w = "\n".join(lint(sd, secs))
     assert "section 2 touches auth code but has no risk note" in w and "suggests no split" in w, w
     g["sections"][1]["risk"] = "mints access tokens"

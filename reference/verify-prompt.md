@@ -33,7 +33,7 @@ Write `{WORKDIR}/verify.json`:
    "problem": "Adopting a shared token is what carries a switch to other tabs, which is section 4's purpose.",
    "fix": "Move f18h3 to section 4."},
   {"kind": "claim", "where": "section 3 how",
-   "problem": "Says the layout remounts on the org id; it remounts on the session owner, user and entry org together.",
+   "problem": "Says the layout remounts on the workspace id; it remounts on the session owner, user and workspace together.",
    "fix": "The protected layout remounts when the session owner changes and renders no page until the reset's navigation lands."}
  ],
  "warnings": [
