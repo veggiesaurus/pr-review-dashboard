@@ -69,8 +69,18 @@ def git(repo, *args, check=True):
 
 
 def gh_json(repo, *args):
-    r = subprocess.run(["gh", *args], capture_output=True, text=True, cwd=repo)
+    try:
+        r = subprocess.run(["gh", *args], capture_output=True, text=True, cwd=repo)
+    except FileNotFoundError:
+        return None  # no gh: a branch still works from git alone
     return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+
+
+def remote_name(repo):
+    """owner/repo from the origin URL, for hosts gh does not know; the folder name without one."""
+    url = git(repo, "remote", "get-url", "origin", check=False).strip()
+    m = re.search(r"[:/]([^/:]+/[^/]+?)(\.git)?/?$", url)
+    return m.group(1) if m else os.path.basename(repo)
 
 
 PR_FIELDS = "number,title,url,body,author,baseRefName,headRefName,baseRefOid,headRefOid"
@@ -78,12 +88,12 @@ PR_FIELDS = "number,title,url,body,author,baseRefName,headRefName,baseRefOid,hea
 
 def resolve(a):
     repo = a.repo
-    name = (gh_json(repo, "repo", "view", "--json", "nameWithOwner") or {}).get("nameWithOwner", "")
+    name = (gh_json(repo, "repo", "view", "--json", "nameWithOwner") or {}).get("nameWithOwner") or remote_name(repo)
     pr = None
     if a.pr:
         pr = gh_json(repo, "pr", "view", str(a.pr), "--json", PR_FIELDS)
         if not pr:
-            sys.exit(f"gh pr view {a.pr} failed; is gh logged in and is {repo} the right clone?")
+            sys.exit(f"gh pr view {a.pr} failed; is gh installed and logged in, and is {repo} the right clone?")
         git(repo, "fetch", "-q", "origin", f"refs/pull/{pr['number']}/head", pr["baseRefName"])
         head, base = pr["headRefOid"], pr["baseRefOid"]
         base_label, head_label = pr["baseRefName"], pr["headRefName"]

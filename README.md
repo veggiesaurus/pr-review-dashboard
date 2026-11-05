@@ -16,8 +16,9 @@ Then ask Claude for a review guide of a PR ("build a review guide for #123") or 
 
 ## Requirements
 
-- Claude Code with the Artifact tool, which publishes the page. Notes on lines need its `comments` capability.
-- A local clone of the repo, `git`, and `gh` logged in.
-- `python3`, standard library only.
+- A local clone of the repo and `git`.
+- `gh` logged in, to build a guide for a PR by number and show its CI. Without it, the guide works for any branch on any host, compared against `--base` or the remote's default branch.
+- The Artifact tool in Claude Code to publish the page, and its `comments` capability to send notes back to the session. Without it, Claude opens the page from disk instead: notes work the same, and Copy notes takes them back to the session.
+- Python 3.9 or later, standard library only.
 
 `SKILL.md` has the details: which models do what, what counts as formatting noise, what gets flagged and how notes come back.

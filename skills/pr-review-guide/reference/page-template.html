@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>__PRG_TITLE__</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -942,15 +943,18 @@ tr.xref code { color: var(--foreground); }
 
     // Keyed by the note's location line, which names the layer, file, line and commit. prg:draft: is the older
     // key for unsent comment text, read so nothing typed before notes existed is lost.
-    // Pages opened from disk share one origin, so there each PR keeps its notes apart.
-    const M0 = LAYERS[0].meta;
-    const SCOPE = location.protocol !== "file:" ? "" : STACK ? `${STACK.repo} stack ${M0.number}:` : `${M0.repo}#${M0.number || M0.head}:`;
+    // Every page opened from disk shares one origin, so any local file could plant notes in localStorage that
+    // would then reach the session as asks. There notes stay in this tab, and apart per PR.
+    const M0 = LAYERS[0].meta, local = location.protocol === "file:";
+    const SCOPE = !local ? "" : STACK ? `${STACK.repo} stack ${M0.number}:` : `${M0.repo}#${M0.number || M0.head}:`;
     const KEYS = [`prg:note:${SCOPE}`, `prg:draft:${SCOPE}`];
     const mem = new Map();
+    let saved = null;
     try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i), p = k && KEYS.find(x => k.startsWith(x));
-        if (p && !mem.has(k.slice(p.length))) mem.set(k.slice(p.length), localStorage.getItem(k));
+      saved = local ? sessionStorage : localStorage;
+      for (let i = 0; i < saved.length; i++) {
+        const k = saved.key(i), p = k && KEYS.find(x => k.startsWith(x));
+        if (p && !mem.has(k.slice(p.length))) mem.set(k.slice(p.length), saved.getItem(k));
       }
     } catch (e) { /* storage blocked: notes last until a reload */ }
     const notes = {
@@ -958,8 +962,8 @@ tr.xref code { color: var(--foreground); }
       set(loc, text) {
         if (text.trim()) mem.set(loc, text); else mem.delete(loc);
         try {
-          KEYS.forEach(p => localStorage.removeItem(p + loc));
-          if (text.trim()) localStorage.setItem(KEYS[0] + loc, text);
+          KEYS.forEach(p => saved.removeItem(p + loc));
+          if (text.trim()) saved.setItem(KEYS[0] + loc, text);
         } catch (e) { /* storage blocked: the note lasts until a reload */ }
       },
       // In page order, so a review reads bottom layer first and down each file; notes for lines not on this build go last.
