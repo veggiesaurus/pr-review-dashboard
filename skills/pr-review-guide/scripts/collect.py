@@ -96,9 +96,16 @@ NOT_KEYS = {"UTF", "SHA", "ISO", "RFC", "CVE", "HTTP", "TLS", "GPT", "PEP", "REL
 MAX_ISSUES = 5
 
 
+def same_owner(a, b):
+    return bool(a and b) and a.split("/")[0].lower() == b.split("/")[0].lower()
+
+
 def linked_issues(repo, name, pr, title, body, commits, branch):
     """The issues a change says it works on: GitHub ones with their text, Jira or Linear keys for the session
-    to fetch with its own tracker tool. Returns (issues for the page, issue.md text)."""
+    to fetch with its own tracker tool. Returns (issues for the page, issue.md text).
+
+    Only issues under the repo's own owner are fetched. The PR's author writes the links, so one to another
+    owner's repo would otherwise pull whatever the reviewer's gh login can read into the model's context."""
     gh = {}
     for x in (pr or {}).get("closingIssuesReferences") or []:
         r = x.get("repository") or {}
@@ -120,7 +127,8 @@ def linked_issues(repo, name, pr, title, body, commits, branch):
     issues, parts = [], []
     for (where, n), url in list(gh.items())[:MAX_ISSUES]:
         ref = f"#{n}" if where == name else f"{where}#{n}"
-        got = gh_json(repo, "issue", "view", str(n), "-R", where, "--json", "title,body,url") if where else None
+        got = gh_json(repo, "issue", "view", str(n), "-R", where, "--json", "title,body,url") \
+            if same_owner(where, name) else None
         issues.append({"ref": ref, "url": (got or {}).get("url") or url, "fetched": bool(got)})
         if got:
             parts.append(f"## {ref}: {got['title']}\n{got['url']}\n\n{(got.get('body') or '').strip() or '(no description)'}")
@@ -956,6 +964,7 @@ def self_test():
     assert [x["ref"] for x in got] == ["#7", "#9", "other/repo#3", "ENG-5", "PROJ-12"], got
     assert got[0]["url"] == "https://github.com/o/r/issues/7" and got[3]["url"].startswith("https://linear.app/") and not text
     assert [x["ref"] for x in linked_issues("/nonexistent", "o/r", None, "release-2 work", "", [], "release-2")[0]] == []
+    assert same_owner("O/other", "o/r") and not same_owner("other/repo", "o/r") and not same_owner("", "o/r")
     print("self-test ok")
 
 
