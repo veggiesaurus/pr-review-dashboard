@@ -1,0 +1,15 @@
+{
+  "name": "pr-review-guide",
+  "description": "The pr-review-guide skill for Claude Code",
+  "owner": {
+    "name": "Angus Comrie"
+  },
+  "plugins": [
+    {
+      "name": "pr-review-guide",
+      "source": "./",
+      "description": "Builds a section-by-section self-review page for a pull request or a stack of them, and acts on the notes you leave on it",
+      "version": "0.1.0"
+    }
+  ]
+}
