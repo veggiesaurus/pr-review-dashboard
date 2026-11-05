@@ -660,7 +660,8 @@ tr.xref code { color: var(--foreground); }
     function header() {
       const ref = M.number ? `${M.repo}#${M.number}` : M.repo;
       $("crumbs").innerHTML = (M.url ? `<a href="${esc(M.url)}" target="_blank" rel="noopener">${esc(ref)}</a>` : `<span>${esc(ref)}</span>`)
-        + `<span class="mono">${esc(M.base)} ← ${esc(M.head)}</span><span class="mono">${esc(M.mergeBase.slice(0, 7))}…${esc(SHA7)}</span>`;
+        + `<span class="mono">${esc(M.base)} ← ${esc(M.head)}</span><span class="mono">${esc(M.mergeBase.slice(0, 7))}…${esc(SHA7)}</span>`
+        + (M.issues || []).map(x => x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.ref)}</a>` : `<span>${esc(x.ref)}</span>`).join("");
       $("title").textContent = M.title;
       const S = D.stats, impl = S.categories.implementation || { add: 0, del: 0, files: 0 };
       const differs = impl.add !== S.total.add || impl.del !== S.total.del;
@@ -769,6 +770,8 @@ tr.xref code { color: var(--foreground); }
       if (desc) {
         const n = (desc.unsupported || []).length + (desc.missing || []).length;
         chips.push(n ? chip("warn", `Description: ${n} mismatch${n === 1 ? "" : "es"}`) : chip("good", "Description matches the diff"));
+        const ni = (desc.issue || []).length;
+        if (ni) chips.push(chip("warn", `Issue: ${ni} ask${ni === 1 ? "" : "s"} not in the diff`));
       }
       const parts = [`<h2>Before you mark it ready</h2><div class="chips">${chips.join("")}</div>`];
       if (tells.length) {
@@ -786,6 +789,10 @@ tr.xref code { color: var(--foreground); }
         const un = (desc.unsupported || []).map(x => `<li><b>Not in the diff:</b> <q>${esc(x.claim)}</q> <span class="why-note">${esc(x.why || "")}</span>${note(x)}</li>`);
         const mi = (desc.missing || []).map(x => `<li><b>Left out:</b> ${esc(x.what)} ${(x.hunks || []).map(h => `<a href="#" class="ref tellref" data-hunk="${esc(h)}">${esc(h)}</a>`).join("")}${note(x)}</li>`);
         parts.push(`<details open><summary>Description vs diff</summary><ul>${un.concat(mi).join("")}</ul></details>`);
+      }
+      if (desc && (desc.issue || []).length) {
+        const asks = desc.issue.map(x => `<li><b>Not in the diff:</b> ${esc(x.ask)} <span class="why-note">${esc(x.why || "")}</span>${x.stack ? ` <span class="stacknote">${esc(x.stack)}</span>` : ""}</li>`);
+        parts.push(`<details open><summary>Linked issue vs diff</summary><ul>${asks.join("")}</ul></details>`);
       }
       const risky = D.sections.map((sec, i) => [sec, i]).filter(([sec]) => sec.kind === "guide" && sec.risk);
       if (risky.length) parts.push(`<details open><summary>Needs a careful read</summary><ul>${risky.map(([sec, i]) => `<li><a href="#${P}s${i + 1}">§${pad2(i + 1)} ${esc(sec.title)}</a>: ${esc(sec.risk)}</li>`).join("")}</ul></details>`);
@@ -879,6 +886,8 @@ tr.xref code { color: var(--foreground); }
     if ((D.tells || []).length) chips.push(chip("warn", `${D.tells.length} flagged`));
     const desc = D.descriptionCheck, dn = desc ? (desc.unsupported || []).length + (desc.missing || []).length : 0;
     if (dn) chips.push(chip("warn", `Description: ${dn} mismatch${dn === 1 ? "" : "es"}`));
+    const ni = desc ? (desc.issue || []).length : 0;
+    if (ni) chips.push(chip("warn", `Issue: ${ni} not in the diff`));
     const risky = D.sections.filter(s => s.kind === "guide" && s.risk).length;
     if (risky) chips.push(chip("warn", `${risky} careful read${risky === 1 ? "" : "s"}`));
     return `<li data-n="${M.number}"><button class="lrow" type="button" data-n="${M.number}"><span class="n">#${M.number}</span>`

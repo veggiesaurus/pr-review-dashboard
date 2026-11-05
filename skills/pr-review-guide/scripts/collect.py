@@ -83,7 +83,52 @@ def remote_name(repo):
     return m.group(1) if m else os.path.basename(repo)
 
 
-PR_FIELDS = "number,title,url,body,author,baseRefName,headRefName,baseRefOid,headRefOid"
+PR_FIELDS = "number,title,url,body,author,baseRefName,headRefName,baseRefOid,headRefOid,closingIssuesReferences"
+
+CLOSES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+((?:[\w.-]+/[\w.-]+)?#\d+)", re.I)
+GH_ISSUE_URL = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)")
+TRACKER_URL = re.compile(r"https?://(?:linear\.app/[\w-]+/issue|[\w.-]+/browse)/([A-Z][A-Z0-9]*-\d+)")
+KEY = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,6})\b")
+BRANCH_KEY = re.compile(r"^([a-z][a-z0-9]{1,9}-\d{1,6})(?=$|[-_])", re.I)
+# Things shaped like an issue key that are not one.
+NOT_KEYS = {"UTF", "SHA", "ISO", "RFC", "CVE", "HTTP", "TLS", "GPT", "PEP", "RELEASE", "HOTFIX", "FIX", "FEATURE",
+            "BUGFIX", "CHORE", "REVERT", "DEPS"}
+MAX_ISSUES = 5
+
+
+def linked_issues(repo, name, pr, title, body, commits, branch):
+    """The issues a change says it works on: GitHub ones with their text, Jira or Linear keys for the session
+    to fetch with its own tracker tool. Returns (issues for the page, issue.md text)."""
+    gh = {}
+    for x in (pr or {}).get("closingIssuesReferences") or []:
+        r = x.get("repository") or {}
+        owner = (r.get("owner") or {}).get("login")
+        gh[(f"{owner}/{r['name']}" if owner and r.get("name") else name, x["number"])] = x.get("url")
+    text = "\n".join([title, body, *commits])
+    for ref in CLOSES.findall(text):
+        where, _, n = ref.partition("#")
+        gh.setdefault((where or name, int(n)), None)
+    for where, n in GH_ISSUE_URL.findall(text):
+        gh.setdefault((where, int(n)), None)
+    keys = {}
+    for m in TRACKER_URL.finditer(text):
+        keys.setdefault(m.group(1), m.group(0))
+    subjects = "\n".join([title, *(c.split("\n", 1)[0] for c in commits)])
+    tail = branch.rsplit("/", 1)[-1]
+    for k in KEY.findall(subjects) + [m.upper() for m in BRANCH_KEY.findall(tail)]:
+        keys.setdefault(k, None)
+    issues, parts = [], []
+    for (where, n), url in list(gh.items())[:MAX_ISSUES]:
+        ref = f"#{n}" if where == name else f"{where}#{n}"
+        got = gh_json(repo, "issue", "view", str(n), "-R", where, "--json", "title,body,url") if where else None
+        issues.append({"ref": ref, "url": (got or {}).get("url") or url, "fetched": bool(got)})
+        if got:
+            parts.append(f"## {ref}: {got['title']}\n{got['url']}\n\n{(got.get('body') or '').strip() or '(no description)'}")
+    for k, url in list((k, u) for k, u in keys.items() if k.split("-")[0] not in NOT_KEYS)[:MAX_ISSUES]:
+        issues.append({"ref": k, "url": url, "fetched": False})
+    return issues, "\n\n".join(parts)
+
+
 
 
 def resolve(a):
@@ -116,6 +161,8 @@ def resolve(a):
     merge_base = git(repo, "merge-base", base, head).strip()
     log = git(repo, "log", "--reverse", "--format=%h %s%n%b%x00", f"{merge_base}..{head}")
     commits = [c.strip() for c in log.split("\0") if c.strip()]
+    issues, issue_text = linked_issues(repo, name, pr, pr["title"] if pr else "", (pr or {}).get("body") or "",
+                                       commits, head_label)
     checks = None
     if pr:
         rows = gh_json(repo, "pr", "checks", str(pr["number"]), "--json", "name,bucket,link")
@@ -129,7 +176,7 @@ def resolve(a):
         "url": pr and pr["url"], "body": (pr or {}).get("body") or "",
         "author": ((pr or {}).get("author") or {}).get("login") or git(repo, "log", "-1", "--format=%an", head).strip(),
         "base": base_label, "head": head_label, "baseSha": base, "headSha": head, "mergeBase": merge_base,
-        "commits": commits, "checks": checks,
+        "commits": commits, "checks": checks, "issues": issues, "issueText": issue_text,
     }
 
 
@@ -706,6 +753,13 @@ def write(data, out_dir):
     text, chunks, count = reviewable_text(data)
     data["stats"]["reviewable"] = count
     data["ready"] = ready_check(data, count)
+    issue_text = data["meta"].pop("issueText", "")
+    issue_path = os.path.join(out_dir, "issue.md")
+    if issue_text:
+        with open(issue_path, "w") as fh:
+            fh.write(issue_text + "\n")
+    elif os.path.exists(issue_path):
+        os.remove(issue_path)
     with open(os.path.join(out_dir, "description.md"), "w") as fh:
         fh.write(description_text(data["meta"]))
     with open(os.path.join(out_dir, "hunks.json"), "w") as fh:
@@ -883,6 +937,13 @@ def self_test():
     assert ready_check({"stats": {"categories": {"implementation": {"add": 5, "del": 0}}}, "files": [], "meta": {}}, 2500)["band"] == "too big for one review"
     d = description_text({"title": "t", "url": "", "body": "", "commits": ["abc123 adds x\nwhy it matters\n"]})
     assert "(none)" in d and "- abc123 adds x" in d and "  why it matters" in d
+    got, text = linked_issues("/nonexistent", "o/r", {"closingIssuesReferences": [
+        {"number": 7, "url": "https://github.com/o/r/issues/7", "repository": {"name": "r", "owner": {"login": "o"}}}]},
+        "PROJ-12 adds the thing for UTF-8 names", "Fixes #9 and closes other/repo#3.\nhttps://linear.app/acme/issue/ENG-5/x",
+        ["abc1234 ENG-5 first pass\nbody PROJ-99 is only mentioned here"], "me/proj-12-the-thing")
+    assert [x["ref"] for x in got] == ["#7", "#9", "other/repo#3", "ENG-5", "PROJ-12"], got
+    assert got[0]["url"] == "https://github.com/o/r/issues/7" and got[3]["url"].startswith("https://linear.app/") and not text
+    assert [x["ref"] for x in linked_issues("/nonexistent", "o/r", None, "release-2 work", "", [], "release-2")[0]] == []
     print("self-test ok")
 
 
@@ -921,7 +982,10 @@ def main():
     if data["tells"]:
         kinds = Counter(t["label"] for t in data["tells"])
         print("tells: " + ", ".join(f"{n} {k}" for k, n in kinds.most_common()))
-    print(f"wrote {a.out}/hunks.json, review.diff, description.md, batches/")
+    issues = data["meta"]["issues"]
+    if issues:
+        print("linked issues: " + ", ".join(f"{x['ref']} ({'in issue.md' if x['fetched'] else 'not fetched'})" for x in issues))
+    print(f"wrote {a.out}/hunks.json, review.diff, description.md, batches/" + (", issue.md" if any(x["fetched"] for x in issues) else ""))
 
 
 if __name__ == "__main__":

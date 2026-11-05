@@ -15,7 +15,8 @@ guide.json is {"sections": [{"title", "why", "how", "items": [...], "risk"?}],
 file id (f3), which takes whatever hunks of that file no other item names. why
 and how may link phrases as [phrase](f3h2). risk is a short note on what makes
 the section risky; split suggests how a large PR could be several, by section
-number. An optional description.json from the checker is shown on the page.
+number. An optional description.json from the checker is shown on the page:
+{"unsupported": [{"claim", "why"}], "missing": [{"what", "hunks"}], "issue"?: [{"ask", "why"}]}.
 
 A STACKDIR is what stack.py writes: stack.json and one WORKDIR per layer. Every
 layer is checked as above, links may reach into another layer as
@@ -296,7 +297,8 @@ def self_test():
     secs, probs = build_sections(gen2, {"sections": [{"title": "A", "why": "w", "how": "h", "items": ["f1h1"]}]})
     assert not probs and secs[-1]["files"] == [{"id": "f1", "hunks": ["f1h2"]}], (probs, secs)
     assert not check_description({"unsupported": [], "missing": [{"what": "x", "hunks": ["f1h2"]}]}, gen2)
-    assert len(check_description({"unsupported": "none", "missing": [{"what": "x", "hunks": "f9h1"}]}, gen2)) == 2
+    assert len(check_description({"unsupported": "none", "missing": [{"what": "x", "hunks": "f1h2"}],
+                                  "issue": [{"ask": "y", "hunks": ["f9h1"]}]}, gen2)) == 3
     import tempfile
     page = os.path.join(tempfile.mkdtemp(), "p.html")
     meta = {"repo": "o/r", "number": 1, "head": "h"}
@@ -425,7 +427,7 @@ def check_description(desc, data):
     if not isinstance(desc, dict):
         return ["description.json must be an object"]
     out = []
-    for key, field in (("unsupported", "claim"), ("missing", "what")):
+    for key, field in (("unsupported", "claim"), ("missing", "what"), ("issue", "ask")):
         rows = desc.get(key, [])
         if not isinstance(rows, list) or not all(isinstance(x, dict) and isinstance(x.get(field), str) for x in rows):
             out.append(f'description.json: "{key}" must be a list of objects, each with a "{field}" string')
