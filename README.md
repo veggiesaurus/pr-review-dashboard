@@ -7,8 +7,10 @@ It's much like Linear's Guide tab, but the page is built locally from the diff, 
 ## Install
 
 ```
-git clone https://github.com/veggiesaurus/pr-review-guide ~/.claude/skills/pr-review-guide
+/plugin install pr-review-guide --marketplace veggiesaurus/pr-review-guide
 ```
+
+On a Claude Code older than 2.1.275, add the marketplace first with `/plugin marketplace add veggiesaurus/pr-review-guide`, then `/plugin install pr-review-guide@pr-review-guide`. To use it without the plugin system, copy `skills/pr-review-guide` into `~/.claude/skills/`.
 
 Then ask Claude for a review guide of a PR ("build a review guide for #123") or of the current branch.
 
