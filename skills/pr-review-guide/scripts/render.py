@@ -143,9 +143,10 @@ def build_sections(data, guide, layers=None):
     fmt = [{"id": f["id"], "hunks": [h["id"] for h in f["hunks"] if h["id"] not in claimed]}
            for f in data["files"] if not f["noise"]]
     fmt = [x for x in fmt if x["hunks"]]
-    gen = [{"id": f["id"], "hunks": [h["id"] for h in f["hunks"]]}
-           for f in data["files"] if f["noise"] and f["id"] not in file_claim
-           and not any(h["id"] in claimed for h in f["hunks"])]
+    # A section may take some hunks of a generated file; the rest still go to the closing section.
+    gen = [{"id": f["id"], "hunks": [h["id"] for h in f["hunks"] if h["id"] not in claimed]}
+           for f in data["files"] if f["noise"] and f["id"] not in file_claim]
+    gen = [x for x in gen if x["hunks"] or not files[x["id"]]["hunks"]]
     if fmt:
         sections.append({"kind": "formatting", "title": "Formatting only", "files": fmt})
     if gen:
@@ -207,8 +208,8 @@ def lint(data, sections):
                     where = sorted({home[p] for p in peers})
                     out.append(f"{h} is in section {i} but connects only to hunks in section "
                                f"{', '.join(map(str, where))} ({', '.join(sorted(peers))}); check it belongs here")
-    if data.get("stats", {}).get("reviewable", 0) > C.SIZE_BANDS[1][0] and len(guide) >= 2 and not data.get("_split"):
-        out.append("the PR is too big for one review and the guide suggests no split")
+    if data.get("stats", {}).get("reviewable", 0) > C.SIZE_BANDS[0][0] and len(guide) >= 2 and not data.get("_split"):
+        out.append("the PR is long for one review and the guide suggests no split")
     return out
 
 
@@ -290,6 +291,12 @@ def self_test():
     assert not probs and [s["kind"] for s in secs] == ["formatting", "generated"], (probs, secs)
     _, probs = build_sections(noise_only, {"sections": [{"title": "A", "why": "w", "how": "h", "items": ["f2"]}]})
     assert any("only has formatting changes" in p for p in probs), probs
+    gen2 = {"meta": {}, "files": [{"id": "f1", "path": "api.gen.ts", "noise": True, "hunks": [
+        {"id": "f1h1", "noise": None}, {"id": "f1h2", "noise": None}]}]}
+    secs, probs = build_sections(gen2, {"sections": [{"title": "A", "why": "w", "how": "h", "items": ["f1h1"]}]})
+    assert not probs and secs[-1]["files"] == [{"id": "f1", "hunks": ["f1h2"]}], (probs, secs)
+    assert not check_description({"unsupported": [], "missing": [{"what": "x", "hunks": ["f1h2"]}]}, gen2)
+    assert len(check_description({"unsupported": "none", "missing": [{"what": "x", "hunks": "f9h1"}]}, gen2)) == 2
     import tempfile
     page = os.path.join(tempfile.mkdtemp(), "p.html")
     meta = {"repo": "o/r", "number": 1, "head": "h"}
@@ -349,6 +356,7 @@ def self_test():
     sp, _ = check_stack_guide({"layers": [], "issues": [{"problem": "see [a](f1h1)"}]}, layers)
     assert any("#7 has no summary" in x for x in sp) and any("names its layer" in x for x in sp), sp
     assert check_stack_guide({"layers": [{"number": 7, "summary": "Adds [the store](7:f1h1)."}]}, layers) == ([], [])
+    assert "must be" in check_stack_guide({"layers": [], "issues": [{"layers": "7"}]}, layers)[0][0]
     print("self-test ok")
 
 
@@ -405,9 +413,28 @@ def load(workdir, data, layers=None):
         pass
     except json.JSONDecodeError as e:
         problems.append(f"description.json unreadable: {e}")
+    if desc is not None:
+        problems += check_description(desc, data)
     warnings = (lint(data, sections) + split_warnings) if not problems else []
     return {"problems": problems, "warnings": warnings, "sections": sections,
             "extras": {"split": split, "descriptionCheck": desc}}
+
+
+def check_description(desc, data):
+    """Problems with description.json's shape. The page reads it as it is, so a wrong type breaks the page."""
+    if not isinstance(desc, dict):
+        return ["description.json must be an object"]
+    out = []
+    for key, field in (("unsupported", "claim"), ("missing", "what")):
+        rows = desc.get(key, [])
+        if not isinstance(rows, list) or not all(isinstance(x, dict) and isinstance(x.get(field), str) for x in rows):
+            out.append(f'description.json: "{key}" must be a list of objects, each with a "{field}" string')
+            continue
+        for x in rows:
+            hs = x.get("hunks", [])
+            if not isinstance(hs, list) or not all(isinstance(h, str) and has_id(data, h) for h in hs):
+                out.append(f'description.json: "hunks" in "{key}" must be a list of hunk ids from this diff, not {hs!r}')
+    return out
 
 
 def fail(problems):
@@ -427,6 +454,9 @@ def report(out, size, what):
 def check_stack_guide(sg, layers):
     """Problems and warnings in the stack check's stack-guide.json."""
     problems, warnings = [], []
+    if not isinstance(sg, dict) or not isinstance(sg.get("layers", []), list) or not isinstance(sg.get("issues", []), list) \
+            or not all(isinstance(i, dict) and isinstance(i.get("layers", []), list) for i in sg.get("issues", [])):
+        return ['stack-guide.json must be {"layers": [...], "issues": [{"layers": [...], ...}]}'], []
     got = {x.get("number"): str(x.get("summary") or "").strip() for x in sg.get("layers") or [] if isinstance(x, dict)}
     for n in layers:
         if not got.get(n):

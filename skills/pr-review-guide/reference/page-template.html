@@ -223,7 +223,9 @@ tr.has-note td.ln { box-shadow: inset 3px 0 0 var(--warning); }
 .tellmark { position: absolute; right: 0.1rem; top: 0; font: 700 11px/1.6 var(--font-sans); color: var(--destructive-high-contrast); }
 tr.flash { outline: 2px solid var(--ring); outline-offset: -2px; }
 .cbtn { display: none; position: absolute; left: 0.1rem; top: 0.1rem; width: 1.3rem; height: 1.3rem; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--primary); cursor: pointer; padding: 0; line-height: 1; font-size: 12px; }
-body.can-comment tr.line:hover .cbtn { display: block; }
+body.can-comment .cbtn { display: block; opacity: 0; }
+body.can-comment tr.line:hover .cbtn, body.can-comment .cbtn:focus-visible { opacity: 1; }
+@media (hover: none) { body.can-comment .cbtn { opacity: 1; } }
 tr.composer td, tr.note td { padding: 0.5rem 0.75rem 0.75rem 4.6rem; background: var(--card); border-block: 1px solid var(--border); }
 .cmp { display: grid; gap: 0.4rem; max-width: 48rem; font-family: var(--font-sans); }
 .cmp-loc { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); }
@@ -309,6 +311,15 @@ tr.xref code { color: var(--foreground); }
   const counts = (a, d) => (a ? `<span class="plus">+${a}</span> ` : "") + (d ? `<span class="minus">−${d}</span>` : "") || `<span>±0</span>`;
   const split = p => { const i = p.lastIndexOf("/"); return [p.slice(i + 1), i < 0 ? "" : p.slice(0, i + 1)]; };
   const mounted = {};
+  // Opens the card a row or card sits in, brings it into view, and flashes a row.
+  const reveal = t => {
+    const card = t.closest(".card");
+    if (card) card.classList.remove("closed");
+    t.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    if (t.tagName === "TR") { t.classList.add("flash"); setTimeout(() => t.classList.remove("flash"), 1600); }
+  };
+  const ciChip = (chip, C) => C.fail ? chip("bad", `CI: ${C.fail} failing`, (C.failing || []).map(x => x.name).join(", "))
+    : C.cancel ? chip("warn", `CI: ${C.cancel} cancelled`) : C.pending ? chip("warn", `CI: ${C.pending} pending`) : chip("good", "CI passing");
 
   // ---- theme: the viewer's choice, kept in this browser only; System follows the OS ----
   const root = document.documentElement, themeBtn = document.getElementById("theme");
@@ -353,6 +364,7 @@ tr.xref code { color: var(--foreground); }
     const ticks = {};
     const isDone = k => k in ticks ? ticks[k] : (ticks[k] = store.get(k));
     const setDone = (k, v) => { ticks[k] = v; store.set(k, v); };
+    const tickKey = x => `${x.id}:${x.hunks.join(",")}`;
 
     // ---- language + highlighting ----
     const LANG = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript",
@@ -583,7 +595,7 @@ tr.xref code { color: var(--foreground); }
       if (f.status === "renamed") tags.push(`<span class="tag" title="from ${esc(f.oldPath)}">renamed</span>`);
       if (f.category !== "implementation") tags.push(`<span class="tag">${esc(f.category)}</span>`);
       if (hunkIds.length && hunkIds.length < f.hunks.length && sec.kind === "guide") tags.push(`<span class="tag split" title="Other hunks of this file are in other sections">part</span>`);
-      const key = `${secIdx}:${f.id}`;
+      const key = tickKey({ id: f.id, hunks: hunkIds });
       card.innerHTML = `<header><button class="fold" type="button" aria-label="Collapse">▾</button>`
         + `<div class="path"><span class="bn">${esc(bn)}</span><span class="dir">${esc(dir)}</span></div>${tags.join("")}`
         + `<span class="num">${counts(add, del)}</span>`
@@ -621,14 +633,10 @@ tr.xref code { color: var(--foreground); }
         const sec = owner[id] ?? secHint;
         const tb = $(`h-${id}-s${sec}`);
         target = tb && (tb.querySelector("tr.line.add, tr.line.del") || tb.querySelector("tr"));
-        if (tb) tb.closest(".card").classList.remove("closed");
       } else {
         target = $(`c-${secHint}-${id}`) || document.querySelector(`[id^="${P}c-"][id$="-${id}"]`);
-        if (target) target.classList.remove("closed");
       }
-      if (!target) return;
-      target.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-      if (target.tagName === "TR") { target.classList.add("flash"); setTimeout(() => target.classList.remove("flash"), 1600); }
+      if (target) reveal(target);
     }
 
     // ---- names this hunk shares with other layers of the stack ----
@@ -700,7 +708,7 @@ tr.xref code { color: var(--foreground); }
           const [add, del] = lineCounts(f, x.hunks);
           const [bn, dir] = split(f.path);
           const li = el("li", "st-" + f.status);
-          li.dataset.key = `${i}:${f.id}`;
+          li.dataset.key = tickKey(x);
           li.innerHTML = `<button type="button" title="${esc(f.path)}"><span class="fname"><span class="bn">${esc(bn)}</span><span class="fdir">${esc(dir.replace(/\/$/, ""))}</span></span><span class="num">${counts(add, del)}</span></button>`;
           li.querySelector("button").onclick = () => { card.classList.remove("closed"); card.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" }); };
           list.appendChild(li);
@@ -709,7 +717,7 @@ tr.xref code { color: var(--foreground); }
         side.querySelectorAll("a.ref").forEach(a => a.onclick = e => { e.preventDefault(); goTo(a.dataset.to, i); });
         const secchk = side.querySelector(".secchk");
         secchk.onchange = () => {
-          sec.files.forEach(x => setDone(`${i}:${x.id}`, secchk.checked));
+          sec.files.forEach(x => setDone(tickKey(x), secchk.checked));
           body.querySelectorAll(".card").forEach(c => { c.querySelector("input").checked = secchk.checked; c.classList.toggle("closed", secchk.checked); });
           refreshTicks();
           };
@@ -725,7 +733,7 @@ tr.xref code { color: var(--foreground); }
     function refreshTicks() {
       let done = 0, total = 0;
       D.sections.forEach((sec, i) => {
-        const keys = sec.files.map(x => `${i}:${x.id}`);
+        const keys = sec.files.map(tickKey);
         const n = keys.filter(isDone).length;
         if (sec.kind === "guide") { done += n; total += keys.length; }
         const s = $(`s${i + 1}`);
@@ -746,10 +754,7 @@ tr.xref code { color: var(--foreground); }
     function goToRow(rowId, hunk) {
       const tr = document.getElementById(rowId);
       if (!tr) return goTo(hunk);
-      tr.closest(".card").classList.remove("closed");
-      tr.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-      tr.classList.add("flash");
-      setTimeout(() => tr.classList.remove("flash"), 1600);
+      reveal(tr);
     }
     function readyPanel() {
       const R = D.ready || {}, tells = D.tells || [], desc = D.descriptionCheck, split = D.split;
@@ -757,7 +762,7 @@ tr.xref code { color: var(--foreground); }
       const chips = [];
       if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines in ${R.files} files: ${R.band}`));
       const C = R.checks;
-      if (C) chips.push(C.fail ? chip("bad", `CI: ${C.fail} failing`, C.failing.map(x => x.name).join(", ")) : C.pending ? chip("warn", `CI: ${C.pending} pending`) : chip("good", "CI passing"));
+      if (C) chips.push(ciChip(chip, C), ...(C.stale ? [chip("warn", "CI ran on the pushed head, not this one")] : []));
       if (R.implChanged && !R.testsChanged) chips.push(chip("warn", "No test changes"));
       chips.push(tells.length ? chip("warn", `${tells.length} flagged line${tells.length === 1 ? "" : "s"}`) : chip("good", "No flagged lines"));
       if (desc) {
@@ -869,7 +874,7 @@ tr.xref code { color: var(--foreground); }
     if (row.needsRebase) chips.push(chip("bad", "Needs a rebase"));
     if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines`));
     const C = R.checks;
-    if (C) chips.push(C.fail ? chip("bad", `CI: ${C.fail} failing`) : C.pending ? chip("warn", `CI: ${C.pending} pending`) : chip("good", "CI passing"));
+    if (C) chips.push(ciChip(chip, C));
     if ((D.tells || []).length) chips.push(chip("warn", `${D.tells.length} flagged`));
     const desc = D.descriptionCheck, dn = desc ? (desc.unsupported || []).length + (desc.missing || []).length : 0;
     if (dn) chips.push(chip("warn", `Description: ${dn} mismatch${dn === 1 ? "" : "es"}`));
@@ -918,8 +923,9 @@ tr.xref code { color: var(--foreground); }
 
   // ---- review notes: kept in this browser and editable until sent, then posted as one comment sent to Claude ----
   (async () => {
+    // Without the comments capability (a page opened from disk, or a viewer it is not granted to) notes still
+    // work, and Copy notes takes them to the session; only Send needs it.
     const c = window.claude && window.claude.use ? await window.claude.use("comments").catch(() => null) : null;
-    if (!c) return;
     document.body.classList.add("can-comment");
     if (STACK) LAYERS.forEach(D => ensure(D.meta.number));
     const OFF = "Sending from this page isn't available here. Your notes are kept in this browser.";
@@ -936,7 +942,10 @@ tr.xref code { color: var(--foreground); }
 
     // Keyed by the note's location line, which names the layer, file, line and commit. prg:draft: is the older
     // key for unsent comment text, read so nothing typed before notes existed is lost.
-    const KEYS = ["prg:note:", "prg:draft:"];
+    // Pages opened from disk share one origin, so there each PR keeps its notes apart.
+    const M0 = LAYERS[0].meta;
+    const SCOPE = location.protocol !== "file:" ? "" : STACK ? `${STACK.repo} stack ${M0.number}:` : `${M0.repo}#${M0.number || M0.head}:`;
+    const KEYS = [`prg:note:${SCOPE}`, `prg:draft:${SCOPE}`];
     const mem = new Map();
     try {
       for (let i = 0; i < localStorage.length; i++) {
@@ -1011,11 +1020,7 @@ tr.xref code { color: var(--foreground); }
       const m = /^#(\d+) /.exec(loc);
       if (m && STACK) show(+m[1]);
       const tr = rowFor(loc);
-      if (!tr) return;
-      tr.closest(".card").classList.remove("closed");
-      tr.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-      tr.classList.add("flash");
-      setTimeout(() => tr.classList.remove("flash"), 1600);
+      if (tr) reveal(tr);
     }
     // Notes copied for pasting into the terminal stay until cleared, since the page cannot tell whether they were pasted.
     let copied = [];
@@ -1026,9 +1031,9 @@ tr.xref code { color: var(--foreground); }
       const box = old || el("section", "notes");
       box.id = "notes";
       const n = list.length, nCopied = list.filter(([l, t]) => isCopied(l, t)).length;
-      box.innerHTML = `<div class="notes-head">${n ? `<b>Your notes (${n})</b><span class="why-note">kept in this browser until sent</span>`
-        + `<button class="btn primary" type="button" data-send>Send ${n} note${n === 1 ? "" : "s"} to Claude</button>`
-        + `<button class="btn" type="button" data-copy title="Copy the notes to paste into your Claude session">Copy notes</button>`
+      box.innerHTML = `<div class="notes-head">${n ? `<b>Your notes (${n})</b><span class="why-note">kept in this browser until ${c ? "sent" : "copied"}</span>`
+        + (c ? `<button class="btn primary" type="button" data-send>Send ${n} note${n === 1 ? "" : "s"} to Claude</button>` : "")
+        + `<button class="btn${c ? "" : " primary"}" type="button" data-copy title="Copy the notes to paste into your Claude session">Copy notes</button>`
         + (nCopied ? `<button class="btn ghost" type="button" data-clear>Clear ${nCopied} copied</button>` : "") : ""}`
         + `<span class="cmp-msg" role="status"></span></div>`
         + (n ? `<ul>${list.map(([loc, text]) => `<li data-loc="${esc(loc)}"><a href="#" class="ref">${esc(loc)}</a>${rowFor(loc) ? "" : " (not on this page)"}`
@@ -1104,7 +1109,7 @@ tr.xref code { color: var(--foreground); }
         const { threadId } = await c.sendToClaude({ anchor: await c.anchorFor(at), text: parts[0] });
         posted = 1;
         for (const part of parts.slice(1)) { await c.reply(threadId, part); posted++; }
-        list.forEach(([loc]) => notes.set(loc, ""));
+        list.forEach(([loc, text]) => { if (notes.get(loc) === text) notes.set(loc, ""); });
         renderNotes(`Sent ${list.length} note${list.length === 1 ? "" : "s"}. Claude reports back in the session watching this page.`);
       } catch (err) {
         const code = err && err.code;

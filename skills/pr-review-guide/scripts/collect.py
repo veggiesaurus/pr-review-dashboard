@@ -110,8 +110,10 @@ def resolve(a):
     if pr:
         rows = gh_json(repo, "pr", "checks", str(pr["number"]), "--json", "name,bucket,link")
         if rows is not None:
-            checks = {k: sum(1 for r in rows if r["bucket"] == k) for k in ("pass", "fail", "pending")}
+            checks = {k: sum(1 for r in rows if r["bucket"] == k) for k in ("pass", "fail", "pending", "cancel")}
             checks["failing"] = [{"name": r["name"], "link": r["link"]} for r in rows if r["bucket"] == "fail"]
+            # Without --pr the diff is the local head, which may not be the commit CI ran on.
+            checks["stale"] = pr["headRefOid"] != head
     return {
         "repo": name, "number": pr and pr["number"], "title": pr["title"] if pr else head_label,
         "url": pr and pr["url"], "body": (pr or {}).get("body") or "",
@@ -200,12 +202,18 @@ PYTHON = re.compile(r"\.pyi?$", re.I)
 STRING = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`")
 IMPORT = re.compile(
     r"^\s*(import\b|from\s+\S+\s+import\b|export\s+(type\s+)?(\*|\{).*\bfrom\b|#\s*include\b|use\s+[\w:{}, ]+;|"
-    r"(const|let|var)\s+\S+\s*=\s*require\(|\}\s*from\s+[\"']|(\w+\s+|_\s+|\.\s+)?\"[\w./-]+\"\s*$)")
+    r"(const|let|var)\s+\S+\s*=\s*require\(|\}\s*from\s+[\"'])")
+# A line of a Go import block: a path, perhaps aliased. Go only, so `return "forbidden"` elsewhere is code.
+GO_IMPORT = re.compile(r"^\s*(?!(?:return|case|go|defer|var|const|type)\b)(\w+\s+|\.\s+)?\"[\w./-]+\"\s*$")
+# Where a space between two tokens is part of what the line says: shell, Dockerfiles, YAML and other config.
+WS_SIGNIFICANT = re.compile(r"\.(sh|bash|zsh|fish|ya?ml|toml|ini|cfg|conf|env|properties)$|"
+                            r"(^|/)(Dockerfile[^/]*|Makefile|[^/]*\.mk|\.env[^/]*)$", re.I)
 IMPORT_MEMBER = re.compile(r"^\s*(type\s+)?[\w$]+(\s+as\s+[\w$]+)?,\s*$")
 
 
-def _flat(text, quotes, punct):
-    """Code with whitespace removed outside string literals, which are kept as they are.
+def _flat(text, quotes, punct, spaced=False):
+    """Code with layout whitespace removed outside string literals, which are kept as they are. A space
+    between two words is kept (`not ready` is not `notready`); with `spaced`, every gap is kept as one space.
 
     ponytail: in JS a line break after `return` changes meaning (ASI); joining lines here
     misses that, and no formatter produces it.
@@ -219,7 +227,11 @@ def _flat(text, quotes, punct):
         strings.append(lit)
         return "\0"
 
-    code = re.sub(r"\s+", "", STRING.sub(keep, text))
+    code = STRING.sub(keep, text)
+    if spaced:
+        code = " ".join(code.split())
+    else:
+        code = re.sub(r"(?<=[\w$])(\s+)(?=[\w$])|\s+", lambda m: " " if m.group(1) else "", code)
     if punct:
         code = code.replace(";", "")
         code = re.sub(r",(?=[)\]}>]|$)", "", code)
@@ -231,15 +243,16 @@ def _canon(lines, path, fmt):
     """What a block says once layout is ignored. Indentation counts where the language makes it count."""
     quotes = fmt and bool(JS_LIKE.search(path) or PYTHON.search(path))
     punct = fmt and bool(JS_LIKE.search(path))
+    spaced = bool(WS_SIGNIFICANT.search(path))
     if INDENT_SENSITIVE.search(path):
-        return [(len(l) - len(l.lstrip()), _flat(l, quotes, punct)) for l in lines if l.strip()]
-    return _flat("\n".join(lines), quotes, punct)
+        return [(len(l) - len(l.lstrip()), _flat(l, quotes, punct, spaced)) for l in lines if l.strip()]
+    return _flat("\n".join(lines), quotes, punct, spaced)
 
 
-def _imports_only(lines):
+def _imports_only(lines, path):
     rows = [l for l in lines if l.strip()]
-    return bool(rows) and any(IMPORT.search(l) for l in rows) and \
-        all(IMPORT.search(l) or IMPORT_MEMBER.match(l) for l in rows)
+    hit = (lambda l: IMPORT.search(l) or GO_IMPORT.search(l)) if path.endswith(".go") else IMPORT.search
+    return bool(rows) and any(hit(l) for l in rows) and all(hit(l) or IMPORT_MEMBER.match(l) for l in rows)
 
 
 def _key(line):
@@ -252,7 +265,7 @@ def block_kind(removed, added, path):
         return "whitespace"
     if _canon(removed, path, True) == _canon(added, path, True):
         return "formatting"
-    if _imports_only(removed) and _imports_only(added) and \
+    if _imports_only(removed, path) and _imports_only(added, path) and \
             sorted(_key(l) for l in removed if l.strip()) == sorted(_key(l) for l in added if l.strip()):
         return "reordered"
     return None
@@ -275,19 +288,31 @@ def whitespace_blind_changes(repo, base, head):
 def mark_reindented(f, ws):
     """Mark the changed lines of each real block that only moved in or out a level, by `ws`, the lines a
     whitespace-blind diff still calls changed. They count as whitespace. Where indentation means something,
-    only when the hunk also changes a line opening that level, so a statement quietly moved out of a block
-    stays a change."""
+    only when the hunk also changes a line opening a level the moved line crossed, so a statement quietly
+    moved out of a block stays a change."""
     old, new = ws
     sensitive = INDENT_SENSITIVE.search(f["path"])
+    words = lambda s: " ".join(s.split())
     for h in f["hunks"]:
         changed = [t != " " and (o in old if t == "-" else n in new) for t, o, n, _b in h["lines"]]
-        openers = [_indent(r[3]) for r, c in zip(h["lines"], changed) if c and r[3].rstrip().endswith(":")]
+        openers = {_indent(r[3]) for r, c in zip(h["lines"], changed) if c and r[3].rstrip().endswith(":")}
+        # Where each line's words sit on the other side. -w also ignores a space dropped between words, so a
+        # line has only moved if its words are there too.
+        other = {"-": {}, "+": {}}
+        for t, _o, _n, body in h["lines"]:
+            if t != " ":
+                other["+" if t == "-" else "-"].setdefault(words(body), set()).add(_indent(body))
+
+        def crossed(row):
+            d = _indent(row[3])
+            return any(min(d, d2) <= o < max(d, d2) for d2 in other[row[0]][words(row[3])] for o in openers)
+
         for b in h["blocks"]:
             if b["noise"]:
                 continue
-            moved = [k for k in range(b["start"], b["end"]) if not changed[k]]
-            depths = [_indent(h["lines"][k][3]) for k in moved if h["lines"][k][3].strip()]
-            if moved and (not sensitive or not depths or any(o <= min(depths) for o in openers)):
+            moved = [k for k in range(b["start"], b["end"]) if not changed[k] and words(h["lines"][k][3]) in other[h["lines"][k][0]]]
+            real = [h["lines"][k] for k in moved if h["lines"][k][3].strip()]
+            if moved and (not sensitive or not real or any(crossed(r) for r in real)):
                 b["reindented"] = moved
 
 
@@ -309,7 +334,7 @@ def mark_blocks(f):
                 add = [r[3] for r in rows if r[0] == "+"]
                 b = {"start": start, "end": i, "noise": block_kind(rem, add, f["path"])}
                 h["blocks"].append(b)
-                if b["noise"] is None and bool(rem) != bool(add) and _imports_only(rem or add):
+                if b["noise"] is None and bool(rem) != bool(add) and _imports_only(rem or add, f["path"]):
                     pure.append((b, rem, add))
                 start = None
     # Imports removed in one place and added unchanged in another have only moved. Code that moves
@@ -442,13 +467,13 @@ def read_blobs(repo, specs):
         nl = data.index(b"\n", pos)
         header = data[pos:nl].decode(errors="replace").split()
         pos = nl + 1
-        if len(header) < 3 or header[1] != "blob":
+        if len(header) < 3:
             out[spec] = None
             continue
         size = int(header[2])
         blob = data[pos:pos + size]
         pos += size + 1
-        out[spec] = None if b"\0" in blob[:8000] else blob.decode("utf-8", errors="replace")
+        out[spec] = None if header[1] != "blob" or b"\0" in blob[:8000] else blob.decode("utf-8", errors="replace")
     return out
 
 
@@ -719,6 +744,11 @@ def self_test():
     assert block_kind(["x = 1,"], ["x = 1"], py) is None
     assert block_kind(['sep = ";"'], ['sep = ""'], ts) is None
     assert block_kind(["db.commit()", "notify(req)"], ["notify(req)", "db.commit()"], py) is None
+    assert block_kind(["if not ready:"], ["if notready:"], py) is None
+    assert block_kind(["rm -rf /var/app/tmp"], ["rm -rf /var/app/ tmp"], "clean.sh") is None
+    assert block_kind(["key: value"], ["key:value"], yml) is None
+    assert block_kind(["rm  -rf  tmp"], ["rm -rf tmp"], "clean.sh") == "whitespace"
+    assert block_kind(['    return "forbidden"'], ['    "fmt"'], "x.go") is None
     assert categorise("web/package-lock.json", {}, None)[0] == "lockfile"
     assert categorise("src/routeTree.gen.ts", {}, None)[0] == "generated"
     assert categorise("api/client.ts", {}, "// Code generated by oapi. DO NOT EDIT.\n")[0] == "generated"
@@ -761,6 +791,27 @@ def self_test():
     moved_out["path"] = ts
     mark_reindented(moved_out, (set(), {3}))
     assert moved_out["hunks"][0]["blocks"][0]["reindented"] == [1, 2]
+    # An unrelated opener elsewhere in the hunk does not let a statement leave its block quietly.
+    sig = {"path": py, "hunks": [{"lines": [
+        ["-", 1, None, "def f(a):"], ["+", None, 1, "def f(a, b):"], [" ", 2, 2, "    if a:"],
+        ["-", 3, None, "        return 1"], ["+", None, 3, "    return 1"]]}]}
+    mark_blocks(sig)
+    mark_reindented(sig, ({1}, {1}))
+    assert "reindented" not in sig["hunks"][0]["blocks"][1], sig
+    joined = {"path": ts, "hunks": [{"lines": [["-", 1, None, "  if (typeof x) {"], ["+", None, 1, "if (typeofx) {"]]}]}
+    mark_blocks(joined)
+    mark_reindented(joined, (set(), set()))
+    assert "reindented" not in joined["hunks"][0]["blocks"][0], joined
+    guard = {"path": "x.go", "hunks": [
+        {"lines": [[" ", 1, 1, "func deleteUser() {"], ["-", 2, None, '    return "forbidden"'], [" ", 3, 2, "    drop()"]]},
+        {"lines": [[" ", 9, 8, "func listUsers() {"], ["+", None, 9, '    return "forbidden"'], [" ", 10, 10, "    rows()"]]}]}
+    mark_blocks(guard)
+    assert [h["noise"] for h in guard["hunks"]] == [None, None]
+    gomove = {"path": "x.go", "hunks": [
+        {"lines": [[" ", 1, 1, "import ("], ["-", 2, None, '    "fmt"'], [" ", 3, 2, ")"]]},
+        {"lines": [[" ", 9, 8, "import ("], ["+", None, 9, '    "fmt"'], [" ", 10, 10, ")"]]}]}
+    mark_blocks(gomove)
+    assert [h["noise"] for h in gomove["hunks"]] == ["moved", "moved"]
     quoted = ('diff --git "a/we\\"ird.txt" "b/we\\"ird.txt"\n--- "a/we\\"ird.txt"\n+++ "b/we\\"ird.txt"\n'
               "@@ -1 +1 @@\n-x\n+y\n")
     [qf] = parse_diff(quoted)
@@ -848,9 +899,13 @@ def main():
         print(f"  {cat:15} {v['files']:3} files  +{v['add']} -{v['del']}")
     print(f"  {'formatting':15}       +{s['noise']['add']} -{s['noise']['del']}")
     print(f"reviewable changed lines: {count} ({data['ready']['band']}), batches: {nbatches}")
+    hunkless = sum(1 for f in data["files"] if not f["noise"] and not f["hunks"])
+    if hunkless:
+        print(f"files with no line changes (binary, renamed or mode only): {hunkless}")
     checks = data["ready"]["checks"]
     if checks:
-        print(f"CI: {checks['pass']} passing, {checks['fail']} failing, {checks['pending']} pending")
+        print(f"CI: {checks['pass']} passing, {checks['fail']} failing, {checks['cancel']} cancelled, "
+              f"{checks['pending']} pending" + (", on the pushed head, not this one" if checks.get("stale") else ""))
     if data["ready"]["implChanged"] and not data["ready"]["testsChanged"]:
         print("no test changes")
     if data["tells"]:
