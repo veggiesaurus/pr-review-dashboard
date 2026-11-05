@@ -1,11 +1,15 @@
 {
   "name": "pr-review-guide",
-  "description": "Builds a section-by-section self-review page for a pull request, and acts on the notes you leave on it",
+  "description": "Builds a section-by-section self-review page for a pull request or a stack of them, and acts on the notes you leave on it",
   "version": "0.1.0",
   "author": {
     "name": "Angus Comrie"
   },
   "repository": "https://github.com/veggiesaurus/pr-review-guide",
   "license": "MIT",
-  "keywords": ["code-review", "pull-request", "self-review"]
+  "keywords": [
+    "code-review",
+    "pull-request",
+    "self-review"
+  ]
 }

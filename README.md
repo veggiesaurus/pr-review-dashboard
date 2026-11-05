@@ -14,10 +14,14 @@ On a Claude Code older than 2.1.275, add the marketplace first with `/plugin mar
 
 Then ask Claude for a review guide of a PR ("build a review guide for #123") or of the current branch.
 
+## Stacks
+
+Ask for a guide of any PR in a stack and you get one page for every layer. It says what each layer does in the stack, and what only shows across it, such as code a later layer rewrites. The layers come from the open PRs' base branches, so stacks made with [gh-stack](https://github.com/github/gh-stack), [Graphite](https://graphite.dev) or by hand all work, with no checkout. That's also why it needs `gh`: it lists the open PRs to find the layers, so each one has to be an open PR in the same repo. Where two open PRs build on the same one, it stops there, so ask from the top PR of the branch you want.
+
 ## Requirements
 
 - A local clone of the repo and `git`.
-- `gh` logged in, to build a guide for a PR by number and show its CI. Without it, the guide works for any branch on any host, compared against `--base` or the remote's default branch.
+- [`gh`](https://cli.github.com) logged in, to build a guide for a PR by number, show its CI and fetch its linked GitHub issues, and for any stack of PRs (below). Without it, the guide works for any branch on any host, compared against `--base` or the remote's default branch.
 - The Artifact tool in Claude Code to publish the page, and its `comments` capability to send notes back to the session. Without it, Claude opens the page from disk instead: notes work the same, and Copy notes takes them back to the session.
 - Python 3.9 or later, standard library only.
 
