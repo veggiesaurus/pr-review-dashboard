@@ -2,14 +2,17 @@
 
 A plan for turning the pr-review-guide skill into a mod: a plugin whose hooks module draws a pane beside the chat in the Claude desktop app's Code tab, puts your notes into the conversation and keeps CI in view. It covers what the mod should do, what it should leave to the app, and how to build it. It was written against the mod API of Claude Code 2.1.318 (early access, so names may move), the skill as it stands in this repo, the current Claude Code docs, Linear's diffs docs and Cognition's Devin Review posts.
 
+It assumes the code is on GitHub and `gh` is installed and logged in, as the skill does now. Linear is optional. When the session can reach it, linked Linear issues are read and shown, and a few things can go to Linear; when it can't, the mod works the same and only the issue text is missing. The guide is always the mod's own, built locally from the diff: Linear never generates it, hosts it or has to be there for it.
+
 ## The short version
 
-Keep the plugin and add a hooks module to it. The Python scripts stay the engine. Four things change.
+Keep the plugin and add a hooks module to it. The Python scripts stay the engine. Five things change.
 
 1. **The guide is a pane beside the chat**, not a browser tab: the ready check, the sections and their diffs, ticks and notes, with the chat usable while you read.
 2. **Notes go into the chat as a turn**, and Claude resolves each one through a tool, so the pane shows what was fixed, answered or declined and offers the rebuild. No comment threads, 4 KB parts, consent prompts or watching session.
 3. **The mod runs the pipeline as code.** It runs `collect.py`, spawns the digest, guide, description and check workers as agent types it registers, with the models and efforts SKILL.md names today, and checks what each hands back. The conversation stays yours.
-4. **CI comes in live**: check status from the session's GitHub connector or `gh`, lint and type errors under their lines, a digest of each failing job tied to the section it breaks, and a `ci` tool Claude calls when you ask why the build is red.
+4. **CI comes in live through `gh`**: check status, lint and type errors under their lines, a digest of each failing job tied to the section it breaks, and a `ci` tool Claude calls when you ask why the build is red.
+5. **Linear when it's there.** Linked Linear issues are read for the description check and shown in the ready check with their state. With no Linear in reach they are listed by key, as now, and nothing else changes.
 
 The HTML page stays, as the version you share with a reviewer.
 
@@ -34,22 +37,23 @@ Both shipped large updates on 5 November 2026.
 
 What that means for the mod:
 
-- **Linear's Guide is for the reviewer, in Linear. This one is for you, before anyone looks**, and does what Linear's doesn't: the description checked claim by claim, flagged lines, the ready check, what is new since the last build, and CI on its lines.
+- **The guide is the mod's own.** Linear's Guide is for the reviewer, in Linear. The mod builds its own from the diff, for you, before anyone looks, and adds what Linear's doesn't: the description checked claim by claim, flagged lines, the ready check, what is new since the last build, and CI on its lines. It never reads or reuses Linear's.
 - **CI is the gap.** Linear shows status only; Devin puts logs in its chat's reach. The mod can do both, inside the conversation that will fix the code.
 - **Worth taking:** a lines-left counter, quoting a line into the chat, counting a note resolved only when its code changed, rebuilds that redo only what changed, a guide before the PR exists, and threads shown in the guide. Each is in the feature set below.
 - **Worth leaving:** a bug finder with severities, and an autofix loop. In the app, `/code-review` and Auto-fix cover those.
 
 ## The feature set
 
-Each release works on its own. The first is the loop the skill already has, moved into the app; the second is CI; the rest widen it.
+Each release works on its own, with `gh` and without Linear. The first is the loop the skill already has, moved into the app; the second is CI; the rest widen it.
 
 ### 0.2: the loop, in the app
 
-- **Build from the chat.** `/guide`, `/guide 123`, `/guide stack`, or asking in words, which reaches a `guide` tool. A branch with no PR yet works too, uncommitted changes included, as Linear's coding sessions show theirs. The pane opens and shows each step as it runs (collecting, 3 digests, writing sections, checking, settling 2 disputes), about two minutes for a 600-line PR, and you can keep talking to Claude meanwhile.
+- **Build from the chat.** `/guide`, `/guide 123`, `/guide stack`, or asking in words, which reaches a `guide` tool. A branch with no PR yet works too, uncommitted changes included, and when its name carries an issue key and Linear is in reach, it is checked against that issue. The pane opens and shows each step as it runs (collecting, 3 digests, writing sections, checking, settling 2 disputes), about two minutes for a 600-line PR, and you can keep talking to Claude meanwhile.
 - **The pane.** A header with the PR, its size band and CI, then four views: Ready, Sections, Notes and CI. A section shows its title, risk note, why and how (their links jump to hunks), then its files and hunks, with formatting hidden unless asked, moves folded and flagged lines marked. Reviewed ticks per file and section, kept across rebuilds by hunk signature as now.
+- **Linked issues.** The issues a PR links, read as `collect.py` reads them now (closing words, Linear's Completes and Implements, issue links, a key in the title or branch name), show in the ready check with their title, state and whether this PR closes them, and the description check reads what they ask. GitHub issues come through `gh`. Linear issues come through Linear when the session has it, with their recent comments, where asks often change. A key Linear doesn't know, or any key with no Linear in reach (a Jira key looks the same), stays listed by key and link, and the description check works from the PR description alone. With Linear in reach and nothing linked, the ready check says so, and Find one asks Claude to look for the issue in Linear.
 - **Notes on lines.** Click a line and type; the note is kept in the session, and across sessions until sent. Its location is `path:R<n>@<sha>` as today plus the line's text, so it finds its line again after a rebuild (Linear keeps an `anchorContent` on its diff drafts for the same reason).
 - **Send to Claude.** Send N notes starts a turn holding them all, drawn in the transcript as one card. Put in prompt puts the same text in the prompt box instead, for adding context first. Claude answers each note through the `notes` tool with fixed, answered or declined and one line, and the note changes in the pane as it does. When the turn ends, a card under it sums up ("4 fixed, 1 answered") with Rebuild and Open guide.
-- **Rebuild.** After a turn that edited files in the PR, the band offers a rebuild. It can take in uncommitted fixes: the mod builds from a commit object made through a temporary index (`GIT_INDEX_FILE`), which leaves the working tree and the index alone, and with `--meta` naming the PR the build history stays under the PR's key. The pane then marks what is new since the last build and keeps the ticks on unchanged cards. A note Claude marked fixed whose lines did not change is flagged rather than closed, as Devin Review counts a finding resolved only when code fixed it.
+- **Rebuild.** After a turn that edited files in the PR, the band offers a rebuild. It can take in uncommitted fixes: the mod builds from a commit object made through a temporary index (`GIT_INDEX_FILE`), which leaves the working tree and the index alone, and `collect.py --pr N --head SHA` keeps the PR's description, links and build history while diffing that commit. The pane then marks what is new since the last build and keeps the ticks on unchanged cards. A note Claude marked fixed whose lines did not change is flagged rather than closed, as Devin Review counts a finding resolved only when code fixed it.
 - **Ask about a part.** Ask, on a section or hunk, or `q` on a line, fills the prompt with a reference ("About §3 Reset tabs after a switch, f9h2: ") and leaves the question to you, as Devin's Quote in chat does. Claude reads that part through the `guide` tool rather than holding the whole guide in context.
 - **Claude can point.** `guide` with `focus` moves the pane to a section, hunk or line, so "where does the token get re-minted?" ends with the pane on it.
 - **The pane follows Claude.** While Claude reads or edits a file in the PR, the pane marks the section it is in, and each Edit row in the transcript names the note or section it touches (a `tool.call` hook to watch, a `ToolUse` hook to draw).
@@ -57,33 +61,35 @@ Each release works on its own. The first is the loop the skill already has, move
 
 ### 0.3: CI
 
-- **Live status.** Check runs and commit statuses for the PR head, refreshed every 20 seconds while any are pending (every 60 after five minutes), and at once when a `check_run` or `check_suite` event reaches the session. A toast when the last one finishes; the band and status line follow.
+- **Live status.** Check runs and commit statuses for the PR head through `gh`, refreshed every 20 seconds while any are pending (every 60 after five minutes), and at once when a `check_run` or `check_suite` event reaches the session. A toast when the last one finishes; the band and status line follow.
 - **On the lines.** Annotations, the lint, type and test errors a check pins to a line, show under that line in the diff, and those outside the diff in the ready check, as the page does now.
 - **Stale CI.** When CI ran on an older head than the build, the ready check says how many commits behind and which sections changed since.
-- **Failure digests.** For a failing check: the failing step, the error lines and any `path:line` they name, tied to the hunks and sections they hit. Parsed rather than summarised, for the common formats (tsc, eslint, ruff, mypy, pytest, jest, go test, cargo), with a one-line Haiku summary only when nothing parses.
-- **Act on it.** Fix this check starts a turn with the digest; Ask puts it in the prompt; Re-run failed jobs asks you first.
+- **Failure digests.** For a failing check: the failing step, the error lines and any `path:line` they name, tied to the hunks and sections they hit, from `gh run view --log-failed` for Actions and the check run's own output otherwise. Parsed rather than summarised, for the common formats (tsc, eslint, ruff, mypy, pytest, jest, go test, cargo), with a one-line Haiku summary only when nothing parses.
+- **Act on it.** Fix this check starts a turn with the digest; Ask puts it in the prompt; Re-run failed jobs (`gh run rerun --failed`) asks you first.
 - **A `ci` tool for Claude**: `status`, `failure` (the digest) and `log` (a tail, filtered and capped), so "why is CI red?" costs a few hundred tokens rather than a raw log.
 - **`/code-review` findings in place.** The mod reads `ReportFindings` on its way to the app's card and pins the same findings to their hunks, as a layer you can hide. One press turns a finding into a note.
 - **Rebuilds that redo only what changed.** After a round of small fixes, the guide worker gets the last guide and the new or changed hunks rather than the whole diff, and the checker reads only the sections they touch. Devin Review 2.0 re-reviews only what changed after a push for the same reason: cost and time.
 
 ### 0.4: threads and finishing
 
-- **Reviewer threads in the pane**: GitHub review threads, Managed Code Review's comments, and Linear diff threads when the PR is in Linear, each on its line with its state.
-- **Address threads** sends the threads you pick to Claude the way notes go, answered through the same tool. Replying and resolving on GitHub or Linear is a separate press, with a confirmation, using the line Claude wrote; the reply carries Linear's `onBehalfOf` block naming Claude, so Linear shows who wrote it.
-- **Fix the description.** The description check's mismatches go to Claude, which drafts a new description and posts it only when you say so: its own GitHub tool call, with the usual permission prompt.
-- **Mark ready** once the ready check is clean, behind a confirmation.
+- **Reviewer threads in the pane**: the PR's review threads through `gh` (GraphQL `reviewThreads`, with their resolved and outdated state), each on its line. That includes Managed Code Review's comments, and comments left in Linear, which Linear syncs to GitHub.
+- **Address threads** sends the threads you pick to Claude the way notes go, answered through the same tool. Replying and resolving is a separate press, through `gh` and with a confirmation, using the line Claude wrote. If your team reviews in Linear, the reply can carry Linear's `onBehalfOf` block naming Claude: GitHub doesn't render it, and Linear shows who wrote it.
+- **File a follow-up.** A note you decide not to fix in this PR becomes an issue that links back to the PR and the line: in Linear, in the linked issue's team, when the session has Linear, and on GitHub through `gh issue create` when it doesn't. Behind a confirmation.
+- **Fix the description.** The description check's mismatches go to Claude, which drafts a new description and posts it with `gh pr edit` only when you say so, through its own Bash call and your permission settings.
+- **Mark ready** (`gh pr ready`) once the ready check is clean, behind a confirmation.
 
 ### 0.5: stacks, sharing, other people's PRs
 
 - **Stacks in the pane**: the layer list with ↑ and ↓, cross-layer links and the stack check, from `stack.py` as now.
 - **Share as page**: `render.py` writes the HTML and the mod publishes it with the Artifact tool, one page per PR as `artifacts.json` keeps it now.
-- **Reviewing someone else's PR**: the same guide, with your notes posted as a GitHub review or as Linear diff drafts and then submitted, when you say.
-- **Risk notes for reviewers in Linear.** Linear shows a risk score that a tool leaves on the PR as a `linear:extension` block in an HTML comment (`riskScore`, level 1 to 4, up to eight explanations of 200 characters, optionally pinned to a sha). The guide's risk notes fit that shape, so your reviewers would see them in Linear's own view; an extension-only comment stays out of Linear's activity feed.
+- **Reviewing someone else's PR**: the same guide, with your notes posted as a GitHub review through `gh` when you say. Linear shows it too, if your team reviews there.
+- **Risk notes for reviewers in Linear.** Linear diffs shows a risk score that a tool leaves on the PR as a `linear:extension` block in an HTML comment, in the description or a comment (`riskScore`, level 1 to 4, up to eight explanations of 200 characters, optionally pinned to a sha). The guide's risk notes fit that shape. It goes through `gh` and needs no Linear access; GitHub doesn't render it, so it is a setting, off unless your team reviews in Linear.
 
 ### Left out on purpose
 
 - **Finding bugs in the guide workers.** The guide describes and groups; findings come from `/code-review` or Managed Code Review, as SKILL.md's common mistakes already says.
 - **Fixing CI unasked.** Auto-fix does that, and two agents acting on one red build is worse than one.
+- **Depending on Linear.** Nothing waits on it, asks for it or breaks without it, and the mod neither reads Linear's Guide nor moves an issue's status, which Linear's GitHub integration already does from the PR's state.
 - **Merging, reviewers and labels**: the app and GitHub have those.
 - **Mobile and VS Code** beyond the band and status line, until the desktop pane is right.
 
@@ -94,11 +100,12 @@ Each release works on its own. The first is the loop the skill already has, move
 The repo is already a plugin. The mod adds a hooks module next to the skill, and nothing moves.
 
 ```
-.claude-plugin/plugin.json    adds "types", and userConfig for models and CI polling
+.claude-plugin/plugin.json    adds "types", and userConfig for models, CI polling and Linear
 hooks/hooks.json              { "modules": ["./register.tsx"] }
 hooks/register.tsx            wiring: session.start, commands, tools, agent types, events
 hooks/pipeline.ts             find the PR, collect, workers, check, settle
-hooks/ci.ts                   sources, polling, events, digests
+hooks/ci.ts                   gh, polling, events, digests
+hooks/linear.ts               finds Linear if the session has it; issues and follow-ups
 hooks/notes.ts                notes, the message Claude reads, resolution
 hooks/pane.tsx                the pane's views
 hooks/diff.tsx                a Client module: draws a hunk, takes clicks and keys
@@ -114,8 +121,8 @@ The skill stays for sessions that load no mods (`claude -p`, older builds, other
 
 Today SKILL.md walks the main conversation through eight steps. In the mod each step is a function, and the conversation hears about them only when something needs a decision.
 
-1. **Find the PR.** `$.session.repo()` gives the root and the origin URL, `git rev-parse` through `$.process.run` the branch, and the GitHub connector or `gh pr view` the PR. It runs at `session.start` and again at each `turn.complete` that could have switched branches, so the band is right before any build.
-2. **Collect.** The mod fetches the PR's fields, check runs, annotations and linked issues itself and hands them to `collect.py` in a new `--meta FILE`, so `collect.py` no longer needs `gh` when the mod drives it; without the flag it calls `gh` as now. Linear and Jira issue text comes from those connectors the same way. `$.process.run` stops at 30 seconds unless given `timeoutMs`, so pass two minutes.
+1. **Find the PR.** `$.session.repo()` gives the root and the origin URL, `git rev-parse` through `$.process.run` the branch, and `gh pr view` the PR. It runs at `session.start` and again at each `turn.complete` that could have switched branches, so the band is right before any build.
+2. **Collect.** `collect.py` runs as it does now, `gh` included, through `$.process.run` with `timeoutMs` at two minutes (the default is 30 seconds). It writes the linked GitHub issues' text to `issue.md` and lists the Linear and Jira keys it found but didn't fetch. When the session has Linear, the mod fetches those (`get_issue` and `list_comments`) and adds them to `issue.md` in the format SKILL.md uses now, before the description check starts; when it doesn't, they stay listed. One new pairing, `--pr N --head SHA`, builds a commit other than the PR's pushed head, for rebuilds with uncommitted fixes.
 3. **Workers.** Five agent types, registered at `session.start` with `$.agent.register` and each hidden from the main model by an `agent.offer` hook: digest (Haiku), guide (Opus, medium), description (Opus, default), check (Opus, medium), and settle (Opus), which takes the main conversation's place as the tie-break on disputes. The mod spawns them as SKILL.md does: the digests in one batch, the guide and description workers together, then the checker, then the apply message to the guide worker through `$.session.send` to its agent id. The models are `userConfig` fields that default to these, for anyone who wants a cheaper build.
 4. **No Bash or Write for workers.** They read with Read and hand their results to a `submit` tool the mod registers: `submit({ kind: "guide", json })` writes `guide.json`, runs `render.py --check` and returns its problems and warnings, the loop the guide prompt already describes. The checker gets `read_at_head(path)` in place of `git show`, limited to the PR's files. So no permission prompt appears mid-build, and nothing a PR description or issue talks a worker into reaches the shell. The tool refuses calls from the main conversation.
 5. **Draw.** A new `render.py WORK --json OUT` writes the payload the page embeds (`dict(data, sections=..., **extras)`), and the pane draws from that. Section assembly, file parts, gaps, moves and the ready check stay in Python, so the pane and the page can't disagree.
@@ -153,22 +160,32 @@ When a build finishes the mod adds one short user-role row with `$.session.appen
 
 | Source | Gives | When |
 | --- | --- | --- |
-| The GitHub connector, through `$.mcp.call` | check runs, commit statuses, failed jobs' logs (`get_job_logs` with `failed_only` and `tail_lines`), a check run's output text, review threads | wherever the session has it; no permission prompt |
-| `gh`, through `$.process.run` | the same, plus annotations (`check-runs/{id}/annotations`), which none of the connector's tools offers | local sessions where `gh` is logged in |
+| `gh`, through `$.process.run` | status (`gh pr checks --json`); annotations (`gh api .../check-runs/{id}/annotations`, as `collect.py` reads them now); failing steps' logs (`gh run view --log-failed`); review threads (`gh api graphql`) | always; it runs as you |
 | `session.receive` | `check_run`, `check_suite` and review events for a PR the session is subscribed to (Auto-fix subscribes; a cloud session subscribes when asked to watch the PR) | pushed; the mod reads them and passes each one on, never consuming it, so Auto-fix still gets them |
 | `$.clock.every` | polling | while checks are pending |
 
-The connector's server name depends on the host (`github` in a cloud session; in the app, whatever name the GitHub connector or local server was given), so the mod lists tools with `$.tool.list()` and takes the server whose tools include `pull_request_read`.
+`gh` is the one GitHub source. The session's GitHub connector isn't needed: `gh` reaches annotations, which none of the connector's tools offers, trims logs to the steps that failed, and is what the app's own PR status already relies on.
 
-Logs, check output, review comments and PR descriptions are other people's text. The digest quotes them as data, and the `ci` tool's answer marks them as such, as the GitHub connector does with its `untrusted_external_data` envelope.
+Logs, check output, review comments, PR descriptions and issues are other people's text. The digest quotes them as data, and the `ci` tool's answer marks them as such.
 
-`$.mcp.call` doesn't ask you first, which suits reading. Everything that writes (a re-run, a reply, resolving a thread, posting a review, marking ready, changing the description) waits for your press and a `$.ui.ask` confirmation, or goes through Claude in the chat, where your usual permission prompts apply.
+`$.process.run` doesn't ask you first, which suits reading. Every `gh` call that writes (a re-run, a reply, resolving a thread, posting a review, marking ready, editing the description, filing an issue) waits for your press and a `$.ui.ask` confirmation, or goes through Claude in the chat, where your usual permission prompts apply. The same holds for writes to Linear.
+
+### Linear
+
+Optional at every step, and never on the way to a guide.
+
+- **Finding it.** The mod lists the session's tools (`$.tool.list()`) and takes the MCP server whose tools include Linear's `get_issue`, since the name depends on the host (`Linear` in a cloud session). No server means no Linear features, and no errors, prompts or empty panels about it. It looks once per session, and again after a call fails.
+- **What it reads**, through `$.mcp.call`, which needs no prompt: each linked issue's title, description, state, team and parent, and its last few comments, for `issue.md` and the ready check; and whether the PR is in Linear diffs (`get_diff` answers for the PR's URL), which turns on Open in Linear (`linear.review/<owner>/<repo>/pull/<n>`) and makes the risk-score setting worth offering.
+- **What it writes**, each behind your press and a confirmation: a follow-up issue from a note (0.4).
+- **What it never does**: generate, read or show Linear's Guide; hold up a build waiting on Linear; or move an issue's status.
+- **Trust.** Issue text and comments are other people's writing. The description checker already reads `issue.md` as claims to check, never as instructions.
+- **Without the connector.** A Linear API key in the mod's settings (`userConfig`, stored as a secret) and `$.http.fetch` to Linear's GraphQL API would make the same reads. Worth adding only if the app's sessions often lack the connector.
 
 ### What Claude gets
 
 Three tools, registered at `session.start` with `isDeferred: false` so they are listed from the first turn, each with a short description that never changes:
 
-- `guide`: `outline` (sections, risk notes, ready check), `section` (its text, files, hunk ids and notes), `hunk` (one hunk's diff), `focus` (moves the pane), `build` (for when you ask in words).
+- `guide`: `outline` (sections, risk notes, ready check, linked issues), `section` (its text, files, hunk ids and notes), `hunk` (one hunk's diff), `focus` (moves the pane), `build` (for when you ask in words).
 - `notes`: `list`, `resolve` (id, outcome, one line), and `add`, for Claude to leave you a note on a line it wants you to look at, marked as Claude's.
 - `ci`: `status`, `failure`, `log`.
 
@@ -176,11 +193,11 @@ They are registered whether or not a PR is active, and say "no guide yet" when t
 
 ### State
 
-- `$.state`, declared in `types/index.d.ts`: the active PR, build progress, the view (tab, section, filters), notes, CI, findings and threads. The pane and band draw from it, and it survives a hot reload.
+- `$.state`, declared in `types/index.d.ts`: the active PR, build progress, the view (tab, section, filters), notes, CI, findings, threads and linked issues. The pane and band draw from it, and it survives a hot reload.
 - `$.store`, kept across sessions: unsent notes and ticks per PR. It holds 4 MiB of JSON in all, so it keeps the last 30 or so PRs.
 - Disk, under `.git/pr-review-guide/`: builds and their history, which can run to megabytes.
 
-### Three sketches
+### Four sketches
 
 Notes going out, and coming back through Claude's tool call:
 
@@ -201,19 +218,28 @@ on('tool.call', { tool: 'mcp__pr-review-guide__notes' }, async ($, e) => {
 })
 ```
 
-CI from the connector, then `gh`:
+CI through `gh`:
 
 ```ts
-async function checkRuns($, pr) {
-  const server = await githubServer($) // the server whose tools include pull_request_read
-  if (server) {
-    const r = await $.mcp.call(server, 'pull_request_read', {
-      method: 'get_check_runs', owner: pr.owner, repo: pr.repo, pullNumber: pr.number,
-    })
-    if (!r.isError) return fromConnector(r.content)
-  }
-  const r = await $.process.run(['gh', 'pr', 'checks', String(pr.number), '--json', 'name,state,bucket,link'], { cwd: pr.root })
-  return r.exitCode === 0 ? fromGh(r.stdout) : null
+async function checks($, pr) {
+  const r = await $.process.run(
+    ['gh', 'pr', 'checks', String(pr.number), '--json', 'name,state,bucket,link,workflow'],
+    { cwd: pr.root },
+  )
+  return r.stdout.trim() ? JSON.parse(r.stdout) : null // read stdout whatever the exit code: see M0
+}
+```
+
+Linear when the session has it, and nothing when it hasn't:
+
+```ts
+async function linearIssue($, key) {
+  const server = await serverWith($, 'get_issue') // the MCP server whose tools include get_issue, if any
+  if (!server) return null // no Linear: the key stays listed, unfetched
+  const r = await $.mcp.call(server, 'get_issue', {
+    id: key, fields: ['title', 'description', 'status', 'url', 'team', 'parentId'],
+  })
+  return r.isError ? null : issueSection(key, r.content) // a Jira key Linear doesn't know ends here too
 }
 ```
 
@@ -234,6 +260,7 @@ on('tool.call', { tool: 'ReportFindings' }, async ($, e, next) => {
 - **What a conversation has been sent stays as sent.** Tool descriptions and system prompt sections answer the same for a whole conversation; new context goes in as a new row at the end.
 - **`$.ui.notify` doesn't reach the desktop app**, which has no terminal for it: use toasts.
 - **`$.process.run` stops at 30 seconds** unless given `timeoutMs` (ten minutes at most), and runs git with the repo's hooks off.
+- **`gh` has to resolve from the app.** A session the desktop app starts may not have your shell's PATH, and Homebrew puts `gh` in `/opt/homebrew/bin`. The mod tries the usual places and takes a path setting.
 - **`$.session.repo()` names only repositories the build treats as its own**: parse `remote` for the owner and name.
 - **Early access.** The declarations say the surface can change between releases. Keep the Python half free of the host, keep the skill working, and put the version the mod was tested on in the README.
 - **Where it runs.** The public docs give the desktop Code tab from 2.1.286, in local sessions; the app doesn't offer plugin installs for cloud sessions or WSL. Build and test on a local session first.
@@ -244,22 +271,23 @@ on('tool.call', { tool: 'ReportFindings' }, async ($, e, next) => {
 
 - a docked pane drawing one section of a build made by today's scripts, its diffs as `Code`, and how wide the app docks it (`bodyColumns`), which decides whether long diffs read well there or the page stays the place for them;
 - a `Client` drawing a 200-line hunk and saying which line was clicked;
-- `$.mcp.call` reaching the GitHub connector from the mod in a local desktop session, and `gh` through `$.process.run`;
+- `gh` through `$.process.run` from a local desktop session: that it resolves on the app's PATH, runs as you, and that `gh pr checks --json` exits 0 while checks fail or are pending, since `collect.py` reads a non-zero exit as no data, which would drop CI exactly when it matters;
+- `$.mcp.call` reaching the Linear connector when it is connected, and the mod staying quiet when it isn't;
 - a pane button whose `$.prompt.submit` starts a turn, drawn as a card by a `UserMessage` hook;
 - a registered Opus worker, hidden from the model, answering through a mod tool, and taking a second message (the apply step) once it has answered.
 
 Whatever fails changes the plan before the rest is built. The likeliest is the `Client`; the fallback is a note per hunk, its line picked from a list.
 
-**M1, the loop (0.2).** The pipeline as code with `--meta` and `--json`, the pane, notes out and back, rebuild, the band and the `guide` and `notes` tools. Done when the fixture repo builds a guide through the mod, `claude plugin test` passes on terminal and desktop, and a real PR goes round once in the app: build, notes, fixes, rebuild.
+**M1, the loop (0.2).** The pipeline as code with `--json` and `--pr N --head SHA`, linked Linear issues when Linear is there, the pane, notes out and back, rebuild, the band and the `guide` and `notes` tools. Done when the fixture repo builds a guide through the mod, `claude plugin test` passes on terminal and desktop, and a real PR goes round once in the app with Linear connected and once without: build, notes, fixes, rebuild.
 
-**M2, CI (0.3).** The sources, polling and events, annotations on lines, digests, the `ci` tool and the `ReportFindings` layer. Done when a PR with a failing lint shows the error under its line and Fix this check clears it in one turn.
+**M2, CI (0.3).** Status, polling and events, annotations on lines, digests, the `ci` tool and the `ReportFindings` layer. Done when a PR with a failing lint shows the error under its line and Fix this check clears it in one turn.
 
 **M3 (0.4) and M4 (0.5)** as listed above, in whichever order your reviewing needs.
 
 ## Testing and the dev loop
 
-- The Python self-tests, `tests/fixture.py` and the page's smoke test stay, with self-tests added for `--meta` and `--json`.
-- `claude plugin test .` runs `*.test.tsx` against the engine. Mount the pane on `terminal` and `desktop` in one loop, press Send, and check the prompt that went out; answer `mcp.call` and `process.run` from the test to stand in for GitHub and the scripts; seed `state.get` with what an older version stored.
+- The Python self-tests, `tests/fixture.py` and the page's smoke test stay, with self-tests added for `--json` and for `--head` with `--pr`.
+- `claude plugin test .` runs `*.test.tsx` against the engine. Mount the pane on `terminal` and `desktop` in one loop, press Send, and check the prompt that went out; answer `process.run` and `mcp.call` from the test to stand in for `gh`, the scripts and Linear; seed `state.get` with what an older version stored. Run the Linear tests both ways, with Linear's tools in the session's list and without, and check that without them nothing waits, asks or mentions Linear.
 - `claude plugin validate .` and `tsc -p .` (the engine lays the types and a `tsconfig.json` beside a mod it loads) can run in CI beside the Python jobs, if `claude plugin test` runs there without a login. Check that first.
 - In the desktop app, put `CLAUDE_CODE_PLUGIN_DIRS` (this repo's path) and `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` in the `env` of `~/.claude/settings.json`, so local sessions load the working copy and reload when you save. The README's install line stays; in the app it is + beside the prompt, Plugins, Add marketplace `veggiesaurus/pr-review-guide`, then Add plugin.
 
@@ -268,7 +296,8 @@ Whatever fails changes the plan before the rest is built. The likeliest is the `
 - **Click a line, or pick one?** A `Client` diff makes the better review, and the M0 spike says whether it can be built now. If not, notes go on hunks with a line picker, and the `Client` comes later.
 - **Who settles disputes?** The plan has a fifth worker do it, so the conversation stays yours, and the pane lists each dispute and how it went so you can flip one. If you would rather the main conversation decide, as SKILL.md has it now, that becomes a turn the mod starts.
 - **Threads on your PRs, or reviewing other people's?** If most of your reviewing happens in Linear on teammates' PRs, the reviewer mode in 0.5 may be worth more than the threads in 0.4.
-- **CI beyond GitHub.** Other CI shows up through check runs and statuses, but logs come only from Actions. Buildkite or CircleCI logs would need a token in `userConfig` and `$.http.fetch`.
+- **Linear without the connector?** If the app's sessions often lack the Linear connector, the API key setting above is the fallback; if they have it, the connector alone is enough.
+- **CI beyond Actions.** Other CI shows up through check runs and statuses, but `gh` reads logs only from Actions. Buildkite or CircleCI logs would need their own tokens.
 
 ## Sources
 
@@ -277,5 +306,5 @@ Read on 6 November 2026.
 - The mod API: the declarations Claude Code 2.1.318 writes beside a mod it loads (`.claude-plugin/types/claude-code/index.d.ts`), and the plugin-authoring reference that ships with it.
 - Claude Code: [desktop](https://code.claude.com/docs/en/desktop), [Code Review](https://code.claude.com/docs/en/code-review), [local review](https://code.claude.com/docs/en/code-review-local), [ultrareview](https://code.claude.com/docs/en/ultrareview), [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web), [mods overview](https://code.claude.com/docs/en/plugins/mods/overview), [mods reference](https://code.claude.com/docs/en/plugins/mods/reference).
 - Devin Review: [Devin Review 2.0](https://devin.ai/blog/devin-review-2) (5 November 2026), [the launch post](https://cognition.com/blog/devin-review) (21 January 2026), [the docs](https://docs.devin.ai/work-with-devin/devin-review), [release notes](https://docs.devin.ai/release-notes/overview).
-- Linear: [Reviews (diffs)](https://linear.app/docs/diffs), [the changelog](https://linear.app/changelog), [stacked pull requests](https://linear.app/changelog/2026-10-08-stacked-pull-requests), [mobile diffs](https://linear.app/changelog/2026-11-04-mobile-diffs), and Linear's MCP server's diff tools.
-- The GitHub connector's tools as this session lists them: `pull_request_read`, `get_check_run`, `get_job_logs`, `actions_list`, `actions_get`, `actions_run_trigger`, `update_pull_request`.
+- Linear: [Reviews (diffs)](https://linear.app/docs/diffs), [the changelog](https://linear.app/changelog), [stacked pull requests](https://linear.app/changelog/2026-10-08-stacked-pull-requests), [mobile diffs](https://linear.app/changelog/2026-11-04-mobile-diffs), and Linear's MCP server's `get_issue`, `list_comments` and diff tools.
+- `gh` commands the plan relies on: `pr view`, `pr checks`, `api` (check-run annotations, GraphQL review threads), `run view --log-failed`, `run rerun --failed`, `pr ready`, `pr edit`, `issue create`.
