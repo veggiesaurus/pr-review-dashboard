@@ -113,6 +113,8 @@
 }
 
 * { box-sizing: border-box; }
+/* the attribute wins over a class's display, so a hidden section or card stays hidden */
+[hidden] { display: none !important; }
 body { background: var(--background); color: var(--foreground); font: 14px/1.55 var(--font-sans); padding-inline: 16px; padding-block: 0 4rem; }
 .wrap { max-width: 112rem; margin-inline: auto; }
 a { color: var(--primary); }
