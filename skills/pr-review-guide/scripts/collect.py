@@ -375,13 +375,16 @@ def _flat(text, quotes, punct, spaced=False):
 
     code = STRING.sub(keep, text)
     if punct:
-        # Before the gaps are settled, so `a;` then `b` on the next line reads like `a` then `b`.
-        code = code.replace(";", "")
+        # A semicolon ending a line goes before the gaps are settled, so `a;` then `b` reads like `a` then `b`.
+        code = re.sub(r";[ \t]*(?=\n|$)", "", code)
     if spaced:
         code = " ".join(code.split())
     else:
-        code = re.sub(r"(?<=[\w$])(\s+)(?=[\w$])|\s+", lambda m: " " if m.group(1) else "", code)
+        # With punct, a line break between two words stays one, so `return;` then `foo()` is not `return foo()`.
+        code = re.sub(r"(?<=[\w$])(\s+)(?=[\w$])|\s+",
+                      lambda m: ("\n" if punct and "\n" in m.group(1) else " ") if m.group(1) else "", code)
     if punct:
+        code = code.replace(";", "")
         code = re.sub(r",(?=[)\]}>]|$)", "", code)
         code = re.sub(r"\((\w+)\)=>", r"\1=>", code)
     return code, tuple(strings)
@@ -1073,6 +1076,9 @@ def self_test():
     assert block_kind(["x = 'a';"], ['x = "a"'], ts) == "formatting"
     assert block_kind(["const f = (x) => x"], ["const f = x => x"], ts) == "formatting"
     assert block_kind(["a = 1;", "b = 2;"], ["a = 1", "b = 2"], ts) == "formatting"
+    assert block_kind(["return;", "foo()"], ["return foo()"], ts) is None
+    assert block_kind(["return; foo()"], ["return foo()"], ts) is None
+    assert block_kind(["a; b"], ["a b"], ts) is None
     assert block_kind(["x=1"], ["x = 1"], py) == "whitespace"
     assert block_kind(["x = 'a'"], ['x = "a"'], py) == "formatting"
     assert block_kind(["import b", "import a"], ["import a", "import b"], ts) == "reordered"
