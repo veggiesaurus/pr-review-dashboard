@@ -226,7 +226,7 @@ async function checks($, pr) {
     ['gh', 'pr', 'checks', String(pr.number), '--json', 'name,state,bucket,link,workflow'],
     { cwd: pr.root },
   )
-  return r.stdout.trim() ? JSON.parse(r.stdout) : null // read stdout whatever the exit code: see M0
+  return r.exitCode === 0 ? JSON.parse(r.stdout) : null // with --json, gh exits 0 even while checks fail or are pending
 }
 ```
 
@@ -271,7 +271,7 @@ on('tool.call', { tool: 'ReportFindings' }, async ($, e, next) => {
 
 - a docked pane drawing one section of a build made by today's scripts, its diffs as `Code`, and how wide the app docks it (`bodyColumns`), which decides whether long diffs read well there or the page stays the place for them;
 - a `Client` drawing a 200-line hunk and saying which line was clicked;
-- `gh` through `$.process.run` from a local desktop session: that it resolves on the app's PATH, runs as you, and that `gh pr checks --json` exits 0 while checks fail or are pending, since `collect.py` reads a non-zero exit as no data, which would drop CI exactly when it matters;
+- `gh` through `$.process.run` from a local desktop session: that it resolves on the app's PATH and runs as you (`gh pr checks --json` needs no check: `gh`'s source writes the JSON and returns before setting the exit codes for failed or pending checks, so it exits 0 either way, and `collect.py` reading a non-zero exit as no data is safe);
 - `$.mcp.call` reaching the Linear connector when it is connected, and the mod staying quiet when it isn't;
 - a pane button whose `$.prompt.submit` starts a turn, drawn as a card by a `UserMessage` hook;
 - a registered Opus worker, hidden from the model, answering through a mod tool, and taking a second message (the apply step) once it has answered.
