@@ -284,6 +284,41 @@ Whatever fails changes the plan before the rest is built. The likeliest is the `
 
 **M3 (0.4) and M4 (0.5)** as listed above, in whichever order your reviewing needs.
 
+## M0 findings
+
+Run on 6 November 2026 with the mod in `spike/prg-spike/`, in a terminal on Claude Code 2.1.319 and in local desktop sessions. The desktop app (4.23118.0) runs its own bundled Claude Code, 2.1.317, not the 2.1.318 the plan was written against. The data is the fixture's build, copied into the mod, and each session wrote what it saw to `.git/prg-spike/<session id>.json`. `claude plugin test` runs 8 tests on terminal and desktop mounts and passes under both versions, but the kit passed two things the app then didn't do (the card and the worker's tool), so it's no stand-in for trying it in the app.
+
+**1. The docked pane** works on both. The title, risk, why and how draw as `Markdown` and the hunks as `Code` with `format: "diff"`. The terminal docks it at 89 of 124 columns. On the desktop `bodyColumns` means nothing: it reported 86, 121, 107 and 57 against viewports of 65, 32, 42 and 98 columns. Each `Code` there is a block as wide as its longest line, with a copy button and no line numbers, and a full-width `Box` around it doesn't stretch it, so a section's hunks come out at different widths. The guide's `[start with /blog](f3)` drew as a link, though the declarations say a link that isn't http, https or file draws as text.
+
+**2. Clicking a line.** `Code` inside a `Client` doesn't draw on the desktop at any size (200, 20 or 5 lines): `ui.fault` with phase `render` and "returned a tree the page cannot draw (malformed or past its bounds)". The terminal draws it, and a click on row 10 came back as line 10. A `Client` that draws one `Text` per line with `wrap: "truncate-end"`, coloured `diffAdded` and `diffRemoved`, works on both: all 200 lines drew on the desktop and a click on row 3 came back as line 3, beside L003. The kit can't raise `ui.fault`, so the fallback is only testable in the app.
+
+**3. gh** works from both. Bare `gh` resolves on the desktop session's PATH and runs as the logged-in account. `gh pr checks 2 --json name,state,bucket,link` exits 0 with 5 checks in 4.5 s in the terminal and 6.7 s on the desktop. One terminal run hung, but its timings say the Mac slept mid-call (a 60 s timeout firing at 594 s), and the next run passed. The mod now closes the child's stdin anyway.
+
+**4. Linear** works when it's there and stays quiet when it isn't. The terminal session has `claude_ai_Linear`, found by its `get_issue`: `list_issues` and then `get_issue` on the key it returned answer in 2 to 3 s, and `ZZZ-99999` comes back `isError` with "Could not find referenced Issue", so a Jira key ends there as planned. The desktop sessions had no Linear connector at all (43 tools), and the mod made no calls and showed nothing.
+
+**5. The notes turn** starts from a pane button on the desktop, and the model reads it as "The prg-spike plugin sent a message: …". The `UserMessage` hook on `origin.kind: "plugin"` draws the card under the kit, but the desktop app ignores it and shows the whole message, with the engine's own line about plugin prompts appended. Not tried in a terminal.
+
+**6. The worker** only partly works.
+
+- `$.agent.register` with `model: "opus"` gives a `prg-spike:worker` on `claude-opus-5-5`, and the `agent.offer` hook kept it out of the model's listing. `$.agent.list()` doesn't say which model an agent runs on; only the spawn result does.
+- In auto mode the spawn is refused, twice: "The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one". A button press isn't a model request, so there's nothing to judge. In ask-permissions mode it raises a permission prompt and runs once allowed.
+- The worker's calls to the mod's own tool never reach the mod: "prg-spike registered the tool answer but no tool.call hook answered this call", and the hook logged no call. Same when spawned from a `$.clock.after` timer. Under the kit the same hook answers a call carrying the worker's `agentId`.
+- `turn.complete` does reach the mod for each of the worker's turns, with its reply as `answer`, and `$.session.send` to its id delivers the second message, which the worker reads as from "the coordinator" and answers in a second turn.
+- A send to a worker that had already finished failed with "is stopped (completed) and could not be resumed: Agent type 'prg-spike:worker' is not offered in this session". Resuming goes through `agent.offer`, so the spike lets its own resume through with a flag around the send. Both later sends landed while the worker was still finishing, so the flag isn't proven for a stopped worker.
+
+What the plan needs to change:
+
+- Workers hand their results back in their final reply, read at `turn.complete`, not through a `submit` tool, until a mod's tool hook runs for its own agents. The mod runs `render.py --check` itself and sends the problems back with `$.session.send`. `read_at_head` goes the same way, so the checker reads with Read and its prompt names the files.
+- A build can't start from a press while the session is in auto mode. Start it from `/guide` or the `guide` tool, so the spawns happen inside a model turn, and check that auto mode judges those. Untested.
+- Clickable lines are a `Client` drawing `Text` rows, not `Code` and not a line picker. Keep `Code` where nothing is clicked, and fall back to it on `ui.fault`.
+- Size nothing from `bodyColumns` on the desktop.
+- The notes message has to read well in full, since the desktop shows all of it.
+- Linear was missing from every desktop session here, so the API key fallback under Open questions matters more than the plan assumed.
+- Test against the app's bundled Claude Code, which lags the CLI. Its binary is under `~/Library/Application Support/Claude/claude-code/<version>/` and runs `claude plugin test` and `claude plugin validate` too.
+- Edits didn't reliably reach an open desktop session; a new session always loaded them. The pane shows a build tag for that reason.
+- With 800 or so MCP tools connected, the laid `claude-code-mcp` types are 1.2 MB and `tsc -p` runs out of memory. Type-check with a tsconfig that leaves them out.
+- In the kit, an `agent.spawn` hook gets the Agent tool's input (`subagent_type`) rather than `AgentSpawnInput`, and can't hand back an `agentId`, so a test finds its worker through `agent.list`.
+
 ## Testing and the dev loop
 
 - The Python self-tests, `tests/fixture.py` and the page's smoke test stay, with self-tests added for `--json` and for `--head` with `--pr`.
