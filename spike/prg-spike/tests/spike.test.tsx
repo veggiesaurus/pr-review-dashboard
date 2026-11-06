@@ -3,6 +3,7 @@ import type { AgentInfo, On, PromptOrigin } from 'claude-code'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const ANSWER = 'mcp__prg-spike__answer'
+const SPAWN = 'mcp__prg-spike__spawn_worker'
 
 const PANE = {
   plugin: 'prg-spike',
@@ -254,60 +255,6 @@ test('Send puts the notes in as a plugin turn, drawn as a compact card', async (
   }
 })
 
-test('the worker is hidden from the model, answers through its tool, and gets a second message', async ($, on) => {
-  // A stand-in can't start an agent (core alone sets agentId), so the worker is found by its listing.
-  const listed: AgentInfo = { id: 'a1', type: 'prg-spike:worker', description: 'prg-spike worker', status: 'running' }
-  const { clock } = standIn(on, { agents: [listed] })
-  const spawned: { subagentType: string; prompt: string }[] = []
-  const sent: { to: unknown; text: string }[] = []
-  on('agent.spawn', (_, e) => {
-    // Under the kit (2.1.319) this arrives as the Agent tool's input, `subagent_type` and all,
-    // not the AgentSpawnInput the declarations give.
-    const type = e.subagentType ?? (e as unknown as { subagent_type?: string }).subagent_type
-    spawned.push({ subagentType: type, prompt: e.prompt })
-    return { model: 'opus' }
-  })
-  on('session.send', (_, e) => {
-    sent.push({ to: e.to, text: e.text })
-    return { isDelivered: true }
-  })
-
-  const offered = await $.agent.offer({
-    agent: 'prg-spike:worker',
-    description: 'Internal to the prg-spike mod; never delegate to it.',
-    source: 'plugin',
-    provider: { plugin: 'prg-spike', tier: 'user' },
-  })
-  expect(offered).toEqual({ isOffered: false })
-
-  const fromMain = await $.tool.call({ tool: ANSWER, round: 1, text: 'sneaky' })
-  expect(fromMain.deny).toMatch(/worker only/)
-  const fromOther = await $.tool.call({ tool: ANSWER, round: 1, text: 'sneaky', agentId: 'a2' })
-  expect(fromOther.deny).toMatch(/worker only/)
-
-  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  await ui.press({ key: 'tab-turns' })
-  await ui.press({ key: 'spawn' })
-  expect(spawned).toEqual([{ subagentType: 'prg-spike:worker', prompt: 'Round 1. The word is "harbour".' }])
-
-  const answered = await $.tool.call({ tool: ANSWER, round: 1, text: 'harbour: a sheltered port', agentId: 'a1' })
-  expect(answered.result).toBe('recorded round 1')
-
-  await $.turn.complete({ agentId: 'a1', answer: 'done', reason: 'answer', durationMs: 5, isAborted: false, turnId: 't1' })
-  await clock.advance(1)
-  expect(sent).toHaveLength(1)
-  expect(JSON.stringify(sent[0]?.to)).toContain('a1')
-  expect(sent[0]?.text).toBe('Round 2. The word is "lantern".')
-
-  await $.tool.call({ tool: ANSWER, round: 2, text: 'lantern: a light you carry', agentId: 'a1' })
-  await $.turn.complete({ agentId: 'a1', answer: 'done', reason: 'answer', durationMs: 5, isAborted: false, turnId: 't2' })
-  await clock.advance(1)
-  expect((await ui.find({ type: 'Text', text: /^answered-2/ }))?.text).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'round 2 by tool: lantern: a light you carry' })).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /^agent.offer refused/ }))?.text).toMatch(/refused it 1 times .* refused: 2$/)
-  await ui.unmount()
-})
-
 // The kit has no way to raise ui.fault, so stepping past a refused variant is checked in the app only.
 test('a Client that stays drawn for a second reports itself, on terminal and desktop', async ($, on) => {
   standIn(on)
@@ -321,19 +268,136 @@ test('a Client that stays drawn for a second reports itself, on terminal and des
   }
 })
 
-test('the spawn_worker tool spawns from the main conversation only', async ($, on) => {
-  standIn(on)
-  const spawned: string[] = []
-  on('agent.spawn', (_, e) => {
-    spawned.push(e.prompt)
-    return { model: 'opus' }
+// A stand-in can't start an agent (core alone sets agentId), so a run claims the worker by its listing.
+const LISTED: AgentInfo = { id: 'a1', type: 'prg-spike:worker', description: 'prg-spike worker', status: 'running' }
+
+test('a run hears every tool its worker calls, answers its tool and sends round 2', async ($, on) => {
+  standIn(on, { agents: [LISTED] })
+  const sent: string[] = []
+  on('agent.spawn', () => ({ model: 'opus' }))
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'README' }))
+  on('session.send', (_, e) => {
+    sent.push(e.text)
+    return { isDelivered: true }
   })
 
-  const fromWorker = await $.tool.call({ tool: 'mcp__prg-spike__spawn_worker', agentId: 'a1' })
-  expect(fromWorker.deny).toMatch(/main conversation/)
-  expect(spawned).toEqual([])
+  expect(
+    await $.agent.offer({
+      agent: 'prg-spike:worker',
+      description: '',
+      source: 'plugin',
+      provider: { plugin: 'prg-spike', tier: 'user' },
+    }),
+  ).toEqual({ isOffered: false })
+  expect((await $.tool.call({ tool: ANSWER, round: 1, text: 'sneaky' })).deny).toMatch(/worker only/)
 
-  const fromMain = await $.tool.call({ tool: 'mcp__prg-spike__spawn_worker' })
-  expect(fromMain.result).toMatch(/^spawned /)
-  expect(spawned).toEqual(['Round 1. The word is "harbour".'])
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'tab-turns' })
+  await ui.press({ key: 'spawn' })
+
+  await $.tool.call({ tool: 'Read', file_path: 'README.md', agentId: 'a1' })
+  const answered = await $.tool.call({ tool: ANSWER, round: 1, text: 'harbour', agentId: 'a1' })
+  expect(answered.result).toBe('recorded')
+  await $.turn.complete({ agentId: 'a1', answer: 'done', reason: 'answer', durationMs: 5, isAborted: false, turnId: 't1' })
+
+  expect(sent).toEqual(['Round 2. The word is "lantern".'])
+  const line = (await ui.find({ type: 'Text', text: /^r1 from button/ }))?.text
+  expect(line).toContain('heard Read×1, answer×1 · answered 1 · turns 1')
+  expect((await ui.find({ type: 'Text', text: /round 2:/ }))?.text).toMatch(/offer let through: delivered/)
+  await ui.unmount()
+})
+
+for (const resume of ['stopped-allow', 'stopped-refuse'] as const) {
+  test(`spawn_worker with ${resume} waits for the worker to stop, then sends round 2`, async ($, on) => {
+    const { clock } = standIn(on, { agents: [LISTED] })
+    on('agent.spawn', () => ({ model: 'opus' }))
+    // Stands for the engine resuming a stopped agent, which asks agent.offer first.
+    on('session.send', async (_, e) => {
+      const offer = await $.agent.offer({
+        agent: 'prg-spike:worker',
+        description: '',
+        source: 'plugin',
+        provider: { plugin: 'prg-spike', tier: 'user' },
+      })
+      return offer.isOffered ? { isDelivered: true } : { isDelivered: false, reason: `not offered: ${e.text}` }
+    })
+
+    expect((await $.tool.call({ tool: SPAWN, resume, agentId: 'a1' })).deny).toMatch(/main conversation/)
+    expect((await $.tool.call({ tool: SPAWN, resume })).result).toMatch(/^r1: spawned/)
+    await $.tool.call({ tool: ANSWER, round: 1, text: 'harbour', agentId: 'a1' })
+    await $.turn.complete({ agentId: 'a1', answer: 'done', reason: 'answer', durationMs: 5, isAborted: false, turnId: 't1' })
+
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'tab-turns' })
+    expect(await ui.find({ type: 'Text', text: /round 2:/ })).toBeUndefined()
+    await clock.advance(20_000)
+    const said = (await ui.find({ type: 'Text', text: /round 2:/ }))?.text
+    expect(said).toMatch(resume === 'stopped-allow' ? /offer let through: delivered/ : /offer refused: not delivered/)
+    await ui.unmount()
+  })
+}
+
+test('the card can come from the matcher or from a check in the hook, and rows can be labelled', async ($, on) => {
+  standIn(on)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  const text = 'prg-spike: 1 review note\n\nn1 src/posts.ts:R4@7176310\nfix it'
+  const row = (origin: PromptOrigin) =>
+    $.ui.mount({ plugin: 'prg-spike', component: 'UserMessage', requestId: 'm1', surface: 'terminal', props: { text, origin, isExpanded: false } })
+  const ours = { kind: 'plugin', name: 'prg-spike' } as const
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'tab-turns' })
+
+  await pane.press({ key: 'card-in-hook' })
+  const inHook = await row(ours)
+  expect((await inHook.find({ type: 'Text', text: /review notes/ }))?.text).toBe('prg-spike · 1 review notes sent to Claude')
+  await inHook.unmount()
+
+  await pane.press({ key: 'card-off' })
+  await pane.press({ key: 'tag-rows' })
+  const typed = await row({ kind: 'composer' })
+  expect((await typed.find({ type: 'Text', text: /saw this UserMessage/ }))?.text).toContain('origin {"kind":"composer"}')
+  expect(await typed.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  await typed.unmount()
+  await pane.unmount()
+})
+
+test('the variant runner tries each Client variant in turn', async ($, on) => {
+  standIn(on)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab-hunk' })
+    await ui.press({ key: 'variants' })
+    for (let i = 0; i < 7; i++) await ui.advance(1000)
+    const rows = await ui.findAll({ type: 'Text', text: /: drew$/ })
+    expect(rows.map(r => r.text)).toEqual([
+      'text: drew',
+      'code-line: drew',
+      'code-language: drew',
+      'code-diff: drew',
+      'code-diff-truncate: drew',
+      'code-in-box: drew',
+      'code-beside-gutter: drew',
+    ])
+    expect(await ui.find({ type: 'Text', text: 'All 7 variants tried.' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('a hunk drawn as a Button per line in the pane names the line pressed, on terminal and desktop', async ($, on) => {
+  standIn(on)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.press({ key: 'tab-hunk' })
+    await ui.press({ key: 'mode-buttons' })
+    await ui.press({ key: 'size-20' })
+    expect(await ui.findAll({ type: 'Button', key: 'l20' })).toHaveLength(1)
+    await ui.press({ key: 'l7' })
+    expect((await ui.find({ type: 'Text', text: /^Last button/ }))?.text).toMatch(/→ line 7 \(buttons/)
+    expect(await ui.find({ type: 'Text', text: /^›/ })).toBeDefined()
+    await ui.unmount()
+  }
 })

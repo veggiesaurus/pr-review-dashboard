@@ -1,34 +1,40 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { Elements, EngineInterface, Register } from 'claude-code'
 
-import type { Answer, Click, GhProbe, Layout, LinearProbe, McpRun, ProcRun, View, Worker } from '../types'
+import type { CardMode, Click, GhProbe, Layout, LinearProbe, McpRun, ProcRun, Resume, VariantResult, View } from '../types'
 import { headerFor, madeUpHunk, sectionFiles, unified } from './data'
 import type { Build, Guide } from './data'
+import { ANSWER, WORKER_PROMPT, registerRuns, runLine, startRun } from './runs'
 
 type Engine = EngineInterface
 
 const PANE = 'prg-spike'
 // Bumped on every edit, so the pane shows which copy of the mod is running.
-const BUILD = 'b6'
-const WORKER = 'prg-spike:worker'
-const ANSWER = 'mcp__prg-spike__answer'
-const SPAWN = 'mcp__prg-spike__spawn_worker'
+const BUILD = 'b10'
 
 const view = atom({ plugin: 'prg-spike', key: 'view' } as const, 'section')
 const section = atom({ plugin: 'prg-spike', key: 'section' } as const, 0)
 const mode = atom({ plugin: 'prg-spike', key: 'mode' } as const, 'code')
 const size = atom({ plugin: 'prg-spike', key: 'size' } as const, 200)
-const offers = atom({ plugin: 'prg-spike', key: 'offers' } as const, 0)
 const layout = atom({ plugin: 'prg-spike', key: 'layout' } as const, null, { shape: 'layout-1' })
-const click = atom({ plugin: 'prg-spike', key: 'click' } as const, null, { shape: 'click-1' })
+const click = atom({ plugin: 'prg-spike', key: 'click' } as const, null, { shape: 'click-2' })
 const drawn = atom({ plugin: 'prg-spike', key: 'drawn' } as const, [], { shape: 'drawn-2' })
 const faults = atom({ plugin: 'prg-spike', key: 'faults' } as const, [], { shape: 'faults-3' })
 const gh = atom({ plugin: 'prg-spike', key: 'gh' } as const, null, { shape: 'gh-1' })
 const linear = atom({ plugin: 'prg-spike', key: 'linear' } as const, null, { shape: 'linear-1' })
 const sent = atom({ plugin: 'prg-spike', key: 'sent' } as const, null, { shape: 'sent-1' })
 
-const IDLE: Worker = { phase: 'idle', agentId: null, model: null, listedAs: null, answers: [], refusedMain: 0, log: [] }
-const worker = atom({ plugin: 'prg-spike', key: 'worker' } as const, IDLE, { shape: 'worker-2' })
+// Declared again here, as in runs.ts: a file reads state only through atoms of its own.
+const runs = atom({ plugin: 'prg-spike', key: 'runs' } as const, [], { shape: 'runs-1' })
+const offers = atom({ plugin: 'prg-spike', key: 'offers' } as const, 0)
+const variants = atom({ plugin: 'prg-spike', key: 'variants' } as const, [], { shape: 'variants-1' })
+const variantAt = atom({ plugin: 'prg-spike', key: 'variantAt' } as const, -1)
+const tagRows = atom({ plugin: 'prg-spike', key: 'tagRows' } as const, false)
+const cardMode = atom({ plugin: 'prg-spike', key: 'cardMode' } as const, 'matcher')
+
+// The Client variants, smallest first, that find which part of the hunk Client a surface refuses.
+const VARIANT_NAMES = ['text', 'code-line', 'code-language', 'code-diff', 'code-diff-truncate', 'code-in-box', 'code-beside-gutter']
+const VARIANT_WAIT_MS = 6000
 
 const HUNK = madeUpHunk()
 const VARIANTS = [
@@ -50,16 +56,6 @@ export const NOTES = [
   'n2 tests/posts.test.ts:R3@7176310',
   'why is this test skipped?',
 ].join('\n')
-
-const WORKER_PROMPT = [
-  'You are a test worker for the prg-spike mod. Each message you get names a round number and a word.',
-  `Call ${ANSWER} once with that round and a text made of the word and one short sentence about it.`,
-  'Then reply with the single word done. Use no other tool.',
-].join('\n')
-
-let resuming = false
-
-const round = (n: number, word: string) => `Round ${n}. The word is "${word}".`
 
 const clip = (text: string, most = 600) => (text.length > most ? `${text.slice(0, most)}…` : text)
 const scrub = (text: string | undefined) =>
@@ -113,7 +109,8 @@ async function writeReport($: Engine): Promise<void> {
       gh: await read($, gh),
       linear: await read($, linear),
       sent: await read($, sent),
-      worker: await read($, worker),
+      runs: await read($, runs),
+      variants: await read($, variants),
       offers: await read($, offers),
     }
     await $.fs.write(`${folder}/${await $.session.id()}.json`, JSON.stringify(report, null, 2))
@@ -201,65 +198,34 @@ async function sendNotes($: Engine): Promise<void> {
   await writeReport($)
 }
 
-async function isWorker($: Engine, agentId: string | undefined): Promise<boolean> {
-  if (agentId === undefined) return false
-  if ((await read($, worker)).agentId === agentId) return true
-  return (await $.agent.list()).some(agent => agent.id === agentId && (agent.type === WORKER || agent.type === 'worker'))
+function parseResume(value: unknown): Resume {
+  return value === 'stopped-allow' || value === 'stopped-refuse' ? value : 'live'
 }
 
-const note = (w: Worker, line: string): Worker => ({ ...w, log: [...w.log, line].slice(-30) })
-
-async function spawnWorker($: Engine, via: string): Promise<Worker> {
-  await update($, worker, w => note({ ...IDLE, refusedMain: w.refusedMain, log: w.log }, `— spawning from ${via}`))
-  const ask = () => $.agent.spawn({ subagentType: WORKER, prompt: round(1, 'harbour'), description: 'prg-spike worker' })
-  let spawned = await ask()
-  if (spawned.deny !== undefined && /no verdict/.test(spawned.deny)) {
-    await update($, worker, w => note(w, `spawn denied once, trying again: ${clip(spawned.deny ?? '', 120)}`))
-    spawned = await ask()
-  }
-  if (spawned.deny !== undefined) {
-    await update($, worker, w => note({ ...w, phase: 'failed' }, `spawn denied: ${spawned.deny}`))
-    await writeReport($)
-    return read($, worker)
-  }
-  const listed = (await $.agent.list()).find(agent => agent.id === spawned.agentId)
-  await update($, worker, w =>
-    note(
-      {
-        ...w,
-        phase: w.phase === 'idle' ? 'spawned' : w.phase,
-        agentId: spawned.agentId ?? null,
-        model: spawned.model,
-        listedAs: listed ? `${listed.type} (${listed.status})` : null,
-      },
-      `spawned ${spawned.agentId ?? '?'} on ${spawned.model}; listed as ${listed?.type ?? '?'}`,
-    ),
-  )
-  await writeReport($)
-  return read($, worker)
+// Records how a variant went on a surface and moves the runner on to the next one.
+async function settle($: Engine, surface: string, variant: string, result: VariantResult['result'], reason?: string) {
+  const at = await read($, variantAt)
+  if (VARIANT_NAMES[at] !== variant) return
+  await update($, variants, list => [...list, { surface, variant, result, ...(reason === undefined ? {} : { reason }) }])
+  await update($, variantAt, n => n + 1)
+  awaitVariant($, surface, at + 1)
+  void writeReport($)
 }
 
-async function sendRoundTwo($: Engine, agentId: string): Promise<void> {
-  await update($, worker, w => note({ ...w, phase: 'sent-2' }, 'sending round 2'))
-  try {
-    resuming = true
-    const sentTo = await $.session.send({ to: { agentId }, text: round(2, 'lantern') }).finally(() => {
-      resuming = false
-    })
-    await update($, worker, w =>
-      sentTo.isDelivered
-        ? note(w, 'round 2 delivered')
-        : note({ ...w, phase: 'failed' }, `round 2 not delivered: ${sentTo.reason}`),
-    )
-  } catch (error) {
-    await update($, worker, w => note({ ...w, phase: 'failed' }, `round 2 send threw: ${String(error)}`))
-  }
-  await writeReport($)
+function awaitVariant($: Engine, surface: string, at: number) {
+  const variant = VARIANT_NAMES[at]
+  if (variant === undefined) return
+  $.clock.after(VARIANT_WAIT_MS, () => void settle($, surface, variant, 'no word'))
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'prg-spike', description: 'Open the prg-spike pane' })
+    await $.command.register({
+      name: 'prg-spike-spawn',
+      description: 'Spawn the prg-spike worker from a typed command',
+      argumentHint: '[live|stopped-allow|stopped-refuse]',
+    })
     await $.tool.register({
       name: 'answer',
       description: "Only for the prg-spike worker: hands back one round's answer. Never call it from the main conversation.",
@@ -273,83 +239,60 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'spawn_worker',
       description: 'Starts the prg-spike test worker. Call it only when the person asks you to spawn the prg-spike worker.',
-      inputSchema: { type: 'object', properties: {} },
+      inputSchema: {
+        type: 'object',
+        properties: { resume: { type: 'string', enum: ['live', 'stopped-allow', 'stopped-refuse'] } },
+      },
       isDeferred: false,
     })
     await $.agent.register({
       name: 'worker',
       description: 'Internal to the prg-spike mod; never delegate to it.',
       prompt: WORKER_PROMPT,
-      tools: [ANSWER],
+      tools: [ANSWER, 'Read'],
       model: 'opus',
       omitClaudeMd: true,
     })
     const started = await next(e)
     void $.ui.open({ id: PANE, title: 'prg-spike' })
     void probe($)
+    // The worker runs change state from hooks of their own, so the report is rewritten on a timer.
+    $.clock.every(5000, () => void writeReport($))
     return started
   })
 
   // Spawning inside the model's own tool call, to see whether auto mode judges a spawn made from a turn.
-  on('tool.call', { tool: SPAWN }, async ($, e) => {
+  on('tool.call', { tool: 'mcp__prg-spike__spawn_worker' }, async ($, e) => {
     if (e.agentId !== undefined) return { deny: 'prg-spike: spawn_worker is for the main conversation.' }
-    const w = await spawnWorker($, 'the spawn_worker tool')
-    return { result: w.phase === 'failed' ? `not spawned: ${w.log.at(-1) ?? ''}` : `spawned ${w.agentId ?? '?'} on ${w.model ?? '?'}` }
+    const resume = parseResume((e as unknown as { resume?: unknown }).resume)
+    const run = await startRun($, 'tool', resume)
+    return { result: run.spawnDeny === null ? `${run.id}: spawned ${run.agentId ?? '?'} on ${run.model ?? '?'}` : `${run.id}: refused, ${run.spawnDeny}` }
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'prg-spike: spawn_worker failed.' }))
+
+  on('command.run', { command: 'prg-spike-spawn' }, async ($, e) => {
+    const run = await startRun($, 'command', parseResume(e.args.trim()))
+    return { text: run.spawnDeny === null ? `${run.id}: spawned ${run.agentId ?? '?'}` : `${run.id}: refused, ${run.spawnDeny}` }
+  })
+
+  registerRuns(on)
 
   on('command.run', { command: 'prg-spike' }, async $ => {
     const opened = await $.ui.open({ id: PANE, title: 'prg-spike' })
     return { text: opened.isPlaced ? 'prg-spike pane opened.' : `prg-spike pane not placed: ${opened.reason}` }
   })
 
-  // Resuming a finished agent asks agent.offer too, so the mod lets its own resume through.
-  on('agent.offer', { agent: WORKER }, async $ => {
-    await update($, offers, n => n + 1)
-    return { isOffered: resuming }
-  }).catch(() => ({ isOffered: false }))
-
-  on('tool.call', { tool: ANSWER }, async ($, e) => {
-    await update($, worker, w => note(w, `answer tool.call heard, agentId ${e.agentId ?? 'main'}`))
-    if (!(await isWorker($, e.agentId))) {
-      await update($, worker, w => ({ ...w, refusedMain: w.refusedMain + 1 }))
-      return { deny: 'prg-spike: this tool is for the spike worker only.' }
-    }
-    const input = e as unknown as { round?: unknown; text?: unknown }
-    const answer: Answer = { round: Number(input.round) || 0, text: clip(String(input.text ?? ''), 300), via: 'tool' }
-    await update($, worker, w => note({ ...w, answers: [...w.answers, answer] }, `answer tool, round ${answer.round}, from ${e.agentId}`))
-    void writeReport($)
-    return { result: `recorded round ${answer.round}` }
-  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'prg-spike: the answer tool failed.' }))
-
-  on('turn.complete', async ($, e, next) => {
-    if (e.agentId !== undefined) {
-      const type = (await $.agent.list()).find(agent => agent.id === e.agentId)?.type ?? '?'
-      await update($, worker, w => note(w, `turn.complete heard for ${e.agentId} (${type}, ${e.reason})`))
-    }
-    if (!(await isWorker($, e.agentId))) return next(e)
-    const before = await read($, worker)
-    const turn: Answer = { round: before.phase === 'sent-2' ? 2 : 1, text: clip(e.answer, 300), via: 'turn' }
-    await update($, worker, w =>
-      note(
-        { ...w, phase: w.phase === 'sent-2' ? 'answered-2' : 'answered-1', answers: [...w.answers, turn] },
-        `turn complete (${e.reason}) in ${e.agentId}`,
-      ),
-    )
-    if (before.phase === 'spawned' && e.agentId !== undefined && (before.agentId === null || e.agentId === before.agentId)) void sendRoundTwo($, e.agentId)
-    else void writeReport($)
-    return next(e)
-  })
-
   on('ui.message', async ($, e, next) => {
     const data = (e.data ?? {}) as Record<string, unknown>
-    if (data.kind === 'drawn') {
+    if (data.kind === 'drawn' && e.element.startsWith('v-')) {
+      await settle($, e.surface, e.element.slice(2), 'drew')
+    } else if (data.kind === 'drawn') {
       await update($, drawn, list => (list.includes(e.element) ? list : [...list, e.element]))
       void writeReport($)
     }
     if (data.kind === 'click' && typeof data.y === 'number') {
       const got: Click = {
         surface: e.surface,
-        mode: data.mode === 'text' ? 'text' : 'code',
+        mode: data.mode === 'text' ? 'text' : data.mode === 'buttons' ? 'buttons' : 'code',
         via: data.via === 'key' ? 'key' : 'pointer',
         x: Number(data.x) || 0,
         y: data.y,
@@ -365,6 +308,10 @@ export const register: Register = on => {
   })
 
   on('ui.fault', async ($, e, next) => {
+    if (e.element.startsWith('v-')) {
+      await settle($, e.surface, e.element.slice(2), 'refused', clip(String(e.reason), 200))
+      return next(e)
+    }
     const failed = new Set([...(await read($, faults)).map(fault => fault.element), e.element])
     const shown = `hunk-${await read($, mode)}-${await read($, size)}`
     const untried = VARIANTS.find(variant => !failed.has(`hunk-${variant.mode}-${variant.size}`))
@@ -379,27 +326,49 @@ export const register: Register = on => {
     return next(e)
   })
 
+  const card = ({ Box, Text }: Pick<Elements['terminal'], 'Box' | 'Text'>, text: string) => {
+    const notes = [...text.matchAll(/^(n\d+) (\S+)$/gm)]
+    return (
+      <Box borderStyle="round" flexDirection="column" paddingX={1}>
+        <Text bold>
+          prg-spike · {notes.length} review notes sent to Claude
+        </Text>
+        {notes.map(match => (
+          <Text dimColor>
+            {match[1]} {match[2]}
+          </Text>
+        ))}
+      </Box>
+    )
+  }
+
   on(
     'ui.render',
     { component: 'UserMessage', props: { origin: { kind: 'plugin', name: 'prg-spike' } } },
     async ($, e, next) => {
-      if (e.props.isExpanded) return next(e)
-      const { Box, Text } = $.ui.resolve(e)
-      const notes = [...e.props.text.matchAll(/^(n\d+) (\S+)$/gm)]
-      return (
-        <Box borderStyle="round" flexDirection="column" paddingX={1}>
-          <Text bold>
-            prg-spike · {notes.length} review notes sent to Claude
-          </Text>
-          {notes.map(match => (
-            <Text dimColor>
-              {match[1]} {match[2]}
-            </Text>
-          ))}
-        </Box>
-      )
+      if (e.props.isExpanded || (await read($, cardMode)) !== 'matcher') return next(e)
+      return card($.ui.resolve(e), e.props.text)
     },
   )
+
+  // With tagging on, every user row says the origin the engine gave it, so a row that never says so was never raised.
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    if (e.props.isExpanded) return next(e)
+    const tag = await read($, tagRows)
+    const origin = e.props.origin
+    const isOurs = origin.kind === 'plugin' && origin.name === 'prg-spike'
+    const inHook = isOurs && (await read($, cardMode)) === 'in-hook'
+    if (!tag && !inHook) return next(e)
+    const body = inHook ? card($.ui.resolve(e), e.props.text) : await next(e)
+    if (!tag) return body
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>[prg-spike {BUILD} saw this UserMessage, origin {JSON.stringify(origin)}]</Text>
+        {body}
+      </Box>
+    )
+  })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
@@ -434,12 +403,12 @@ export const register: Register = on => {
     const header = (
       <Box flexDirection="column">
         <Text dimColor>
-          {e.surface} · Claude Code {version.version} · body {e.props.bodyColumns} × {e.props.scroll.bodyRows} ·{' '}
+          prg-spike {BUILD} · {e.surface} · Claude Code {version.version} · body {e.props.bodyColumns} × {e.props.scroll.bodyRows} ·{' '}
           {e.props.placement}
           {e.viewport ? ` · viewport ${e.viewport.columns} × ${e.viewport.rows}` : ''}
         </Text>
         <Text dimColor wrap="truncate-start">
-          prg-spike {BUILD} from {$.plugin.root}
+          from {$.plugin.root}
         </Text>
         <Box flexDirection="row" gap={1}>
           {tab('section', 'Section', '1')}
@@ -499,7 +468,49 @@ export const register: Register = on => {
       }
       const last = await read($, click)
       const failed = await read($, faults)
-      const pick = (to: 'code' | 'text') => async () => {
+      const at = await read($, variantAt)
+      const tried = (await read($, variants)).filter(result => result.surface === e.surface)
+      const running = VARIANT_NAMES[at]
+      const runVariants = async () => {
+        await update($, layout, () => here)
+        await update($, variants, list => list.filter(result => result.surface !== e.surface))
+        await update($, variantAt, () => 0)
+        awaitVariant($, e.surface, 0)
+      }
+      const variantRows = tried.map(result => (
+        <Text color={result.result === 'drew' ? undefined : 'error'}>
+          {result.variant}: {result.result}
+          {result.reason ? ` (${result.reason})` : ''}
+        </Text>
+      ))
+      const variantClient =
+        running === undefined ? (
+          at > 0 ? <Text dimColor>All {VARIANT_NAMES.length} variants tried.</Text> : null
+        ) : Client ? (
+          <Box flexDirection="column">
+            <Text dimColor>Trying {running}…</Text>
+            <Client key={`v-${running}`} module="./variant.tsx" props={{ variant: running }} />
+          </Box>
+        ) : (
+          <Text dimColor>This surface draws no Client.</Text>
+        )
+      // A line pressed as a plain Button in the pane itself, with no Client in between.
+      const pressLine = (line: number, text: string) => async () => {
+        await update($, layout, () => here)
+        await update($, click, (): Click => ({
+          surface: e.surface,
+          mode: 'buttons',
+          via: 'button',
+          x: 0,
+          y: line,
+          line,
+          text: clip(text, 200),
+          columns: e.props.bodyColumns,
+          rows: lines.length,
+        }))
+        void writeReport($)
+      }
+      const pick = (to: 'code' | 'text' | 'buttons') => async () => {
         await update($, layout, () => here)
         await update($, mode, () => to)
       }
@@ -526,6 +537,12 @@ export const register: Register = on => {
               variant={shownMode === 'text' ? 'primary' : 'secondary'}
               onPress={pick('text')}
             />
+            <Button
+              key="mode-buttons"
+              label="A Button per line, no Client"
+              variant={shownMode === 'buttons' ? 'primary' : 'secondary'}
+              onPress={pick('buttons')}
+            />
             {[200, 20, 5].map(n => (
               <Button
                 key={`size-${n}`}
@@ -541,13 +558,36 @@ export const register: Register = on => {
               {last.text}
             </Text>
           ) : null}
+          <Text bold>Client variants</Text>
+          <Button key="variants" label="Run the Client variants" hotkey="v" onPress={runVariants} />
+          {variantRows}
+          {variantClient}
+          <Text bold>Clicking a line</Text>
           <Text dimColor>Drew: {(await read($, drawn)).join(', ') || 'none yet'}</Text>
           {failed.map(fault => (
             <Text color="error">
               Client {fault.element} failed on {fault.surface} ({fault.phase}): {fault.reason}
             </Text>
           ))}
-          {Client ? (
+          {shownMode === 'buttons' ? (
+            <Box flexDirection="column">
+              <Text dimColor>{headerFor(lines)}</Text>
+              {lines.map(([op, text], index) => (
+                // The marker sits outside the Button too, since the desktop drops colour inside one.
+                <Box flexDirection="row">
+                  <Text mono color={op === '+' ? 'diffAdded' : op === '-' ? 'diffRemoved' : undefined}>
+                    {last?.mode === 'buttons' && last.line === index + 1 ? '›' : ' '}
+                    {op === ' ' ? ' ' : op}
+                  </Text>
+                  <Button key={`l${index + 1}`} plain onPress={pressLine(index + 1, text)}>
+                    <Text mono color={op === '+' ? 'diffAdded' : op === '-' ? 'diffRemoved' : undefined} wrap="truncate-end">
+                      {text}
+                    </Text>
+                  </Button>
+                </Box>
+              ))}
+            </Box>
+          ) : Client ? (
             <Client
               key={element}
               module="./hunk.tsx"
@@ -630,43 +670,68 @@ export const register: Register = on => {
     }
 
     const s = await read($, sent)
-    const w = await read($, worker)
+    const list = await read($, runs)
     const offered = await read($, offers)
+    const tagging = await read($, tagRows)
+    const shownCard = await read($, cardMode)
     const press = (fn: () => Promise<void>) => async () => {
       await update($, layout, () => here)
       await fn()
     }
+    const cardButton = (to: CardMode, label: string) => (
+      <Button
+        key={`card-${to}`}
+        label={label}
+        variant={shownCard === to ? 'primary' : 'secondary'}
+        onPress={press(async () => void (await update($, cardMode, () => to)))}
+      />
+    )
+    const fromButton = async () => void (await startRun($, 'button', 'live'))
     return (
       <Box flexDirection="column" gap={1}>
         {header}
         <Text bold>Notes into the chat</Text>
-        <Button key="send-notes" label="Send 2 notes to Claude" hotkey="s" onPress={press(() => sendNotes($))} />
-        <Text dimColor>{s === null ? 'Not sent yet.' : `prompt.submit from ${s.surface}: ${s.result}`}</Text>
-        <Text bold>Hidden worker</Text>
         <Box flexDirection="row" gap={1}>
-          <Button key="spawn" label="Spawn the worker" hotkey="w" onPress={press(async () => void (await spawnWorker($, 'a button')))} />
+          <Button key="send-notes" label="Send 2 notes to Claude" hotkey="s" onPress={press(() => sendNotes($))} />
+          <Button
+            key="tag-rows"
+            label={`Label user rows: ${tagging ? 'on' : 'off'}`}
+            onPress={press(async () => void (await update($, tagRows, isOn => !isOn)))}
+          />
+        </Box>
+        <Box flexDirection="row" gap={1}>
+          <Text dimColor>Card:</Text>
+          {cardButton('matcher', 'by matcher')}
+          {cardButton('in-hook', 'by a check in the hook')}
+          {cardButton('off', 'off')}
+        </Box>
+        <Text dimColor>{s === null ? 'Not sent yet.' : `prompt.submit from ${s.surface}: ${s.result}`}</Text>
+        <Text bold>Worker runs</Text>
+        <Text dimColor>
+          Also: ask Claude to call spawn_worker (with resume live, stopped-allow or stopped-refuse), or type /prg-spike-spawn.
+        </Text>
+        <Box flexDirection="row" gap={1}>
+          <Button key="spawn" label="Spawn from this button" hotkey="w" onPress={press(fromButton)} />
           <Button
             key="spawn-timer"
             label="Spawn from a timer"
             hotkey="t"
             onPress={press(async () => {
-              $.clock.after(0, () => void spawnWorker($, 'a timer'))
+              $.clock.after(0, () => void startRun($, 'timer', 'live'))
             })}
           />
         </Box>
-        <Text>
-          {w.phase} · agent {w.agentId ?? '–'} · model {w.model ?? '–'} · listed as {w.listedAs ?? '–'}
-        </Text>
-        <Text dimColor>
-          agent.offer refused it {offered} times · calls to answer from outside the worker refused: {w.refusedMain}
-        </Text>
-        {w.answers.map(answer => (
-          <Text>
-            round {answer.round} by {answer.via}: {answer.text}
-          </Text>
-        ))}
-        {w.log.map(line => (
-          <Text dimColor>{line}</Text>
+        <Text dimColor>agent.offer asked {offered} times</Text>
+        {list.map(run => (
+          <Box flexDirection="column">
+            <Text>{runLine(run)}</Text>
+            {run.sends.map(line => (
+              <Text dimColor>  round 2: {line}</Text>
+            ))}
+            {run.log.map(line => (
+              <Text dimColor>  {line}</Text>
+            ))}
+          </Box>
         ))}
       </Box>
     )

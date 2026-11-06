@@ -1,6 +1,6 @@
 export type View = 'section' | 'hunk' | 'probes' | 'turns'
 
-export type HunkMode = 'code' | 'text'
+export type HunkMode = 'code' | 'text' | 'buttons'
 
 export type Layout = {
   surface: string
@@ -15,7 +15,7 @@ export type Layout = {
 export type Click = {
   surface: string
   mode: HunkMode
-  via: 'pointer' | 'key'
+  via: 'pointer' | 'key' | 'button'
   x: number
   y: number
   line: number | null
@@ -59,19 +59,30 @@ export type LinearProbe = {
 
 export type Sent = { result: string; surface: string }
 
-export type WorkerPhase = 'idle' | 'spawned' | 'answered-1' | 'sent-2' | 'answered-2' | 'failed'
+export type RunSource = 'tool' | 'button' | 'timer' | 'command'
 
-export type Answer = { round: number; text: string; via: 'tool' | 'turn' }
+// live: round 2 goes as the first turn ends. stopped-*: it goes once the worker has stopped,
+// with the mod's agent.offer hook letting the resume through or refusing it.
+export type Resume = 'live' | 'stopped-allow' | 'stopped-refuse'
 
-export type Worker = {
-  phase: WorkerPhase
+export type Run = {
+  id: string
+  source: RunSource
+  resume: Resume
+  permissionMode: string | null
   agentId: string | null
   model: string | null
-  listedAs: string | null
-  answers: Answer[]
-  refusedMain: number
+  spawnDeny: string | null
+  seen: Record<string, number>
+  answered: number
+  turns: number
+  sends: string[]
   log: string[]
 }
+
+export type VariantResult = { surface: string; variant: string; result: 'drew' | 'refused' | 'no word'; reason?: string }
+
+export type CardMode = 'matcher' | 'in-hook' | 'off'
 
 declare module 'claude-code' {
   interface PluginState {
@@ -88,7 +99,11 @@ declare module 'claude-code' {
       gh: Shaped<GhProbe | null>
       linear: Shaped<LinearProbe | null>
       sent: Shaped<Sent | null>
-      worker: Shaped<Worker>
+      runs: Shaped<Run[]>
+      variants: Shaped<VariantResult[]>
+      variantAt: number
+      tagRows: boolean
+      cardMode: CardMode
     }
   }
 }
