@@ -865,7 +865,9 @@ tr.xref code { color: var(--foreground); }
       const opts = [`<option value="">All changes</option>`];
       const L = M.lastPass;
       if (L) opts.push(`<option value="fresh">New since ${esc(L.headSha.slice(0, 7))}${L.at ? `, ${ago(L.at)}` : ""} (${L.fresh} hunk${L.fresh === 1 ? "" : "s"})</option>`);
-      if (M.commitMap) (M.commits || []).forEach((c, i) => opts.push(`<option value="c${i}">${esc(c.split("\n")[0].slice(0, 90))}</option>`));
+      // Only commits that own a hunk: a merge from the base branch usually owns none.
+      const owning = new Set(D.files.flatMap(f => f.hunks.flatMap(h => h.commits || [])));
+      if (M.commitMap) (M.commits || []).forEach((c, i) => { if (owning.has(i)) opts.push(`<option value="c${i}">${esc(c.split("\n")[0].slice(0, 90))}</option>`); });
       const meta = $("meta");
       meta.innerHTML = `<span>${esc(M.author)}</span>`
         + `<span class="loc-wrap"><button class="loc" type="button" aria-expanded="false"><span class="num">${counts(impl.add, impl.del)}</span>${differs ? `<span class="star">(*)</span>` : ""}</button>`
