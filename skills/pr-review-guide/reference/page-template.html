@@ -288,7 +288,7 @@ tr.composer td, tr.note td { padding: 0.5rem 0.75rem 0.75rem 4.6rem; background:
 .hljs-number { color: var(--syn-number); }
 .hljs-comment { color: var(--muted-foreground); font-style: italic; }
 .hljs-title, .hljs-title.function_, .hljs-function .hljs-title { color: var(--syn-title); }
-.hljs-type, .hljs-title.class_, .hljs-name { color: var(--syn-type); }
+.hljs-type, .hljs-title.class_, .hljs-name, .hljs-template-variable { color: var(--syn-type); }
 .hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable.language_ { color: var(--syn-attr); }
 
 /* stack: every layer of a PR stack on one page, one layer shown at a time */
@@ -376,6 +376,30 @@ tr.xref code { color: var(--foreground); }
   try { fmtPref = localStorage.getItem("prg:fmt") === "show"; } catch (e) { /* storage blocked: hidden */ }
   const COLS = () => (isSplit() ? 6 : 3);
   const MOUNTS = [];
+
+  // Bruno's .bru files: named blocks of `key: value` lines. Scripts, tests, bodies and docs hold another language,
+  // which is worked out per line below.
+  if (window.hljs && !hljs.getLanguage("bru")) hljs.registerLanguage("bru", () => ({
+    name: "Bru",
+    contains: [
+      { scope: "title", match: /^[a-z][\w:-]*(?=\s*\{\s*$)/ },
+      { scope: "comment", match: /^[ \t]*~.*$/ },
+      { scope: "attr", match: /^[ \t]*[^\s:{}~][^:{}\n]*?(?=:)/ },
+      { scope: "template-variable", match: /\{\{[^}\n]*\}\}/ },
+      { scope: "literal", match: /\b(true|false|null)\b/ },
+      { scope: "number", match: /\b\d+(\.\d+)?\b/ },
+    ],
+  }));
+  const BRU_OPEN = /^([a-z][\w:-]*)\s*\{\s*$/, BRU_CLOSE = /^\}\s*$/;
+  const BRU_INNER = [[/^(script:|tests$)/, "javascript"], [/^body:(json|graphql:vars)$/, "json"], [/^body:graphql$/, "graphql"],
+    [/^body:xml$/, "xml"], [/^docs$/, "markdown"]];
+  // One line on from block `b` (null between blocks): the line's language and the block after it. Blocks open and
+  // close at the start of a line, and what they hold is indented, so a brace inside a body or script never counts.
+  function bruStep(b, text) {
+    if (!b) { const m = BRU_OPEN.exec(text); return ["bru", m ? m[1] : null]; }
+    if (BRU_CLOSE.test(text)) return ["bru", null];
+    return [(BRU_INNER.find(([rx]) => rx.test(b)) || [0, "bru"])[1], b];
+  }
   // Every layer redraws its diffs, then the notes find their lines again.
   const redrawAll = () => { MOUNTS.forEach(m => m.redraw()); document.getElementById("wrap").dispatchEvent(new Event("prg:redrawn")); };
   wide.addEventListener("change", () => { if (splitPref) redrawAll(); });
@@ -434,7 +458,8 @@ tr.xref code { color: var(--foreground); }
     const LANG = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript",
       mjs: "javascript", cjs: "javascript", py: "python", go: "go", json: "json", yml: "yaml", yaml: "yaml", css: "css",
       scss: "scss", less: "less", sql: "sql", sh: "bash", bash: "bash", md: "markdown", html: "xml", xml: "xml", svg: "xml",
-      rs: "rust", java: "java", cs: "csharp", kt: "kotlin", rb: "ruby", php: "php", toml: "ini", ini: "ini", graphql: "graphql" };
+      rs: "rust", java: "java", cs: "csharp", kt: "kotlin", rb: "ruby", php: "php", toml: "ini", ini: "ini", graphql: "graphql",
+      bru: "bru" };
     const langOf = path => { const ext = path.split(".").pop().toLowerCase(); return /(^|\/)Makefile$/.test(path) ? "makefile" : LANG[ext]; };
     function hl(text, lang) {
       if (!lang || !window.hljs || !hljs.getLanguage(lang)) return esc(text);
@@ -458,14 +483,40 @@ tr.xref code { color: var(--foreground); }
       out.push(cur + "</span>".repeat(open.length));
       return out;
     }
-    function hlHunk(h, lang) {
+    function hlHunk(f, h, lang) {
       const html = new Array(h.lines.length);
       for (const side of ["-", "+"]) {
         const idx = h.lines.map((r, i) => i).filter(i => h.lines[i][0] !== side);
-        const out = hlLines(idx.map(i => h.lines[i][3]), lang);
+        const texts = idx.map(i => h.lines[i][3]);
+        // The old side starts in whichever block the new side does; the page has no old file to walk.
+        const out = lang === "bru" ? hlBru(texts, bruBefore(f, h.newStart)) : hlLines(texts, lang);
         idx.forEach((i, k) => { if (html[i] == null || h.lines[i][0] !== " ") html[i] = out[k]; });
       }
       return html;
+    }
+
+    // A hunk's few lines of context rarely reach its block's opening line, so where the page has the new file the
+    // block a line starts in comes from walking that from the top.
+    const bruBlocks = {};
+    function bruBefore(f, n) {
+      if (!f.newText || n <= 1) return null;
+      if (!bruBlocks[f.id]) {
+        let b = null;
+        bruBlocks[f.id] = [null, ...f.newText.map(t => (b = bruStep(b, t)[1]))];
+      }
+      return bruBlocks[f.id][n - 1] ?? null;
+    }
+    // .bru lines from block `b` on, highlighted a run at a time in the language of the block each run sits in.
+    function hlBru(texts, b) {
+      const langs = texts.map(t => { const [l, next] = bruStep(b, t); b = next; return l; });
+      const out = [];
+      for (let k = 0; k < texts.length;) {
+        let e = k;
+        while (e < texts.length && langs[e] === langs[k]) e++;
+        out.push(...hlLines(texts.slice(k, e), langs[k]));
+        k = e;
+      }
+      return out;
     }
 
     // ---- word-level diff: mark changed token ranges inside paired -/+ lines ----
@@ -545,7 +596,7 @@ tr.xref code { color: var(--foreground); }
     function hunkRows(f, h, lang, code) {
       const noisy = new Set(), reind = new Set(h.blocks.flatMap(b => b.reindented || []));
       h.blocks.forEach(b => { if (b.noise) for (let i = b.start; i < b.end; i++) noisy.add(i); });
-      const moves = h.moves || [], htmls = hlHunk(h, lang), units = [];
+      const moves = h.moves || [], htmls = hlHunk(f, h, lang), units = [];
       h.lines.forEach((row, i) => {
         const m = moves.find(x => i >= x.start && i < x.end);
         // With formatting hidden, a formatting-only line shows once, in its new form, as context.
@@ -619,7 +670,7 @@ tr.xref code { color: var(--foreground); }
       td.querySelector("button").onclick = () => {
         const rows = [];
         const texts = f.newText.slice(fromNew - 1, toNew);
-        const htmls = hlLines(texts, lang);
+        const htmls = lang === "bru" ? hlBru(texts, bruBefore(f, fromNew)) : hlLines(texts, lang);
         for (let n = fromNew; n <= toNew; n++) rows.push(lineRow(f, [" ", n + oldOffset, n, texts[n - fromNew] ?? ""], lang, [], htmls[n - fromNew]));
         tr.replaceWith(...rows);
       };

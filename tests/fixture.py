@@ -33,6 +33,29 @@ export function postPath(title: string): string {
   return `/posts/${slugify(title)}`;
 }
 '''
+# The edit sits far enough into the tests block that its hunk doesn't reach the block's opening line.
+BRU = '''meta {
+  name: get post
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/posts/1
+  body: none
+  auth: none
+}
+
+tests {
+  test("status is 200", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("has a title", function () {
+    expect(res.getBody().title).to.be.a("string");
+  });
+}
+'''
 FORMAT = '''export const LIMIT = 20;
 export const ORDER = "desc";
 '''
@@ -80,6 +103,7 @@ def main():
     write(repo, "src/posts.ts", POSTS)
     write(repo, "tests/posts.test.ts", TEST)
     write(repo, "src/format.ts", FORMAT)
+    write(repo, "api/get-post.bru", BRU)
     commit(repo, "initial")
     sh(repo, "git", "checkout", "-q", "-b", "feature")
     # 1: move slugify into its own file
@@ -96,6 +120,7 @@ def main():
     write(repo, "tests/posts.test.ts", TEST.replace('it("builds', 'it.skip("builds').replace("/posts/", "/blog/")
           + '\nit("keeps digits", () => {\n  console.log(postPath("v2"));\n  expect(postPath("v2")).toBe("/blog/v2");\n});\n')
     write(repo, "src/format.ts", FORMAT.replace(";", ""))
+    write(repo, "api/get-post.bru", BRU.replace('to.be.a("string")', 'to.equal("Hello World")'))
     commit(repo, "updates the tests")
     collect(repo, work)
     # A second pass: one more change, so the page has something new since the last one.
@@ -117,7 +142,7 @@ def main():
     ids = {f["path"]: f["id"] for f in data["files"]}
     guide = {"sections": [
         {"title": "Serve under a new prefix", "why": "Post links now [start with /blog](%s)." % ids["src/posts.ts"],
-         "how": "The path builder changes its prefix and the tests follow.", "items": [ids["src/posts.ts"], ids["tests/posts.test.ts"]],
+         "how": "The path builder changes its prefix and the tests follow.", "items": [ids["src/posts.ts"], ids["tests/posts.test.ts"], ids["api/get-post.bru"]],
          "risk": "Old /posts links stop resolving."},
         {"title": "Give slugs their own module", "why": "Slug code [moves out](%s) of the shared helpers." % ids["src/slug.ts"],
          "how": "The function is unchanged.", "items": [ids["src/slug.ts"], ids["src/util.ts"]]},

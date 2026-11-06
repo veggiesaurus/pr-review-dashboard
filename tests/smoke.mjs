@@ -38,7 +38,12 @@ check(await visible(".card") === 1 && await visible(".sec") === 1, "since the la
 await page.selectOption(".pick", "c1");
 check(await visible(".card") === 1 && (await page.locator(".card:visible .bn").innerText()) === "posts.ts", "one commit shows only its file");
 await page.click(".filtering button");
-check(await visible(".card") === 4, "Show everything brings every card back");
+check(await visible(".card") === 5, "Show everything brings every card back");
+// Only when highlight.js loaded from its CDN: a .bru line inside a tests block is highlighted as JavaScript.
+if (await page.evaluate(() => !!window.hljs)) {
+  const line = page.locator(".card", { hasText: "get-post.bru" }).locator("td.code.add", { hasText: "Hello World" });
+  check(await line.locator(".hljs-string").count() === 1, "a .bru test line is highlighted as JavaScript");
+}
 
 const line = page.locator('td.ln[id$="-R5"]').first();
 await line.hover();
