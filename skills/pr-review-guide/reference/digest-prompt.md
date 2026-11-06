@@ -4,7 +4,7 @@ One worker per batch, all in parallel. Fill in `{BATCH}` (the batch file) and `{
 
 ---
 
-Read `{BATCH}`. It is part of a code diff: each file starts with `=== fN path (status, category, +a -d)` and each hunk with `--- fNhM new a-b, old c-d`. Lines starting `+` were added, `-` removed, a space unchanged.
+Read `{BATCH}`. It is part of a code diff: each file starts with `=== fN path (status, category, +a -d)` and each hunk with `--- fNhM new a-b, old c-d`. Lines starting `+` were added, `-` removed, a space unchanged. A note in brackets says where lines moved unchanged from one place to another; describe the move, not the moved code.
 
 Describe what each hunk changes. Do not judge it, suggest improvements or guess at intent beyond what the code and its comments show.
 

@@ -10,7 +10,7 @@ Read `{WORKDIR}/description.md` first: the PR description and commit messages, w
 
 {SOURCE}
 
-`review.diff` gives the number of reviewable changed lines in its header, and whether that fits one sitting. Each file starts with `=== fN path (status, category, +a -d)`, sometimes followed by a `risk hint` taken from its path, and each hunk with `--- fNhM new a-b, old c-d`. A hunk's `uses:` line names things it uses that another hunk defines or removes, and `used by:` the reverse; hunks joined that way often belong in the same section, or in sections that follow one another. They come from matching names, so treat them as hints. Formatting-only lines are already elided, and the formatting-only hunks, lock files and generated files listed at the end are handled elsewhere: leave them out.
+`review.diff` gives the number of reviewable changed lines in its header, and whether that fits one sitting. Each file starts with `=== fN path (status, category, +a -d)`, sometimes followed by a `risk hint` taken from its path, and each hunk with `--- fNhM new a-b, old c-d`. A hunk's `uses:` line names things it uses that another hunk defines or removes, and `used by:` the reverse; hunks joined that way often belong in the same section, or in sections that follow one another. They come from matching names, so treat them as hints. Formatting-only lines are already elided, and the formatting-only hunks, lock files and generated files listed at the end are handled elsewhere: leave them out. A note in brackets marks lines moved unchanged from one place to another, removed in one hunk and added in another; put the two hunks in the same section unless they serve different purposes, and say it moved rather than describing the code again.
 
 Write `{WORKDIR}/guide.json`:
 
@@ -23,7 +23,9 @@ Write `{WORKDIR}/guide.json`:
    "risk": "Re-mints the access token and fences off in-flight refreshes."}
  ],
  "split": {"note": "The switcher can merge before the tab sync it needs only for other tabs.",
-           "prs": [[1, 2], [3, 4]]}}
+           "prs": [[1, 2], [3, 4]]},
+ "try": ["Switch workspace in one tab while another is mid-refresh: the second tab should land on the home page, not a 403.",
+         "Sign out during a switch and check no tab keeps the old workspace's data."]}
 ```
 
 Sections:
@@ -42,6 +44,7 @@ Items:
 Risk and size, so the reviewer's attention goes where it matters:
 
 - Give a section a `risk` note, one sentence, when its code touches auth or permissions, tokens or secrets, money, a migration or data deletion, a dependency, input from outside the system, concurrency, or deploy and CI config. Say what is at stake, not the category. Leave `risk` out otherwise; a note on every section is as useless as none. A `risk hint` on a file is a pointer from its path, not a verdict.
+- Add `try`: up to three things the author should do by hand before marking the PR ready, each one concrete enough to follow without reading the code (what to do, and what should happen), chosen where the change is most likely to go wrong: a race, an edge case in the input, an old record or a second tab. Link a phrase to the hunk it exercises if that helps. Leave it out, or keep it short, when the change has no behaviour to try, such as a refactor with tests or a docs change.
 - If the header says the change is long or too big for one review, add `split`: how the sections could go out as several smaller PRs, each able to merge on its own, in order, and a one-sentence `note` on why that order. A PR must not use something a later one adds (the `uses:` lines show those dependencies). Leave `split` out when the change does not divide cleanly, and say so in your reply instead.
 
 Text, for the person who wrote the code:

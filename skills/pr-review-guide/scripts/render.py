@@ -11,12 +11,15 @@ WORKDIR holds hunks.json from collect.py and guide.json from the guide worker.
 one go. Without it the page is written to PAGE.html (default WORKDIR/page.html).
 
 guide.json is {"sections": [{"title", "why", "how", "items": [...], "risk"?}],
-"split"?: {"note", "prs": [[1, 2], [3]]}}. An item is a hunk id (f3h2) or a
-file id (f3), which takes whatever hunks of that file no other item names. why
-and how may link phrases as [phrase](f3h2). risk is a short note on what makes
-the section risky; split suggests how a large PR could be several, by section
-number. An optional description.json from the checker is shown on the page:
-{"unsupported": [{"claim", "why"}], "missing": [{"what", "hunks"}], "issue"?: [{"ask", "why"}]}.
+"split"?: {"note", "prs": [[1, 2], [3]]}, "try"?: [...]}. An item is a hunk id
+(f3h2) or a file id (f3), which takes whatever hunks of that file no other item
+names. why and how may link phrases as [phrase](f3h2). risk is a short note on
+what makes the section risky; split suggests how a large PR could be several, by
+section number; try is up to three things to try by hand, which may link too.
+An optional description.json from the checker is shown on the page:
+{"checklist": [{"claim", "from", "hunks"}], "unsupported": [{"claim", "why"}],
+"missing": [{"what", "hunks"}], "issue"?: [{"ask", "why"}]}, where from is
+"description" or "issue".
 
 A STACKDIR is what stack.py writes: stack.json and one WORKDIR per layer. Every
 layer is checked as above, links may reach into another layer as
@@ -54,6 +57,29 @@ def bad_xlink(target, layers):
     return None if has_id(layers[int(m.group(1))], m.group(2)) else f"#{m.group(1)} has no {m.group(2)}"
 
 
+def link_problems(text, data, layers=None):
+    out = []
+    for phrase, target in LINK_RE.findall(text):
+        if XID_RE.match(target):
+            why = bad_xlink(target, layers)
+            if why:
+                out.append(f"link [{phrase}]({target}) points at nothing: {why}")
+        elif not ID_RE.match(target) or not has_id(data, target):
+            out.append(f"link [{phrase}]({target}) points at nothing")
+    return out
+
+
+def check_try(guide, data, layers=None):
+    """The guide's things to try by hand, and their problems."""
+    items = guide.get("try", []) if isinstance(guide, dict) else []
+    if not isinstance(items, list) or not all(isinstance(x, str) and x.strip() for x in items):
+        return [], ['"try" must be a list of strings']
+    problems = [f"try {k}: {x}" for k, text in enumerate(items, 1) for x in link_problems(text, data, layers)]
+    if len(items) > 3:
+        problems.append(f'"try" has {len(items)} items; keep the three that matter most')
+    return items, problems
+
+
 def build_sections(data, guide, layers=None):
     """Resolve the guide's items to hunks per file, returning (sections, problems).
 
@@ -86,13 +112,7 @@ def build_sections(data, guide, layers=None):
             if not str(s.get(key) or "").strip():
                 problems.append(f"section {i}: {key} is empty")
         for text in (s.get("why") or "", s.get("how") or ""):
-            for phrase, target in LINK_RE.findall(text):
-                if XID_RE.match(target):
-                    why = bad_xlink(target, layers)
-                    if why:
-                        problems.append(f"section {i}: link [{phrase}]({target}) points at nothing: {why}")
-                elif not ID_RE.match(target) or (target not in files and target not in hunk_file):
-                    problems.append(f"section {i}: link [{phrase}]({target}) points at nothing")
+            problems += [f"section {i}: {x}" for x in link_problems(text, data, layers)]
         order, per_file = [], {}
         for item in s.get("items") or []:
             if not isinstance(item, str) or not ID_RE.match(item):
@@ -299,6 +319,11 @@ def self_test():
     assert not check_description({"unsupported": [], "missing": [{"what": "x", "hunks": ["f1h2"]}]}, gen2)
     assert len(check_description({"unsupported": "none", "missing": [{"what": "x", "hunks": "f1h2"}],
                                   "issue": [{"ask": "y", "hunks": ["f9h1"]}]}, gen2)) == 3
+    assert not check_description({"checklist": [{"claim": "c", "from": "issue", "hunks": ["f1h1"]}]}, gen2)
+    assert len(check_description({"checklist": [{"claim": "c", "from": "pr", "hunks": []}]}, gen2)) == 1
+    assert check_try({"try": ["open [it](f1h2)", "x"]}, gen2) == (["open [it](f1h2)", "x"], [])
+    assert len(check_try({"try": ["see [it](f7)", "a", "b", "c"]}, gen2)[1]) == 2
+    assert check_try({"try": "x"}, gen2)[1]
     import tempfile
     page = os.path.join(tempfile.mkdtemp(), "p.html")
     meta = {"repo": "o/r", "number": 1, "head": "h"}
@@ -409,6 +434,8 @@ def load(workdir, data, layers=None):
     split, split_problems, split_warnings = check_split(data, guide, sections) if not problems else (None, [], [])
     problems += split_problems
     data["_split"] = bool(split)
+    tries, try_problems = check_try(guide, data, layers)
+    problems += try_problems
     try:
         desc = read_json(os.path.join(workdir, "description.json"))
     except OSError:
@@ -419,7 +446,7 @@ def load(workdir, data, layers=None):
         problems += check_description(desc, data)
     warnings = (lint(data, sections) + split_warnings) if not problems else []
     return {"problems": problems, "warnings": warnings, "sections": sections,
-            "extras": {"split": split, "descriptionCheck": desc}}
+            "extras": {"split": split, "descriptionCheck": desc, "try": tries}}
 
 
 def check_description(desc, data):
@@ -427,11 +454,14 @@ def check_description(desc, data):
     if not isinstance(desc, dict):
         return ["description.json must be an object"]
     out = []
-    for key, field in (("unsupported", "claim"), ("missing", "what"), ("issue", "ask")):
+    for key, field in (("checklist", "claim"), ("unsupported", "claim"), ("missing", "what"), ("issue", "ask")):
         rows = desc.get(key, [])
         if not isinstance(rows, list) or not all(isinstance(x, dict) and isinstance(x.get(field), str) for x in rows):
             out.append(f'description.json: "{key}" must be a list of objects, each with a "{field}" string')
             continue
+        if key == "checklist" and any(x.get("from") not in ("description", "issue") or not x.get("hunks") for x in rows):
+            out.append('description.json: each "checklist" item needs "from" ("description" or "issue") and the '
+                       'hunks that do it; a claim the diff doesn\'t bear out goes in "unsupported" or "issue"')
         for x in rows:
             hs = x.get("hunks", [])
             if not isinstance(hs, list) or not all(isinstance(h, str) and has_id(data, h) for h in hs):
