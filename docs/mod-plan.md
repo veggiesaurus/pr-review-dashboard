@@ -286,7 +286,7 @@ Whatever fails changes the plan before the rest is built. The likeliest is the `
 
 ## M0 findings
 
-Run on 6 November 2026 with the mod in `spike/prg-spike/`, in a terminal on Claude Code 2.1.319 and in local desktop sessions. The desktop app (4.23118.0) runs its own bundled Claude Code, 2.1.317, not the 2.1.318 the plan was written against. The data is the fixture's build, copied into the mod, and each session wrote what it saw to `.git/prg-spike/<session id>.json`. `claude plugin test` runs 8 tests on terminal and desktop mounts and passes under both versions, but the kit passed two things the app then didn't do (the card and the worker's tool), so it's no stand-in for trying it in the app.
+Run on 6 November 2026 with the mod in `spike/prg-spike/`, in a terminal on Claude Code 2.1.319 and in local desktop sessions. The desktop app (4.23118.0) runs its own bundled Claude Code, 2.1.317, not the 2.1.318 the plan was written against. The data is the fixture's build, copied into the mod, and each session wrote what it saw to `.git/prg-spike/<session id>.json`. `claude plugin test` runs 9 tests on terminal and desktop mounts and passes under both versions, but the kit passed two things the apps then didn't do (the card, and the tool for a worker spawned from a button), so it's no stand-in for trying it in the app.
 
 **1. The docked pane** works on both. The title, risk, why and how draw as `Markdown` and the hunks as `Code` with `format: "diff"`. The terminal docks it at 89 of 124 columns. On the desktop `bodyColumns` means nothing: it reported 86, 121, 107 and 57 against viewports of 65, 32, 42 and 98 columns. Each `Code` there is a block as wide as its longest line, with a copy button and no line numbers, and a full-width `Box` around it doesn't stretch it, so a section's hunks come out at different widths. The guide's `[start with /blog](f3)` drew as a link, though the declarations say a link that isn't http, https or file draws as text.
 
@@ -296,23 +296,24 @@ Run on 6 November 2026 with the mod in `spike/prg-spike/`, in a terminal on Clau
 
 **4. Linear** works when it's there and stays quiet when it isn't. The terminal session has `claude_ai_Linear`, found by its `get_issue`: `list_issues` and then `get_issue` on the key it returned answer in 2 to 3 s, and `ZZZ-99999` comes back `isError` with "Could not find referenced Issue", so a Jira key ends there as planned. The desktop sessions had no Linear connector at all (43 tools), and the mod made no calls and showed nothing.
 
-**5. The notes turn** starts from a pane button on the desktop, and the model reads it as "The prg-spike plugin sent a message: …". The `UserMessage` hook on `origin.kind: "plugin"` draws the card under the kit, but the desktop app ignores it and shows the whole message, with the engine's own line about plugin prompts appended. Not tried in a terminal.
+**5. The notes turn** starts from a pane button on both, and the model reads it as "The prg-spike plugin sent a message: …". The `UserMessage` hook on `origin.kind: "plugin"` draws the card under the kit, but neither app uses it: the terminal draws its own "Prompt from the prg-spike plugin" row with the full text, and the desktop shows the whole message with the engine's own line about plugin prompts appended. Whether the hook isn't raised for these rows or its matcher misses them is still open.
 
-**6. The worker** only partly works.
+**6. The worker** works when it's spawned from inside a model turn, and not when it's spawned from a pane button.
 
 - `$.agent.register` with `model: "opus"` gives a `prg-spike:worker` on `claude-opus-5-5`, and the `agent.offer` hook kept it out of the model's listing. `$.agent.list()` doesn't say which model an agent runs on; only the spawn result does.
-- In auto mode the spawn is refused, twice: "The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one". A button press isn't a model request, so there's nothing to judge. In ask-permissions mode it raises a permission prompt and runs once allowed.
-- The worker's calls to the mod's own tool never reach the mod: "prg-spike registered the tool answer but no tool.call hook answered this call", and the hook logged no call. Same when spawned from a `$.clock.after` timer. Under the kit the same hook answers a call carrying the worker's `agentId`.
-- `turn.complete` does reach the mod for each of the worker's turns, with its reply as `answer`, and `$.session.send` to its id delivers the second message, which the worker reads as from "the coordinator" and answers in a second turn.
-- A send to a worker that had already finished failed with "is stopped (completed) and could not be resumed: Agent type 'prg-spike:worker' is not offered in this session". Resuming goes through `agent.offer`, so the spike lets its own resume through with a flag around the send. Both later sends landed while the worker was still finishing, so the flag isn't proven for a stopped worker.
+- From a button press in auto mode the spawn is refused, twice: "The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one". In ask-permissions mode it raises a permission prompt and runs once allowed. From a mod tool the model calls (`spawn_worker`), the spawn went through in auto mode with no prompt.
+- A worker spawned from a button press or a `$.clock.after` timer can't reach the mod's own tool: "prg-spike registered the tool answer but no tool.call hook answered this call", and the hook logs no call. That held on 2.1.317 and 2.1.319. A worker spawned from `spawn_worker` on 2.1.319 had both its calls answered. Under the kit, a call carrying the worker's `agentId` is answered however it was spawned.
+- `turn.complete` reaches the mod for each of the worker's turns, with its reply as `answer`, and `$.session.send` to its id delivers the second message, which the worker reads as from "the coordinator" and answers in a second turn. The whole round trip took 15 s.
+- On 2.1.319 the worker ends with `SubagentHandback`, and each final reply also lands in the main conversation as a message to the main model.
+- A send to a worker that had already finished failed with "is stopped (completed) and could not be resumed: Agent type 'prg-spike:worker' is not offered in this session". Resuming goes through `agent.offer`, so the spike lets its own resume through with a flag around the send. Every later send landed while the worker was still finishing, so the flag isn't proven for a stopped worker.
 
 What the plan needs to change:
 
-- Workers hand their results back in their final reply, read at `turn.complete`, not through a `submit` tool, until a mod's tool hook runs for its own agents. The mod runs `render.py --check` itself and sends the problems back with `$.session.send`. `read_at_head` goes the same way, so the checker reads with Read and its prompt names the files.
-- A build can't start from a press while the session is in auto mode. Start it from `/guide` or the `guide` tool, so the spawns happen inside a model turn, and check that auto mode judges those. Untested.
+- Builds start inside a model turn: `/guide`, or the `guide` tool, spawns the workers from its own `tool.call`. A pane button that wants a build asks for one with `$.prompt.submit` instead of spawning. That gets past auto mode and keeps the `submit` tool, so the rest of the worker design stands.
+- Workers keep their final reply to a word, since it reaches the main conversation; the real result goes through `submit`.
 - Clickable lines are a `Client` drawing `Text` rows, not `Code` and not a line picker. Keep `Code` where nothing is clicked, and fall back to it on `ui.fault`.
 - Size nothing from `bodyColumns` on the desktop.
-- The notes message has to read well in full, since the desktop shows all of it.
+- The notes message has to read well in full, since both apps show all of it.
 - Linear was missing from every desktop session here, so the API key fallback under Open questions matters more than the plan assumed.
 - Test against the app's bundled Claude Code, which lags the CLI. Its binary is under `~/Library/Application Support/Claude/claude-code/<version>/` and runs `claude plugin test` and `claude plugin validate` too.
 - Edits didn't reliably reach an open desktop session; a new session always loaded them. The pane shows a build tag for that reason.
