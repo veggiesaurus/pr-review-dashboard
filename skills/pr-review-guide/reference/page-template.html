@@ -4,19 +4,20 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
-/* Theme tokens; --syn-* and the diff fills derive from them. */
+/* tweakcn's Clean Slate theme. Its light primary and muted text are a little darker here, which takes them to
+   4.5:1 on every background they sit on. The signal colours, diff fills and --syn-* are this page's own. */
 :root {
   --background: oklch(0.9842 0.0034 247.8575);
   --foreground: oklch(0.2795 0.0368 260.031);
   --card: oklch(1 0 0);
-  --primary: oklch(0.55 0.164 267.62);
+  --primary: oklch(0.56 0.2041 277.1173);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.9276 0.0058 264.5313);
   --muted: oklch(0.967 0.0029 264.5419);
-  --muted-foreground: oklch(0.539 0.024 264.36);
+  --muted-foreground: oklch(0.545 0.0234 264.3637);
   --accent: oklch(0.9299 0.0334 272.7879);
   --border: oklch(0.8717 0.0093 258.3382);
-  --ring: oklch(0.6508 0.1631 267.6239);
+  --ring: oklch(0.5854 0.2041 277.1173);
   --destructive: oklch(0.6368 0.2078 25.3313);
   --success: oklch(0.795 0.115 162);
   --warning: oklch(0.82 0.165 85);
@@ -25,6 +26,7 @@
   --destructive-foreground: oklch(1 0 0);
   --success-high-contrast: oklch(0.521 0.11 162.19);
   --destructive-high-contrast: oklch(0.532 0.19 24.77);
+  --warning-high-contrast: oklch(0.56 0.12 70);
   --add-bg: color-mix(in oklab, var(--success) 18%, var(--card));
   --add-mark: color-mix(in oklab, var(--success) 48%, var(--card));
   --del-bg: color-mix(in oklab, var(--destructive) 11%, var(--card));
@@ -42,10 +44,10 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --background: oklch(0.2421 0.0129 258.3719);
+    --background: oklch(0.2077 0.0398 265.7549);
     --foreground: oklch(0.9288 0.0126 255.5078);
     --card: oklch(0.2795 0.0368 260.031);
-    --primary: oklch(0.7303 0.1272 265.9509);
+    --primary: oklch(0.6801 0.1583 276.9349);
     --primary-foreground: oklch(0.2077 0.0398 265.7549);
     --secondary: oklch(0.3351 0.0331 260.912);
     --muted: oklch(0.2427 0.0381 259.9437);
@@ -60,6 +62,7 @@
     --destructive-foreground: oklch(0.2077 0.0398 265.7549);
     --success-high-contrast: oklch(0.709 0.141 161.71);
     --destructive-high-contrast: oklch(0.709 0.183 24.77);
+    --warning-high-contrast: oklch(0.84 0.16 85);
     --add-bg: color-mix(in oklab, var(--success) 14%, var(--card));
     --add-mark: color-mix(in oklab, var(--success) 38%, var(--card));
     --del-bg: color-mix(in oklab, var(--destructive) 14%, var(--card));
@@ -74,10 +77,10 @@
   }
 }
 :root[data-theme="dark"] {
-  --background: oklch(0.2421 0.0129 258.3719);
+  --background: oklch(0.2077 0.0398 265.7549);
   --foreground: oklch(0.9288 0.0126 255.5078);
   --card: oklch(0.2795 0.0368 260.031);
-  --primary: oklch(0.7303 0.1272 265.9509);
+  --primary: oklch(0.6801 0.1583 276.9349);
   --primary-foreground: oklch(0.2077 0.0398 265.7549);
   --secondary: oklch(0.3351 0.0331 260.912);
   --muted: oklch(0.2427 0.0381 259.9437);
@@ -92,6 +95,7 @@
   --destructive-foreground: oklch(0.2077 0.0398 265.7549);
   --success-high-contrast: oklch(0.709 0.141 161.71);
   --destructive-high-contrast: oklch(0.709 0.183 24.77);
+  --warning-high-contrast: oklch(0.84 0.16 85);
   --add-bg: color-mix(in oklab, var(--success) 14%, var(--card));
   --add-mark: color-mix(in oklab, var(--success) 38%, var(--card));
   --del-bg: color-mix(in oklab, var(--destructive) 14%, var(--card));
