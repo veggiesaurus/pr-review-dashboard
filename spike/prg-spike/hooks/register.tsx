@@ -9,9 +9,10 @@ type Engine = EngineInterface
 
 const PANE = 'prg-spike'
 // Bumped on every edit, so the pane shows which copy of the mod is running.
-const BUILD = 'b5'
+const BUILD = 'b6'
 const WORKER = 'prg-spike:worker'
 const ANSWER = 'mcp__prg-spike__answer'
+const SPAWN = 'mcp__prg-spike__spawn_worker'
 
 const view = atom({ plugin: 'prg-spike', key: 'view' } as const, 'section')
 const section = atom({ plugin: 'prg-spike', key: 'section' } as const, 0)
@@ -208,8 +209,8 @@ async function isWorker($: Engine, agentId: string | undefined): Promise<boolean
 
 const note = (w: Worker, line: string): Worker => ({ ...w, log: [...w.log, line].slice(-30) })
 
-async function spawnWorker($: Engine): Promise<void> {
-  await update($, worker, w => note({ ...IDLE, refusedMain: w.refusedMain, log: w.log }, '— spawning'))
+async function spawnWorker($: Engine, via: string): Promise<Worker> {
+  await update($, worker, w => note({ ...IDLE, refusedMain: w.refusedMain, log: w.log }, `— spawning from ${via}`))
   const ask = () => $.agent.spawn({ subagentType: WORKER, prompt: round(1, 'harbour'), description: 'prg-spike worker' })
   let spawned = await ask()
   if (spawned.deny !== undefined && /no verdict/.test(spawned.deny)) {
@@ -219,7 +220,7 @@ async function spawnWorker($: Engine): Promise<void> {
   if (spawned.deny !== undefined) {
     await update($, worker, w => note({ ...w, phase: 'failed' }, `spawn denied: ${spawned.deny}`))
     await writeReport($)
-    return
+    return read($, worker)
   }
   const listed = (await $.agent.list()).find(agent => agent.id === spawned.agentId)
   await update($, worker, w =>
@@ -235,6 +236,7 @@ async function spawnWorker($: Engine): Promise<void> {
     ),
   )
   await writeReport($)
+  return read($, worker)
 }
 
 async function sendRoundTwo($: Engine, agentId: string): Promise<void> {
@@ -268,6 +270,12 @@ export const register: Register = on => {
       },
       isDeferred: false,
     })
+    await $.tool.register({
+      name: 'spawn_worker',
+      description: 'Starts the prg-spike test worker. Call it only when the person asks you to spawn the prg-spike worker.',
+      inputSchema: { type: 'object', properties: {} },
+      isDeferred: false,
+    })
     await $.agent.register({
       name: 'worker',
       description: 'Internal to the prg-spike mod; never delegate to it.',
@@ -281,6 +289,13 @@ export const register: Register = on => {
     void probe($)
     return started
   })
+
+  // Spawning inside the model's own tool call, to see whether auto mode judges a spawn made from a turn.
+  on('tool.call', { tool: SPAWN }, async ($, e) => {
+    if (e.agentId !== undefined) return { deny: 'prg-spike: spawn_worker is for the main conversation.' }
+    const w = await spawnWorker($, 'the spawn_worker tool')
+    return { result: w.phase === 'failed' ? `not spawned: ${w.log.at(-1) ?? ''}` : `spawned ${w.agentId ?? '?'} on ${w.model ?? '?'}` }
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'prg-spike: spawn_worker failed.' }))
 
   on('command.run', { command: 'prg-spike' }, async $ => {
     const opened = await $.ui.open({ id: PANE, title: 'prg-spike' })
@@ -629,13 +644,13 @@ export const register: Register = on => {
         <Text dimColor>{s === null ? 'Not sent yet.' : `prompt.submit from ${s.surface}: ${s.result}`}</Text>
         <Text bold>Hidden worker</Text>
         <Box flexDirection="row" gap={1}>
-          <Button key="spawn" label="Spawn the worker" hotkey="w" onPress={press(() => spawnWorker($))} />
+          <Button key="spawn" label="Spawn the worker" hotkey="w" onPress={press(async () => void (await spawnWorker($, 'a button')))} />
           <Button
             key="spawn-timer"
             label="Spawn from a timer"
             hotkey="t"
             onPress={press(async () => {
-              $.clock.after(0, () => void spawnWorker($))
+              $.clock.after(0, () => void spawnWorker($, 'a timer'))
             })}
           />
         </Box>

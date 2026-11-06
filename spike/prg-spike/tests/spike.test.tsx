@@ -320,3 +320,20 @@ test('a Client that stays drawn for a second reports itself, on terminal and des
     await ui.unmount()
   }
 })
+
+test('the spawn_worker tool spawns from the main conversation only', async ($, on) => {
+  standIn(on)
+  const spawned: string[] = []
+  on('agent.spawn', (_, e) => {
+    spawned.push(e.prompt)
+    return { model: 'opus' }
+  })
+
+  const fromWorker = await $.tool.call({ tool: 'mcp__prg-spike__spawn_worker', agentId: 'a1' })
+  expect(fromWorker.deny).toMatch(/main conversation/)
+  expect(spawned).toEqual([])
+
+  const fromMain = await $.tool.call({ tool: 'mcp__prg-spike__spawn_worker' })
+  expect(fromMain.result).toMatch(/^spawned /)
+  expect(spawned).toEqual(['Round 1. The word is "harbour".'])
+})
