@@ -27,6 +27,7 @@
   --success-high-contrast: oklch(0.521 0.11 162.19);
   --destructive-high-contrast: oklch(0.532 0.19 24.77);
   --warning-high-contrast: oklch(0.56 0.12 70);
+  --move-bg: color-mix(in oklab, var(--primary) 8%, var(--card));
   --add-bg: color-mix(in oklab, var(--success) 18%, var(--card));
   --add-mark: color-mix(in oklab, var(--success) 48%, var(--card));
   --del-bg: color-mix(in oklab, var(--destructive) 11%, var(--card));
@@ -63,6 +64,7 @@
     --success-high-contrast: oklch(0.709 0.141 161.71);
     --destructive-high-contrast: oklch(0.709 0.183 24.77);
     --warning-high-contrast: oklch(0.84 0.16 85);
+    --move-bg: color-mix(in oklab, var(--primary) 14%, var(--card));
     --add-bg: color-mix(in oklab, var(--success) 14%, var(--card));
     --add-mark: color-mix(in oklab, var(--success) 38%, var(--card));
     --del-bg: color-mix(in oklab, var(--destructive) 14%, var(--card));
@@ -96,6 +98,7 @@
   --success-high-contrast: oklch(0.709 0.141 161.71);
   --destructive-high-contrast: oklch(0.709 0.183 24.77);
   --warning-high-contrast: oklch(0.84 0.16 85);
+  --move-bg: color-mix(in oklab, var(--primary) 14%, var(--card));
   --add-bg: color-mix(in oklab, var(--success) 14%, var(--card));
   --add-mark: color-mix(in oklab, var(--success) 38%, var(--card));
   --del-bg: color-mix(in oklab, var(--destructive) 14%, var(--card));
@@ -142,6 +145,13 @@ h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; margin: 0; te
 .loc-pop tr.total td { border-top: 1px solid var(--border); padding-top: 0.35rem; font-weight: 600; }
 .loc-pop .note { color: var(--muted-foreground); font-size: 12px; margin: 0.4rem 0 0; }
 .progress { white-space: nowrap; }
+.view { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.pick { font: inherit; font-size: 13px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 0.1rem 0.5rem; max-width: 22rem; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.seg button { background: none; border: 0; padding: 0.1rem 0.6rem; cursor: pointer; color: var(--muted-foreground); font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--secondary); color: var(--foreground); }
+.filtering { color: var(--muted-foreground); font-size: 13px; }
+.filtering button { background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .index { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; padding: 0; list-style: none; }
 .index a { display: inline-flex; gap: 0.4rem; align-items: baseline; text-decoration: none; color: var(--foreground); border: 1px solid var(--border); border-radius: 999px; padding: 0.15rem 0.65rem; font-size: 13px; background: var(--card); }
 .index a:hover { border-color: var(--ring); }
@@ -201,6 +211,7 @@ h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; margin: 0; te
 .card .path .dir { color: var(--muted-foreground); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 999px; padding: 0.05rem 0.5rem; border: 1px solid var(--border); color: var(--muted-foreground); white-space: nowrap; }
 .tag.split { border-style: dashed; }
+.tag.fresh { border-color: var(--primary); color: var(--primary); }
 .fold { background: none; border: 0; cursor: pointer; color: var(--muted-foreground); padding: 0 0.25rem; }
 .card.closed .diffwrap, .card.closed .hidden-note { display: none; }
 .hidden-note { padding: 1.25rem; text-align: center; color: var(--muted-foreground); display: grid; gap: 0.5rem; justify-items: center; }
@@ -212,19 +223,39 @@ table.d td { padding: 0; vertical-align: top; }
 table.d td.ln { width: 1%; min-width: 3.2rem; padding-inline: 0.6rem 0.4rem; text-align: right; color: var(--muted-foreground); user-select: none; position: relative; }
 table.d td.sg { width: 1.2rem; text-align: center; user-select: none; color: var(--muted-foreground); }
 table.d td.code { white-space: pre; padding-right: 1.5rem; }
-tr.add { background: var(--add-bg); }
-tr.add td.sg { color: var(--success-high-contrast); }
-tr.del { background: var(--del-bg); }
-tr.del td.sg { color: var(--destructive-high-contrast); }
-tr.add mark { background: var(--add-mark); color: inherit; border-radius: 2px; }
-tr.del mark { background: var(--del-mark); color: inherit; border-radius: 2px; }
-tr.noise td.code, tr.noise td.sg { opacity: 0.55; }
-tr.noise td.ln::before { content: "fmt"; position: absolute; left: 0.25rem; font-size: 9.5px; letter-spacing: 0.04em; color: var(--muted-foreground); }
+/* split view: two halves of fixed width, long lines wrapping inside their half */
+table.d.split { table-layout: fixed; }
+table.d.split col.c-ln { width: 3.6rem; }
+table.d.split col.c-sg { width: 1.2rem; }
+table.d.split td.code { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 0.75rem; }
+table.d.split td.ln:nth-child(4) { border-left: 1px solid var(--border); }
+table.d td.empty { background: var(--muted); }
+td.add { background: var(--add-bg); }
+td.sg.add { color: var(--success-high-contrast); }
+td.del { background: var(--del-bg); }
+td.sg.del { color: var(--destructive-high-contrast); }
+td.add mark { background: var(--add-mark); color: inherit; border-radius: 2px; }
+td.del mark { background: var(--del-mark); color: inherit; border-radius: 2px; }
+td.moved { background: var(--move-bg); }
+td.sg.moved { color: var(--primary); }
+td.noise.code, td.noise.sg { opacity: 0.55; }
+td.noise.ln::before { content: "fmt"; position: absolute; left: 0.25rem; font-size: 9.5px; letter-spacing: 0.04em; color: var(--muted-foreground); }
+tbody.dim { opacity: 0.35; }
+tbody.fresh td.ln:first-child { box-shadow: inset 2px 0 0 var(--primary); }
+tr.mv td { background: var(--move-bg); color: var(--muted-foreground); font-family: var(--font-sans); font-size: 12.5px; padding: 0.2rem 0.6rem; white-space: normal; }
+tr.mv button { background: none; border: 0; cursor: pointer; color: var(--muted-foreground); padding: 0; margin-left: 0.5rem; text-decoration: underline dotted; text-underline-offset: 3px; }
+tr.mv button:hover { color: var(--primary); }
+tr.ann td { padding: 0.35rem 0.75rem 0.45rem 4.6rem; background: var(--card); border-block: 1px solid var(--border); font-family: var(--font-sans); font-size: 13px; white-space: normal; }
+tr.ann .lvl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 999px; padding: 0.05rem 0.5rem; margin-right: 0.5rem; }
+tr.ann .lvl.failure { background: var(--destructive); color: var(--destructive-foreground); }
+tr.ann .lvl.warning { background: var(--warning); color: var(--warning-foreground); }
+tr.ann .msg { white-space: pre-wrap; }
+tr.ann .why-note { color: var(--muted-foreground); }
 tr.gap td { background: var(--muted); color: var(--muted-foreground); font-family: var(--font-sans); font-size: 12.5px; padding: 0.2rem 0.6rem; }
 tr.gap button { background: none; border: 0; cursor: pointer; color: var(--muted-foreground); padding: 0; }
 tr.gap button:hover { color: var(--primary); }
 tr.gap .ctx { font-family: var(--font-mono); margin-left: 1rem; opacity: 0.8; }
-tr.has-note td.ln { box-shadow: inset 3px 0 0 var(--warning); }
+td.ln.has-note, tbody.fresh td.ln.has-note:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 .tellmark { position: absolute; right: 0.1rem; top: 0; font: 700 11px/1.6 var(--font-sans); color: var(--destructive-high-contrast); }
 tr.flash { outline: 2px solid var(--ring); outline-offset: -2px; }
 .cbtn { display: none; position: absolute; left: 0.1rem; top: 0.1rem; width: 1.3rem; height: 1.3rem; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--primary); cursor: pointer; padding: 0; line-height: 1; font-size: 12px; }
@@ -291,6 +322,7 @@ tr.xref code { color: var(--foreground); }
 
 @media (max-width: 860px) {
   .sec, .stack-body.two { grid-template-columns: minmax(0, 1fr); }
+  .seg { display: none; }
   .side { position: static; max-height: none; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -316,13 +348,31 @@ tr.xref code { color: var(--foreground); }
   const counts = (a, d) => (a ? `<span class="plus">+${a}</span> ` : "") + (d ? `<span class="minus">−${d}</span>` : "") || `<span>±0</span>`;
   const split = p => { const i = p.lastIndexOf("/"); return [p.slice(i + 1), i < 0 ? "" : p.slice(0, i + 1)]; };
   const mounted = {};
-  // Opens the card a row or card sits in, brings it into view, and flashes a row.
+  // Opens the card a line or card sits in, brings it into view, and flashes the line's row.
   const reveal = t => {
     const card = t.closest(".card");
-    if (card) card.classList.remove("closed");
+    if (card) { card.classList.remove("closed"); card.hidden = false; }
     t.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-    if (t.tagName === "TR") { t.classList.add("flash"); setTimeout(() => t.classList.remove("flash"), 1600); }
+    const row = t.tagName === "TR" ? t : t.tagName === "TD" ? t.closest("tr") : null;
+    if (row) { row.classList.add("flash"); setTimeout(() => row.classList.remove("flash"), 1600); }
   };
+  const ago = iso => {
+    const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    if (!(m >= 0)) return "";
+    const [n, unit] = m < 60 ? [Math.max(m, 1), "minute"] : m < 1440 ? [Math.round(m / 60), "hour"] : [Math.round(m / 1440), "day"];
+    return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  };
+
+  // Unified or split, the viewer's choice kept in this browser. A narrow screen always gets unified.
+  const wide = matchMedia("(min-width: 861px)");
+  let splitPref = false;
+  try { splitPref = localStorage.getItem("prg:view") === "split"; } catch (e) { /* storage blocked: unified */ }
+  const isSplit = () => splitPref && wide.matches;
+  const COLS = () => (isSplit() ? 6 : 3);
+  const MOUNTS = [];
+  // Every layer redraws its diffs, then the notes find their lines again.
+  const redrawAll = () => { MOUNTS.forEach(m => m.redraw()); document.getElementById("wrap").dispatchEvent(new Event("prg:redrawn")); };
+  wide.addEventListener("change", () => { if (splitPref) redrawAll(); });
   const ciChip = (chip, C) => C.fail ? chip("bad", `CI: ${C.fail} failing`, (C.failing || []).map(x => x.name).join(", "))
     : C.cancel ? chip("warn", `CI: ${C.cancel} cancelled`) : C.pending ? chip("warn", `CI: ${C.pending} pending`) : chip("good", "CI passing");
 
@@ -361,15 +411,18 @@ tr.xref code { color: var(--foreground); }
     D.files.forEach(f => f.hunks.forEach(h => { hunks[h.id] = { f, h }; }));
     const XREF = crossRefs(M.number);
 
+    // Ticks are keyed by what a card's hunks change rather than by commit, so a rebuild keeps those whose code didn't.
+    const TICKS = M.number ? `${M.repo}#${M.number}` : `${M.repo}@${M.head}`;
     const store = {
-      key: k => `prg:${M.headSha}:${k}`,
+      key: k => `prg:tick:${TICKS}:${k}`,
       get(k) { try { return localStorage.getItem(this.key(k)) === "1"; } catch (e) { return false; } },
       set(k, v) { try { v ? localStorage.setItem(this.key(k), "1") : localStorage.removeItem(this.key(k)); } catch (e) { /* storage blocked: ticks last this visit */ } },
     };
     const ticks = {};
     const isDone = k => k in ticks ? ticks[k] : (ticks[k] = store.get(k));
     const setDone = (k, v) => { ticks[k] = v; store.set(k, v); };
-    const tickKey = x => `${x.id}:${x.hunks.join(",")}`;
+    const tickKey = x => `${files[x.id].path}:${x.hunks.map(id => hunks[id].h.sig || id).join(",")}`;
+    let FILTER = "";
 
     // ---- language + highlighting ----
     const LANG = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript",
@@ -451,16 +504,85 @@ tr.xref code { color: var(--foreground); }
       const side = row[0] === "-" ? `L${row[1]}` : `R${row[2]}`;
       return `${LOC}${f.path}:${side}@${SHA7}`;
     }
-    function lineRow(f, row, lang, noise, html) {
-      const [t, o, n, text] = row;
-      const tr = el("tr", "line " + (t === "+" ? "add" : t === "-" ? "del" : "ctx") + (noise ? " noise" : ""));
-      tr.dataset.anchor = anchorFor(f, row);
-      tr.id = `${P}r-${f.id}-${row[0] === "-" ? "L" + row[1] : "R" + row[2]}`;
-      tr.dataset.commentTarget = "";
-      tr.dataset.file = f.id;
-      const no = t === "-" ? o : n;
-      tr.innerHTML = `<td class="ln">${no}<button class="cbtn" type="button" title="Add a note on this line" aria-label="Note on line ${no}">+</button></td>`
-        + `<td class="sg">${t === " " ? "" : t === "-" ? "−" : "+"}</td><td class="code">${html ?? hl(text, lang)}</td>`;
+    const SIGN = { "+": "+", "-": "−", " ": "" };
+    // One side of one line: the number cell, which holds the note button and the anchor notes are pinned to, the
+    // sign and the code. `old` is the left half of a split context line, numbered in the base and not a note target.
+    function half(f, row, lang, html, cls, old) {
+      const tds = [el("td", "ln"), el("td", "sg"), el("td", "code")];
+      if (!row) { tds.forEach(td => td.classList.add("empty")); return tds; }
+      const [t, o, n, text] = row, [ln, sg, code] = tds;
+      const no = t === "-" || old ? o : n;
+      if (no != null) ln.textContent = no;
+      if (!old && no != null) {
+        ln.dataset.anchor = anchorFor(f, row);
+        ln.id = `${P}r-${f.id}-${t === "-" ? "L" + o : "R" + n}`;
+        ln.insertAdjacentHTML("beforeend", `<button class="cbtn" type="button" title="Add a note on this line" aria-label="Note on line ${no}">+</button>`);
+      }
+      sg.textContent = SIGN[t];
+      code.innerHTML = html ?? hl(text, lang);
+      tds.forEach(td => td.classList.add(t === "+" ? "add" : t === "-" ? "del" : "ctx", ...(cls || [])));
+      return tds;
+    }
+    const lineTr = (chg, ...halves) => { const tr = el("tr", chg ? "line chg" : "line"); halves.forEach(h => tr.append(...h)); return tr; };
+    // A line on its own row, in either layout: a removed line sits on the left of a split row, an added one on the right.
+    function lineRow(f, row, lang, cls, html) {
+      const chg = row[0] !== " ";
+      if (!isSplit()) return lineTr(chg, half(f, row, lang, html, cls));
+      if (!chg) return lineTr(false, half(f, row, lang, html, cls, true), half(f, row, lang, html, cls));
+      return row[0] === "-" ? lineTr(true, half(f, row, lang, html, cls), half(f, null)) : lineTr(true, half(f, null), half(f, row, lang, html, cls));
+    }
+
+    // A hunk's rows. Re-indented lines show once, as context, the way a whitespace-blind diff shows them. A block
+    // moved away folds into one row saying where it went, and the copy it became is marked as moved. In split view
+    // removed and added lines pair up side by side within each run of changes. `code` collects each line's code cell.
+    function hunkRows(f, h, lang, code) {
+      const noisy = new Set(), reind = new Set(h.blocks.flatMap(b => b.reindented || []));
+      h.blocks.forEach(b => { if (b.noise) for (let i = b.start; i < b.end; i++) noisy.add(i); });
+      const moves = h.moves || [], htmls = hlHunk(h, lang), units = [];
+      h.lines.forEach((row, i) => {
+        const m = moves.find(x => i >= x.start && i < x.end);
+        if (reind.has(i)) { if (row[0] === "+") units.push({ t: " ", i, row: [" ", ...row.slice(1)] }); return; }
+        if (m && m.side === "-") { if (i === m.start) units.push({ t: "mv", m }); return; }
+        if (m && i === m.start) units.push({ t: "mv", m });
+        units.push({ t: row[0], i, row, moved: !!m, cls: m ? ["moved"] : noisy.has(i) ? ["noise"] : [] });
+      });
+      const cell = (u, old) => { const tds = half(f, u.row, lang, htmls[u.i], u.cls, old); if (!old) code[u.i] = tds[2]; return tds; };
+      const blank = () => half(f, null);
+      const rows = [];
+      if (!isSplit()) {
+        units.forEach(u => rows.push(u.t === "mv" ? moveRow(f, h, u.m, lang, htmls) : lineTr(u.t !== " ", cell(u))));
+        return rows;
+      }
+      let dels = [], adds = [];
+      const flush = () => {
+        for (let k = 0; k < Math.max(dels.length, adds.length); k++) rows.push(lineTr(true, dels[k] ? cell(dels[k]) : blank(), adds[k] ? cell(adds[k]) : blank()));
+        dels = []; adds = [];
+      };
+      units.forEach(u => {
+        if (u.t === "-" && !u.moved) dels.push(u);
+        else if (u.t === "+" && !u.moved) adds.push(u);
+        else {
+          flush();
+          rows.push(u.t === "mv" ? moveRow(f, h, u.m, lang, htmls) : u.t === " " ? lineTr(false, cell(u, true), cell(u)) : lineTr(true, blank(), cell(u)));
+        }
+      });
+      flush();
+      return rows;
+    }
+
+    // The row a moved block shows as: where it went, with its lines behind a button, or where it came from.
+    function moveRow(f, h, m, lang, htmls) {
+      const tr = el("tr", "mv chg"), td = el("td");
+      td.colSpan = COLS();
+      tr.appendChild(td);
+      const n = m.end - m.start, there = hunks[m.to || m.from];
+      const where = there ? `${esc(there.f.path)}:${m.line.slice(1)}` : esc(m.to || m.from);
+      const sec = there && owner[there.h.id] != null && owner[there.h.id] !== owner[h.id] ? ` in §${pad2(owner[there.h.id] + 1)}` : "";
+      td.innerHTML = m.side === "-" ? `${n} lines moved unchanged to <a href="#" class="ref">${where}</a>${sec}<button type="button">Show them</button>`
+        : `${n} lines moved here unchanged from <a href="#" class="ref">${where}</a>${sec}`;
+      td.querySelector("a").onclick = e => { e.preventDefault(); if (there) goToRow(`${P}r-${there.f.id}-${m.line}`, there.h.id); };
+      const show = td.querySelector("button");
+      if (show) show.onclick = () => tr.replaceWith(...h.lines.slice(m.start, m.end).map((row, k) => lineRow(f, row, lang, [], htmls[m.start + k])));
       return tr;
     }
 
@@ -472,7 +594,7 @@ tr.xref code { color: var(--foreground); }
       const tr = el("tr", "gap");
       const count = toNew - fromNew + 1;
       const td = el("td");
-      td.colSpan = 3;
+      td.colSpan = COLS();
       tr.appendChild(td);
       if (other) {
         const s = D.sections[other.sec];
@@ -488,7 +610,7 @@ tr.xref code { color: var(--foreground); }
         const rows = [];
         const texts = f.newText.slice(fromNew - 1, toNew);
         const htmls = hlLines(texts, lang);
-        for (let n = fromNew; n <= toNew; n++) rows.push(lineRow(f, [" ", n + oldOffset, n, texts[n - fromNew] ?? ""], lang, false, htmls[n - fromNew]));
+        for (let n = fromNew; n <= toNew; n++) rows.push(lineRow(f, [" ", n + oldOffset, n, texts[n - fromNew] ?? ""], lang, [], htmls[n - fromNew]));
         tr.replaceWith(...rows);
       };
       return tr;
@@ -496,7 +618,8 @@ tr.xref code { color: var(--foreground); }
 
     function buildDiff(f, hunkIds, secIdx) {
       const lang = langOf(f.path);
-      const table = el("table", "d");
+      const table = el("table", "d" + (isSplit() ? " split" : ""));
+      if (isSplit()) table.innerHTML = `<colgroup><col class="c-ln"><col class="c-sg"><col><col class="c-ln"><col class="c-sg"><col></colgroup>`;
       const shown = f.hunks.filter(h => hunkIds.includes(h.id));
       const all = f.hunks;
       let prevEnd = { o: 1, n: 1 };
@@ -507,6 +630,8 @@ tr.xref code { color: var(--foreground); }
         const offset = (h.oldStart - h.newStart);
         const tb = el("tbody");
         tb.id = `${P}h-${h.id}-s${secIdx}`;
+        tb.dataset.h = h.id;
+        if (M.lastPass && h.fresh) tb.classList.add("fresh");
         // Gaps sit in their own tbody so expanding one never shifts the rows comments are pinned to.
         const gapTb = el("tbody");
         table.appendChild(gapTb);
@@ -524,23 +649,17 @@ tr.xref code { color: var(--foreground); }
           const head = gapTb.querySelector("tr.gap td");
           if (head && !head.querySelector("a")) head.insertAdjacentHTML("beforeend", `<span class="ctx">${esc(h.header)}</span>`);
         }
-        const noisyRows = new Set();
-        h.blocks.forEach(b => { if (b.noise) for (let i = b.start; i < b.end; i++) noisyRows.add(i); });
-        const moved = new Set(h.blocks.flatMap(b => b.reindented || []));
-        const htmls = hlHunk(h, lang);
-        // re-indented lines show once, as context, the way a whitespace-blind diff shows them
-        const trs = h.lines.map((row, i) => !moved.has(i) ? lineRow(f, row, lang, noisyRows.has(i), htmls[i])
-          : row[0] === "+" ? lineRow(f, [" ", ...row.slice(1)], lang, false, htmls[i]) : null);
-        const shownRows = trs.filter(Boolean);
-        const cutoff = f.status === "deleted" && shownRows.length > 200 ? 30 : Infinity;
-        shownRows.slice(0, cutoff).forEach(tr => tb.appendChild(tr));
-        if (cutoff < shownRows.length) {
+        const code = {};
+        const rows = hunkRows(f, h, lang, code);
+        wordMarks(h, code);
+        const cutoff = f.status === "deleted" && rows.length > 200 ? 30 : Infinity;
+        rows.slice(0, cutoff).forEach(tr => tb.appendChild(tr));
+        if (cutoff < rows.length) {
           const more = el("tr", "gap");
-          more.innerHTML = `<td colspan="3"><button type="button">Show ${shownRows.length - cutoff} more removed lines</button></td>`;
-          more.querySelector("button").onclick = () => { more.replaceWith(...shownRows.slice(cutoff)); wordMarks(h, trs); };
+          more.innerHTML = `<td colspan="${COLS()}"><button type="button">Show ${rows.length - cutoff} more removed lines</button></td>`;
+          more.querySelector("button").onclick = () => more.replaceWith(...rows.slice(cutoff));
           tb.appendChild(more);
         }
-        wordMarks(h, trs);
         table.appendChild(tb);
         if (XREF[h.id]) { const xt = el("tbody"); xt.appendChild(xrefRow(XREF[h.id])); table.appendChild(xt); }
         prevEnd = hunkEnd(h);
@@ -566,20 +685,22 @@ tr.xref code { color: var(--foreground); }
       return table;
     }
 
-    function wordMarks(h, trs) {
+    // ---- word-level marks inside paired removed and added lines of each real change ----
+    function wordMarks(h, code) {
+      const skip = new Set(h.blocks.flatMap(b => b.reindented || []));
+      (h.moves || []).forEach(m => { for (let i = m.start; i < m.end; i++) skip.add(i); });
       h.blocks.forEach(b => {
         if (b.noise) return;
-        const rows = h.lines.slice(b.start, b.end);
         const dels = [], adds = [];
-        rows.forEach((r, k) => { if (!(b.reindented || []).includes(b.start + k)) (r[0] === "-" ? dels : adds).push(b.start + k); });
+        for (let i = b.start; i < b.end; i++) if (!skip.has(i)) (h.lines[i][0] === "-" ? dels : adds).push(i);
         const pairs = Math.min(dels.length, adds.length);
         if (!pairs || Math.max(dels.length, adds.length) > pairs * 2) return;
         for (let k = 0; k < pairs; k++) {
           const a = h.lines[dels[k]][3], c = h.lines[adds[k]][3];
           const [ra, rb] = changedRanges(a, c);
           if (ra.reduce((s, r) => s + r[1] - r[0], 0) > a.length * 0.7) continue;
-          if (trs[dels[k]].isConnected || trs[dels[k]].parentNode) markRanges(trs[dels[k]].querySelector("td.code"), ra);
-          if (trs[adds[k]].isConnected || trs[adds[k]].parentNode) markRanges(trs[adds[k]].querySelector("td.code"), rb);
+          if (code[dels[k]]) markRanges(code[dels[k]], ra);
+          if (code[adds[k]]) markRanges(code[adds[k]], rb);
         }
       });
     }
@@ -600,6 +721,7 @@ tr.xref code { color: var(--foreground); }
       if (f.status === "renamed") tags.push(`<span class="tag" title="from ${esc(f.oldPath)}">renamed</span>`);
       if (f.category !== "implementation") tags.push(`<span class="tag">${esc(f.category)}</span>`);
       if (hunkIds.length && hunkIds.length < f.hunks.length && sec.kind === "guide") tags.push(`<span class="tag split" title="Other hunks of this file are in other sections">part</span>`);
+      if (M.lastPass && hunkIds.some(id => hunks[id].h.fresh)) tags.push(`<span class="tag fresh" title="Changed since the page built at ${esc(M.lastPass.headSha.slice(0, 7))}">new</span>`);
       const key = tickKey({ id: f.id, hunks: hunkIds });
       card.innerHTML = `<header><button class="fold" type="button" aria-label="Collapse">▾</button>`
         + `<div class="path"><span class="bn">${esc(bn)}</span><span class="dir">${esc(dir)}</span></div>${tags.join("")}`
@@ -637,7 +759,7 @@ tr.xref code { color: var(--foreground); }
       if (/h\d+$/.test(id)) {
         const sec = owner[id] ?? secHint;
         const tb = $(`h-${id}-s${sec}`);
-        target = tb && (tb.querySelector("tr.line.add, tr.line.del") || tb.querySelector("tr"));
+        target = tb && (tb.querySelector("tr.chg") || tb.querySelector("tr"));
       } else {
         target = $(`c-${secHint}-${id}`) || document.querySelector(`[id^="${P}c-"][id$="-${id}"]`);
       }
@@ -647,7 +769,7 @@ tr.xref code { color: var(--foreground); }
     // ---- names this hunk shares with other layers of the stack ----
     function xrefRow(xs) {
       const tr = el("tr", "xref"), td = el("td");
-      td.colSpan = 3;
+      td.colSpan = COLS();
       const part = (up, label) => {
         const mine = xs.filter(x => x.up === up);
         if (!mine.length) return "";
@@ -665,7 +787,10 @@ tr.xref code { color: var(--foreground); }
       const ref = M.number ? `${M.repo}#${M.number}` : M.repo;
       $("crumbs").innerHTML = (M.url ? `<a href="${esc(M.url)}" target="_blank" rel="noopener">${esc(ref)}</a>` : `<span>${esc(ref)}</span>`)
         + `<span class="mono">${esc(M.base)} ← ${esc(M.head)}</span><span class="mono">${esc(M.mergeBase.slice(0, 7))}…${esc(SHA7)}</span>`
-        + (M.issues || []).map(x => x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.ref)}</a>` : `<span>${esc(x.ref)}</span>`).join("");
+        + (M.issues || []).map(x => {
+          const title = x.closes === false ? "Linked; this PR doesn't close it" : "This PR closes it";
+          return x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener" title="${title}">${esc(x.ref)}</a>` : `<span title="${title}">${esc(x.ref)}</span>`;
+        }).join("");
       $("title").textContent = M.title;
       const S = D.stats, impl = S.categories.implementation || { add: 0, del: 0, files: 0 };
       const differs = impl.add !== S.total.add || impl.del !== S.total.del;
@@ -675,14 +800,30 @@ tr.xref code { color: var(--foreground); }
         .map(([k, v]) => `<tr><td>${esc(NAMES[k] || k)} <span class="mono" style="color:var(--muted-foreground)">${v.files}</span></td><td class="num">${counts(v.add, v.del)}</td></tr>`);
       if (S.noise.add || S.noise.del) rows.push(`<tr><td>Formatting only</td><td class="num">${counts(S.noise.add, S.noise.del)}</td></tr>`);
       rows.push(`<tr class="total"><td>Total <span class="mono" style="color:var(--muted-foreground)">${S.total.files}</span></td><td class="num">${counts(S.total.add, S.total.del)}</td></tr>`);
+      // Which part of the change to show: everything, what is new since the last page, or one commit.
+      const opts = [`<option value="">All changes</option>`];
+      const L = M.lastPass;
+      if (L) opts.push(`<option value="fresh">New since ${esc(L.headSha.slice(0, 7))}${L.at ? `, ${ago(L.at)}` : ""} (${L.fresh} hunk${L.fresh === 1 ? "" : "s"})</option>`);
+      if (M.commitMap) (M.commits || []).forEach((c, i) => opts.push(`<option value="c${i}">${esc(c.split("\n")[0].slice(0, 90))}</option>`));
       const meta = $("meta");
       meta.innerHTML = `<span>${esc(M.author)}</span>`
         + `<span class="loc-wrap"><button class="loc" type="button" aria-expanded="false"><span class="num">${counts(impl.add, impl.del)}</span>${differs ? `<span class="star">(*)</span>` : ""}</button>`
-        + `<div class="loc-pop" hidden><table>${rows.join("")}</table><p class="note">The headline counts implementation lines, leaving out tests, docs, generated files and formatting-only changes.</p></div></span>`
-        + `<span class="progress" id="${P}progress"></span>`;
+        + `<div class="loc-pop" hidden><table>${rows.join("")}</table><p class="note">The headline counts implementation lines, leaving out tests, docs, generated files and formatting-only changes.`
+        + `${S.moved ? ` ${S.moved} added lines only moved, unchanged, and are counted where they landed.` : ""}</p></div></span>`
+        + `<span class="progress" id="${P}progress"></span>`
+        + `<span class="view">${opts.length > 1 ? `<select class="pick" id="${P}pick" aria-label="Which part of the change to show">${opts.join("")}</select>` : ""}`
+        + `<span class="seg" role="group" aria-label="Diff layout"><button type="button" data-view="unified">Unified</button><button type="button" data-view="split">Split</button></span></span>`
+        + `<span class="filtering" id="${P}filtering" hidden></span>`;
       const btn = meta.querySelector(".loc"), pop = meta.querySelector(".loc-pop");
       btn.onclick = e => { e.stopPropagation(); pop.hidden = !pop.hidden; btn.setAttribute("aria-expanded", String(!pop.hidden)); };
       document.addEventListener("click", e => { if (!pop.hidden && !pop.contains(e.target)) { pop.hidden = true; btn.setAttribute("aria-expanded", "false"); } });
+      const pick = $("pick");
+      if (pick) pick.onchange = () => { FILTER = pick.value; applyFilter(); };
+      meta.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+        splitPref = b.dataset.view === "split";
+        try { localStorage.setItem("prg:view", splitPref ? "split" : "unified"); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+        redrawAll();
+      });
     }
 
     function sectionText(sec, i, guideCount) {
@@ -691,9 +832,12 @@ tr.xref code { color: var(--foreground); }
       return sec;
     }
 
-    function render() {
-      header();
+    // The sections and their diffs, drawn again when the layout changes.
+    function sections() {
       const main = $("guide"), index = $("index");
+      main.replaceChildren();
+      index.replaceChildren();
+      document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.view === "split") === splitPref)));
       const guideCount = D.sections.filter(s => s.kind === "guide").length;
       D.sections.forEach((sec, i) => sec.files.forEach(x => x.hunks.forEach(h => { owner[h] = i; })));
       D.sections.forEach((sec, i) => {
@@ -715,6 +859,7 @@ tr.xref code { color: var(--foreground); }
           const [bn, dir] = split(f.path);
           const li = el("li", "st-" + f.status);
           li.dataset.key = tickKey(x);
+          li.dataset.card = card.id;
           li.innerHTML = `<button type="button" title="${esc(f.path)}"><span class="fname"><span class="bn">${esc(bn)}</span><span class="fdir">${esc(dir.replace(/\/$/, ""))}</span></span><span class="num">${counts(add, del)}</span></button>`;
           li.querySelector("button").onclick = () => { card.classList.remove("closed"); card.scrollIntoView({ block: "start", behavior: reduced ? "auto" : "smooth" }); };
           list.appendChild(li);
@@ -726,7 +871,7 @@ tr.xref code { color: var(--foreground); }
           sec.files.forEach(x => setDone(tickKey(x), secchk.checked));
           body.querySelectorAll(".card").forEach(c => { c.querySelector("input").checked = secchk.checked; c.classList.toggle("closed", secchk.checked); });
           refreshTicks();
-          };
+        };
         s.append(side, body);
         main.appendChild(s);
         const li = el("li");
@@ -734,6 +879,8 @@ tr.xref code { color: var(--foreground); }
         index.appendChild(li);
       });
       refreshTicks();
+      markLines();
+      applyFilter();
     }
 
     function refreshTicks() {
@@ -753,22 +900,88 @@ tr.xref code { color: var(--foreground); }
       $("progress").textContent = total ? `${done} of ${total} files reviewed` : "Nothing to review beyond formatting and generated files";
     }
 
-    render();
-    readyPanel();
+    // Hides what the chosen part of the change doesn't touch: whole cards and sections, and dims the other hunks
+    // of a card it does touch.
+    function applyFilter() {
+      const on = !!FILTER;
+      const hit = h => FILTER === "fresh" ? !!h.fresh : (h.commits || []).includes(+FILTER.slice(1));
+      let nh = 0, nf = 0;
+      D.sections.forEach((sec, i) => {
+        const s = $(`s${i + 1}`);
+        let shown = 0;
+        sec.files.forEach(x => {
+          const card = $(`c-${i}-${x.id}`), mine = on ? x.hunks.filter(id => hit(hunks[id].h)) : x.hunks;
+          const off = on && !mine.length;
+          card.hidden = off;
+          card.querySelectorAll("tbody[data-h]").forEach(tb => tb.classList.toggle("dim", on && !mine.includes(tb.dataset.h)));
+          const li = s.querySelector(`.filelist li[data-card="${card.id}"]`);
+          if (li) li.hidden = off;
+          if (!off) { shown++; nf++; nh += mine.length; }
+        });
+        s.hidden = !shown;
+        const a = $("index").querySelector(`a[data-sec="${i}"]`);
+        if (a) a.parentElement.hidden = !shown;
+      });
+      const note = $("filtering");
+      note.hidden = !on;
+      if (!on) return;
+      note.innerHTML = `Showing ${nh} hunk${nh === 1 ? "" : "s"} in ${nf} file${nf === 1 ? "" : "s"}. <button type="button">Show everything</button>`;
+      note.querySelector("button").onclick = () => { FILTER = ""; $("pick").value = ""; applyFilter(); };
+    }
+
+    // Flags and CI annotations, on the lines they are about. Run again whenever the diffs are drawn.
+    function markLines() {
+      (D.tells || []).forEach(t => {
+        const td = $(`r-${t.file}-${t.line}`);
+        if (td && !td.querySelector(".tellmark")) td.insertAdjacentHTML("beforeend", `<span class="tellmark" title="${esc(t.label)}">!</span>`);
+      });
+      const at = {};
+      (D.annotations || []).filter(a => a.row).forEach(a => (at[`${a.file}-${a.row}`] = at[`${a.file}-${a.row}`] || []).push(a));
+      Object.entries(at).forEach(([k, as]) => {
+        const td = $(`r-${k}`);
+        if (!td) return;
+        let after = td.closest("tr");
+        as.forEach(a => {
+          const tr = el("tr", "ann"), cell = el("td");
+          cell.colSpan = COLS();
+          cell.innerHTML = `<span class="lvl ${esc(a.level)}">${esc(a.level)}</span>${a.title ? `<b>${esc(a.title)}</b> ` : ""}<span class="msg"></span> `
+            + `<span class="why-note">${a.link ? `<a href="${esc(a.link)}" target="_blank" rel="noopener">${esc(a.check)}</a>` : esc(a.check)}</span>`;
+          cell.querySelector(".msg").textContent = a.message;
+          tr.appendChild(cell);
+          after.after(tr);
+          after = tr;
+        });
+      });
+    }
 
     // ---- what the author should settle before marking the PR ready ----
     function goToRow(rowId, hunk) {
-      const tr = document.getElementById(rowId);
-      if (!tr) return goTo(hunk);
-      reveal(tr);
+      const td = document.getElementById(rowId);
+      if (!td) return goTo(hunk);
+      reveal(td);
     }
+    // Hunks named by their sections, which is how the page numbers things, one link per section; a hunk outside
+    // the sections keeps its id.
+    const hunkLinks = hs => {
+      const seen = new Map();
+      (hs || []).forEach(h => {
+        const label = owner[h] != null && D.sections[owner[h]].kind === "guide" ? `§${pad2(owner[h] + 1)}` : h;
+        if (!seen.has(label)) seen.set(label, h);
+      });
+      return [...seen].map(([label, h]) => `<a href="#" class="ref tellref" data-hunk="${esc(h)}">${esc(label)}</a>`).join("");
+    };
     function readyPanel() {
-      const R = D.ready || {}, tells = D.tells || [], desc = D.descriptionCheck, split = D.split;
+      const R = D.ready || {}, tells = D.tells || [], desc = D.descriptionCheck, split = D.split, anns = D.annotations || [];
       const chip = (tone, label, title) => `<span class="chip ${tone}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
       const chips = [];
       if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines in ${R.files} files: ${R.band}`));
       const C = R.checks;
       if (C) chips.push(ciChip(chip, C), ...(C.stale ? [chip("warn", "CI ran on the pushed head, not this one")] : []));
+      const placed = anns.filter(a => a.row);
+      if (anns.length) chips.push(chip(anns.some(a => a.level === "failure") ? "bad" : "warn",
+        placed.length ? `CI: ${placed.length} annotation${placed.length === 1 ? "" : "s"} on changed lines` : `CI: ${anns.length} annotation${anns.length === 1 ? "" : "s"} elsewhere`));
+      const L = M.lastPass;
+      if (L) chips.push(L.fresh ? chip("warn", `${L.fresh} hunk${L.fresh === 1 ? "" : "s"} new since ${L.headSha.slice(0, 7)}`) : chip("good", `Nothing new since ${L.headSha.slice(0, 7)}`));
       if (R.implChanged && !R.testsChanged) chips.push(chip("warn", "No test changes"));
       chips.push(tells.length ? chip("warn", `${tells.length} flagged line${tells.length === 1 ? "" : "s"}`) : chip("good", "No flagged lines"));
       if (desc) {
@@ -778,28 +991,43 @@ tr.xref code { color: var(--foreground); }
         if (ni) chips.push(chip("warn", `Issue: ${ni} ask${ni === 1 ? "" : "s"} not in the diff`));
       }
       const parts = [`<h2>Before you mark it ready</h2><div class="chips">${chips.join("")}</div>`];
+      const byFile = list => {
+        const out = {};
+        list.forEach(x => (out[x.file] = out[x.file] || []).push(x));
+        return Object.entries(out);
+      };
       if (tells.length) {
-        const byFile = {};
-        tells.forEach(t => (byFile[t.file] = byFile[t.file] || []).push(t));
-        const rows = Object.entries(byFile).map(([fid, ts]) => {
+        const rows = byFile(tells).map(([fid, ts]) => {
           const links = ts.slice(0, 8).map(t => `<a href="#" class="ref tellref" data-row="${P}r-${fid}-${t.line}" data-hunk="${t.hunk}" title="${esc(t.text)}">${esc(t.label)} ${t.line}</a>`).join("");
           return `<li><code>${esc(files[fid].path)}</code> ${links}${ts.length > 8 ? ` <span class="why-note">and ${ts.length - 8} more</span>` : ""}</li>`;
         });
         parts.push(`<details open><summary>Flagged lines</summary><ul>${rows.join("")}</ul></details>`);
       }
-      if (desc && ((desc.unsupported || []).length || (desc.missing || []).length)) {
-        // The stack check notes findings another layer explains, such as a claim about code that lands further up.
-        const note = x => x.stack ? ` <span class="stacknote">${esc(x.stack)}</span>` : "";
-        const un = (desc.unsupported || []).map(x => `<li><b>Not in the diff:</b> <q>${esc(x.claim)}</q> <span class="why-note">${esc(x.why || "")}</span>${note(x)}</li>`);
-        const mi = (desc.missing || []).map(x => `<li><b>Left out:</b> ${esc(x.what)} ${(x.hunks || []).map(h => `<a href="#" class="ref tellref" data-hunk="${esc(h)}">${esc(h)}</a>`).join("")}${note(x)}</li>`);
-        parts.push(`<details open><summary>Description vs diff</summary><ul>${un.concat(mi).join("")}</ul></details>`);
+      if (anns.length) {
+        const rows = byFile(placed).map(([fid, as]) => `<li><code>${esc(files[fid].path)}</code> `
+          + as.slice(0, 8).map(a => `<a href="#" class="ref tellref" data-row="${P}r-${fid}-${a.row}" data-hunk="${a.hunk}" title="${esc(a.message)}">${esc(a.title || a.level)} ${a.row}</a>`).join("")
+          + `${as.length > 8 ? ` <span class="why-note">and ${as.length - 8} more</span>` : ""}</li>`);
+        const rest = anns.filter(a => !a.row);
+        const elsewhere = rest.slice(0, 12).map(a => `<li><code>${esc(a.path)}:${a.line}</code> ${esc(a.title || a.level)}: <span class="why-note">${esc(a.message)}</span></li>`);
+        parts.push(`<details open><summary>CI annotations</summary><ul>${rows.join("")}</ul>`
+          + (rest.length ? `<p class="why-note">${rest.length} on lines this PR doesn't change${rest.length > 12 ? ", the first 12 here" : ""}:</p><ul>${elsewhere.join("")}</ul>` : "") + `</details>`);
       }
-      if (desc && (desc.issue || []).length) {
-        const asks = desc.issue.map(x => `<li><b>Not in the diff:</b> ${esc(x.ask)} <span class="why-note">${esc(x.why || "")}</span>${x.stack ? ` <span class="stacknote">${esc(x.stack)}</span>` : ""}</li>`);
-        parts.push(`<details open><summary>Linked issue vs diff</summary><ul>${asks.join("")}</ul></details>`);
+      // Claim by claim: what the description and the linked issue say, against the hunks that do it or the reason they don't.
+      const note = x => x.stack ? ` <span class="stacknote">${esc(x.stack)}</span>` : "";
+      const done = from => ((desc && desc.checklist) || []).filter(x => x.from === from)
+        .map(x => `<li><b>In the diff:</b> <q>${esc(x.claim)}</q> ${hunkLinks(x.hunks)}${note(x)}</li>`);
+      if (desc && (done("description").length || (desc.unsupported || []).length || (desc.missing || []).length)) {
+        const un = (desc.unsupported || []).map(x => `<li><b>Not in the diff:</b> <q>${esc(x.claim)}</q> <span class="why-note">${esc(x.why || "")}</span>${note(x)}</li>`);
+        const mi = (desc.missing || []).map(x => `<li><b>Left out:</b> ${esc(x.what)} ${hunkLinks(x.hunks)}${note(x)}</li>`);
+        parts.push(`<details open><summary>Description vs diff</summary><ul>${un.concat(mi, done("description")).join("")}</ul></details>`);
+      }
+      if (desc && (done("issue").length || (desc.issue || []).length)) {
+        const asks = (desc.issue || []).map(x => `<li><b>Not in the diff:</b> ${esc(x.ask)} <span class="why-note">${esc(x.why || "")}</span>${note(x)}</li>`);
+        parts.push(`<details open><summary>Linked issue vs diff</summary><ul>${asks.concat(done("issue")).join("")}</ul></details>`);
       }
       const risky = D.sections.map((sec, i) => [sec, i]).filter(([sec]) => sec.kind === "guide" && sec.risk);
       if (risky.length) parts.push(`<details open><summary>Needs a careful read</summary><ul>${risky.map(([sec, i]) => `<li><a href="#${P}s${i + 1}">§${pad2(i + 1)} ${esc(sec.title)}</a>: ${esc(sec.risk)}</li>`).join("")}</ul></details>`);
+      if ((D.try || []).length) parts.push(`<details open><summary>Try by hand</summary><ul>${D.try.map(x => `<li>${prose(x)}</li>`).join("")}</ul></details>`);
       if (split) {
         const prs = split.prs.map((pr, k) => `<li>PR ${k + 1}: ${pr.map(n => `<a href="#${P}s${n}">§${pad2(n)} ${esc(D.sections[n - 1].title)}</a>`).join(", ")}</li>`);
         parts.push(`<details open><summary>Could be ${split.prs.length} PRs</summary>${split.note ? `<p class="why-note">${esc(split.note)}</p>` : ""}<ul>${prs.join("")}</ul></details>`);
@@ -807,14 +1035,15 @@ tr.xref code { color: var(--foreground); }
       const panel = $("ready");
       panel.innerHTML = parts.join("");
       panel.querySelectorAll("a[data-hunk]").forEach(a => a.onclick = e => { e.preventDefault(); a.dataset.row ? goToRow(a.dataset.row, a.dataset.hunk) : goTo(a.dataset.hunk); });
-      tells.forEach(t => {
-        const tr = $(`r-${t.file}-${t.line}`);
-        if (!tr || tr.querySelector(".tellmark")) return;
-        tr.querySelector("td.ln").insertAdjacentHTML("beforeend", `<span class="tellmark" title="${esc(t.label)}">!</span>`);
-      });
+      panel.querySelectorAll("a[data-to]").forEach(a => a.onclick = e => { e.preventDefault(); goTo(a.dataset.to); });
     }
 
-    return { goTo };
+    header();
+    sections();
+    readyPanel();
+    const api = { goTo, redraw: sections };
+    MOUNTS.push(api);
+    return api;
   }
 
   // ---- the stack: one layer at a time, with the panel above to move between them ----
@@ -981,36 +1210,38 @@ tr.xref code { color: var(--foreground); }
       },
       // In page order, so a review reads bottom layer first and down each file; notes for lines not on this build go last.
       all() {
-        const order = new Map([...document.querySelectorAll("tr.line")].map((r, i) => [r.dataset.anchor, i]));
+        const order = new Map([...document.querySelectorAll("td.ln[data-anchor]")].map((r, i) => [r.dataset.anchor, i]));
         return [...mem].sort((x, y) => (order.get(x[0]) ?? 1e9) - (order.get(y[0]) ?? 1e9) || x[0].localeCompare(y[0]));
       },
     };
-    const rowFor = loc => document.querySelector(`tr.line[data-anchor="${CSS.escape(loc)}"]`);
+    // The number cell a note is pinned to; a split row holds two lines, so it is the cell and not the row.
+    const cellFor = loc => document.querySelector(`td.ln[data-anchor="${CSS.escape(loc)}"]`);
 
     let editing = null;
     function renderNotes(status) {
       document.querySelectorAll("tr.note").forEach(r => r.remove());
-      document.querySelectorAll("tr.has-note").forEach(r => r.classList.remove("has-note"));
+      document.querySelectorAll("td.has-note").forEach(r => r.classList.remove("has-note"));
       for (const [loc, text] of notes.all()) {
-        const tr = rowFor(loc);
-        if (!tr) continue;
-        tr.classList.add("has-note");
+        const td = cellFor(loc);
+        if (!td) continue;
+        td.classList.add("has-note");
         if (editing && editing.dataset.loc === loc) continue;
+        const tr = td.closest("tr");
         const row = el("tr", "note");
         row.dataset.loc = loc;
-        row.innerHTML = `<td colspan="3"><div class="cmp"><div class="note-text"></div><div class="cmp-row">`
+        row.innerHTML = `<td colspan="${tr.cells.length}"><div class="cmp"><div class="note-text"></div><div class="cmp-row">`
           + `<button class="btn" type="button" data-act="edit">Edit</button><button class="btn ghost" type="button" data-act="delete">Delete</button></div></div></td>`;
         row.querySelector(".note-text").textContent = text;
         tr.after(row);
       }
       panel(status);
     }
-    function edit(tr) {
+    function edit(td) {
       if (editing) editing.remove();
-      const loc = tr.dataset.anchor;
+      const loc = td.dataset.anchor, tr = td.closest("tr");
       const box = el("tr", "composer");
       box.dataset.loc = loc;
-      box.innerHTML = `<td colspan="3"><div class="cmp"><div class="cmp-loc">${esc(loc)}</div>`
+      box.innerHTML = `<td colspan="${tr.cells.length}"><div class="cmp"><div class="cmp-loc">${esc(loc)}</div>`
         + `<textarea rows="3" maxlength="3000" aria-label="Note on ${esc(loc)}" placeholder="Note on this line"></textarea>`
         + `<div class="cmp-row"><button class="btn primary" type="button" data-act="done">Done</button>`
         + `<button class="btn ghost" type="button" data-act="delete">Delete</button><span class="cmp-msg">Kept in this browser as you type.</span></div></div></td>`;
@@ -1024,10 +1255,10 @@ tr.xref code { color: var(--foreground); }
     }
     wrap.addEventListener("click", e => {
       const b = e.target.closest(".cbtn");
-      if (b) { edit(b.closest("tr.line")); return; }
+      if (b) { edit(b.closest("td.ln")); return; }
       const act = e.target.dataset && e.target.dataset.act, row = e.target.closest("tr.note, tr.composer");
       if (!act || !row) return;
-      if (act === "edit") { edit(rowFor(row.dataset.loc)); return; }
+      if (act === "edit") { edit(cellFor(row.dataset.loc)); return; }
       if (act === "delete") notes.set(row.dataset.loc, "");
       if (row === editing) { editing = null; row.remove(); }
       renderNotes();
@@ -1036,8 +1267,8 @@ tr.xref code { color: var(--foreground); }
     function goNote(loc) {
       const m = /^#(\d+) /.exec(loc);
       if (m && STACK) show(+m[1]);
-      const tr = rowFor(loc);
-      if (tr) reveal(tr);
+      const td = cellFor(loc);
+      if (td) reveal(td);
     }
     // Notes copied for pasting into the terminal stay until cleared, since the page cannot tell whether they were pasted.
     let copied = [];
@@ -1053,7 +1284,7 @@ tr.xref code { color: var(--foreground); }
         + `<button class="btn${c ? "" : " primary"}" type="button" data-copy title="Copy the notes to paste into your Claude session">Copy notes</button>`
         + (nCopied ? `<button class="btn ghost" type="button" data-clear>Clear ${nCopied} copied</button>` : "") : ""}`
         + `<span class="cmp-msg" role="status"></span></div>`
-        + (n ? `<ul>${list.map(([loc, text]) => `<li data-loc="${esc(loc)}"><a href="#" class="ref">${esc(loc)}</a>${rowFor(loc) ? "" : " (not on this page)"}`
+        + (n ? `<ul>${list.map(([loc, text]) => `<li data-loc="${esc(loc)}"><a href="#" class="ref">${esc(loc)}</a>${cellFor(loc) ? "" : " (not on this page)"}`
           + `${isCopied(loc, text) ? " (copied)" : ""} `
           + `<span class="why-note"></span><button class="x" type="button" aria-label="Delete this note" title="Delete this note">×</button></li>`).join("")}</ul>` : "");
       box.querySelector(".cmp-msg").textContent = status || "";
@@ -1135,6 +1366,8 @@ tr.xref code { color: var(--foreground); }
         btn.disabled = FINAL.has(code);
       }
     }
+    // A change of layout draws every line again, so the notes find theirs again; an open editor keeps its text in storage.
+    wrap.addEventListener("prg:redrawn", () => { editing = null; renderNotes(); });
     renderNotes();
   })();
 })();

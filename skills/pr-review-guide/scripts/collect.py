@@ -18,12 +18,14 @@ default branch (origin/HEAD), else origin/main.
 """
 import argparse
 import codecs
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 
 CONTEXT = 3
 BATCH_LINES = 800
@@ -85,11 +87,19 @@ def remote_name(repo):
 
 PR_FIELDS = "number,title,url,body,author,baseRefName,headRefName,baseRefOid,headRefOid,closingIssuesReferences"
 
-CLOSES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+((?:[\w.-]+/[\w.-]+)?#\d+)", re.I)
 GH_ISSUE_URL = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)")
-TRACKER_URL = re.compile(r"https?://(?:linear\.app/[\w-]+/issue|[\w.-]+/browse)/([A-Z][A-Z0-9]*-\d+)")
+TRACKER_URL = re.compile(r"https?://(?:linear\.app/[\w-]+/issue|[\w.-]+/browse)/([A-Z][A-Z0-9]*-\d+)[^\s)>\]]*")
 KEY = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,6})\b")
 BRANCH_KEY = re.compile(r"^([a-z][a-z0-9]{1,9}-\d{1,6})(?=$|[-_])", re.I)
+# The words GitHub and Linear read before an issue: the first set closes it on merge, Linear's extra pair
+# closes only a Linear or Jira issue, the third only links, and skip or ignore stops a link being made.
+CLOSING = r"close[sd]?|closing|fix(?:e[sd]|ing)?|resolve[sd]?|resolving"
+LINEAR_CLOSING = r"complete[sd]?|completing|implement(?:s|ed|ing)?"
+RELATED = r"refs?|references|part\s+of|relate[sd]\s+to|contributes\s+to|towards?"
+REF = (r"https://github\.com/[\w.-]+/[\w.-]+/issues/\d+|https?://(?:linear\.app/[\w-]+/issue|[\w.-]+/browse)/"
+       r"[A-Z][A-Z0-9]*-\d+[^\s,)>\]]*|(?:[\w.-]+/[\w.-]+)?#\d+|\b[A-Z][A-Z0-9]{1,9}-\d{1,6}\b")
+MAGIC = re.compile(rf"(?i:\b({CLOSING}|{LINEAR_CLOSING}|{RELATED}|skip|ignore)\b):?\s+"
+                   rf"((?:{REF})(?:(?:\s*,\s*|\s+(?i:and)\s+|\s+)(?:{REF}))*)")
 # Things shaped like an issue key that are not one.
 NOT_KEYS = {"UTF", "SHA", "ISO", "RFC", "CVE", "HTTP", "TLS", "GPT", "PEP", "RELEASE", "HOTFIX", "FIX", "FEATURE",
             "BUGFIX", "CHORE", "REVERT", "DEPS"}
@@ -100,40 +110,73 @@ def same_owner(a, b):
     return bool(a and b) and a.split("/")[0].lower() == b.split("/")[0].lower()
 
 
+def parse_ref(text, name):
+    """("gh", (owner/repo, n), url) or ("key", KEY, url) for one issue reference."""
+    m = GH_ISSUE_URL.match(text)
+    if m:
+        return "gh", (m.group(1), int(m.group(2))), text
+    m = TRACKER_URL.match(text)
+    if m:
+        return "key", m.group(1), text
+    if "#" in text:
+        where, _, n = text.partition("#")
+        return "gh", (where or name, int(n)), None
+    return "key", text, None
+
+
 def linked_issues(repo, name, pr, title, body, commits, branch):
     """The issues a change says it works on: GitHub ones with their text, Jira or Linear keys for the session
     to fetch with its own tracker tool. Returns (issues for the page, issue.md text).
 
-    Only issues under the repo's own owner are fetched. The PR's author writes the links, so one to another
-    owner's repo would otherwise pull whatever the reviewer's gh login can read into the model's context."""
-    gh = {}
+    Each says whether the PR closes it: a closing reference, a closing word, or a key in the title or branch
+    name, which is how Linear links a PR. Only issues under the repo's own owner are fetched. The PR's author
+    writes the links, so one to another owner's repo would otherwise pull whatever the reviewer's gh login can
+    read into the model's context."""
+    found = {"gh": {}, "key": {}}
+
+    def add(kind, ident, url, closes):
+        x = found[kind].setdefault(ident, {"url": None, "closes": False})
+        x["url"] = x["url"] or url
+        x["closes"] = x["closes"] or closes
+
     for x in (pr or {}).get("closingIssuesReferences") or []:
         r = x.get("repository") or {}
         owner = (r.get("owner") or {}).get("login")
-        gh[(f"{owner}/{r['name']}" if owner and r.get("name") else name, x["number"])] = x.get("url")
+        add("gh", (f"{owner}/{r['name']}" if owner and r.get("name") else name, x["number"]), x.get("url"), True)
     text = "\n".join([title, body, *commits])
-    for ref in CLOSES.findall(text):
-        where, _, n = ref.partition("#")
-        gh.setdefault((where or name, int(n)), None)
+    skipped = set()
+    for m in MAGIC.finditer(text):
+        word = m.group(1).lower()
+        for ref in re.finditer(REF, m.group(2)):
+            kind, ident, url = parse_ref(ref.group(0), name)
+            if word in ("skip", "ignore"):
+                skipped.add(ident)
+            else:
+                add(kind, ident, url, bool(re.fullmatch(CLOSING, word) or
+                                           (kind == "key" and re.fullmatch(LINEAR_CLOSING, word))))
     for where, n in GH_ISSUE_URL.findall(text):
-        gh.setdefault((where, int(n)), None)
-    keys = {}
+        add("gh", (where, int(n)), None, False)
     for m in TRACKER_URL.finditer(text):
-        keys.setdefault(m.group(1), m.group(0))
-    subjects = "\n".join([title, *(c.split("\n", 1)[0] for c in commits)])
+        add("key", m.group(1), m.group(0), False)
     tail = branch.rsplit("/", 1)[-1]
-    for k in KEY.findall(subjects) + [m.upper() for m in BRANCH_KEY.findall(tail)]:
-        keys.setdefault(k, None)
+    for k in KEY.findall(title) + [m.upper() for m in BRANCH_KEY.findall(tail)]:
+        add("key", k, None, True)
+    for k in KEY.findall("\n".join(c.split("\n", 1)[0] for c in commits)):
+        add("key", k, None, False)
     issues, parts = [], []
-    for (where, n), url in list(gh.items())[:MAX_ISSUES]:
+    gh = [(k, v) for k, v in found["gh"].items() if k not in skipped]
+    for (where, n), x in gh[:MAX_ISSUES]:
         ref = f"#{n}" if where == name else f"{where}#{n}"
         got = gh_json(repo, "issue", "view", str(n), "-R", where, "--json", "title,body,url") \
             if same_owner(where, name) else None
-        issues.append({"ref": ref, "url": (got or {}).get("url") or url, "fetched": bool(got)})
+        issues.append({"ref": ref, "url": (got or {}).get("url") or x["url"], "fetched": bool(got), "closes": x["closes"]})
         if got:
-            parts.append(f"## {ref}: {got['title']}\n{got['url']}\n\n{(got.get('body') or '').strip() or '(no description)'}")
-    for k, url in list((k, u) for k, u in keys.items() if k.split("-")[0] not in NOT_KEYS)[:MAX_ISSUES]:
-        issues.append({"ref": k, "url": url, "fetched": False})
+            how = "This PR closes it." if x["closes"] else "Linked from this PR, which doesn't close it."
+            parts.append(f"## {ref}: {got['title']}\n{got['url']}\n{how}\n\n"
+                         f"{(got.get('body') or '').strip() or '(no description)'}")
+    keys = [(k, v) for k, v in found["key"].items() if k not in skipped and k.split("-")[0] not in NOT_KEYS]
+    for k, x in keys[:MAX_ISSUES]:
+        issues.append({"ref": k, "url": x["url"], "fetched": False, "closes": x["closes"]})
     return issues, "\n\n".join(parts)
 
 
@@ -167,11 +210,12 @@ def resolve(a):
                     sys.exit("no --base given and no PR, origin/HEAD or origin/main to compare against")
         base = git(repo, "rev-parse", base_label).strip()
     merge_base = git(repo, "merge-base", base, head).strip()
-    log = git(repo, "log", "--reverse", "--format=%h %s%n%b%x00", f"{merge_base}..{head}")
-    commits = [c.strip() for c in log.split("\0") if c.strip()]
+    log = git(repo, "log", "--reverse", "--format=%H%x01%h %s%n%b%x00", f"{merge_base}..{head}")
+    entries = [c.strip().split("\x01", 1) for c in log.split("\0") if c.strip()]
+    shas, commits = [e[0] for e in entries], [e[1].strip() for e in entries]
     issues, issue_text = linked_issues(repo, name, pr, pr["title"] if pr else "", (pr or {}).get("body") or "",
                                        commits, head_label)
-    checks = None
+    checks, annotations = None, []
     if pr:
         rows = gh_json(repo, "pr", "checks", str(pr["number"]), "--json", "name,bucket,link")
         if rows is not None:
@@ -179,13 +223,50 @@ def resolve(a):
             checks["failing"] = [{"name": r["name"], "link": r["link"]} for r in rows if r["bucket"] == "fail"]
             # Without --pr the diff is the local head, which may not be the commit CI ran on.
             checks["stale"] = pr["headRefOid"] != head
+            if not checks["stale"]:
+                annotations = ci_annotations(repo, name, head)
     return {
         "repo": name, "number": pr and pr["number"], "title": pr["title"] if pr else head_label,
         "url": pr and pr["url"], "body": (pr or {}).get("body") or "",
         "author": ((pr or {}).get("author") or {}).get("login") or git(repo, "log", "-1", "--format=%an", head).strip(),
         "base": base_label, "head": head_label, "baseSha": base, "headSha": head, "mergeBase": merge_base,
-        "commits": commits, "checks": checks, "issues": issues, "issueText": issue_text,
+        "commits": commits, "shas": shas, "checks": checks, "issues": issues, "issueText": issue_text,
+        "annotations": annotations,
     }
+
+
+ANN_RUNS = 20
+ANN_MAX = 200
+
+
+def ci_annotations(repo, name, head):
+    """The warnings and failures the head's check runs pinned to a line, such as lint and type errors."""
+    runs = (gh_json(repo, "api", f"repos/{name}/commits/{head}/check-runs?per_page=100") or {}).get("check_runs") or []
+    out = []
+    for run in [r for r in runs if (r.get("output") or {}).get("annotations_count")][:ANN_RUNS]:
+        for a in gh_json(repo, "api", f"repos/{name}/check-runs/{run['id']}/annotations?per_page=50") or []:
+            # Actions pins its own job errors ("exit code 1") to .github, which is not a file.
+            if a.get("annotation_level") in ("warning", "failure") and a.get("path") not in (None, "", ".github") \
+                    and a.get("start_line"):
+                out.append({"check": run.get("name") or "", "link": run.get("html_url"), "path": a["path"],
+                            "line": a["start_line"], "end": a.get("end_line") or a["start_line"],
+                            "level": a["annotation_level"], "title": (a.get("title") or "")[:200],
+                            "message": (a.get("message") or "")[:600]})
+    return out[:ANN_MAX]
+
+
+def place_annotations(files, anns):
+    """Each annotation with the file, hunk and new-side line it lands on in the diff, or none when it is outside."""
+    by_path = {f["path"]: f for f in files if not f["noise"]}
+    for a in anns:
+        f = by_path.get(a["path"])
+        rows = [(h, r) for h in (f or {}).get("hunks", []) for r in h["lines"]
+                if r[0] != "-" and a["line"] <= r[2] <= a["end"]]
+        rows.sort(key=lambda x: (x[1][0] != "+", x[1][2]))
+        if rows:
+            h, r = rows[0]
+            a.update(file=f["id"], hunk=h["id"], row=f"R{r[2]}")
+    return anns
 
 
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
@@ -494,7 +575,8 @@ def find_tells(files):
             for b in h["blocks"]:
                 if b["noise"]:
                     continue
-                moved = set(b.get("reindented", ()))
+                # Lines that only moved were already there, so they say nothing new.
+                moved = set(b.get("reindented", ())) | moved_rows(h)
                 rows = [r for k, r in enumerate(h["lines"][b["start"]:b["end"]], b["start"]) if k not in moved]
                 block_adds_assert = any(r[0] == "+" and ASSERTION.search(r[3]) for r in rows)
                 for row in rows:
@@ -610,6 +692,177 @@ def connect(files):
                 by_id[src]["usedBy"].setdefault(h["id"], []).append(name)
 
 
+MOVE_MIN_LINES = 3
+MOVE_MIN_ALNUM = 40
+
+
+def find_moves(files):
+    """Runs of removed lines that come back unchanged somewhere else in the diff: code moved, not written.
+
+    Lines match once their indentation is ignored; where indentation means something they must also keep it
+    relative to each other. A move is still a change, since the same lines can mean something else in their
+    new place, so the page shows the new copy marked as moved and folds the old one into a pointer to it."""
+    def runs(tag):
+        out = []
+        for f in files:
+            if f["noise"]:
+                continue
+            for h in f["hunks"]:
+                h.setdefault("moves", [])
+                skip = {i for b in h["blocks"] if b["noise"] for i in range(b["start"], b["end"])}
+                skip |= {i for b in h["blocks"] for i in b.get("reindented", ())}
+                run = []
+                for i, r in enumerate(h["lines"] + [[" "]]):
+                    if r[0] == tag and i not in skip:
+                        run.append(i)
+                    elif run:
+                        out.append((f, h, run))
+                        run = []
+        return out
+
+    removed, added = runs("-"), runs("+")
+    text = lambda h, i: h["lines"][i][3].strip()
+    index = {}
+    for rn, (_f, h, idx) in enumerate(removed):
+        for k, i in enumerate(idx):
+            if sum(c.isalnum() for c in text(h, i)) >= 4:
+                index.setdefault(text(h, i), []).append((rn, k))
+    used = set()
+    for f2, h2, idx2 in added:
+        k = 0
+        while k < len(idx2):
+            best = (0, None)
+            for rn, rk in index.get(text(h2, idx2[k]), [])[:50]:
+                f1, h1, idx1 = removed[rn]
+                sensitive = INDENT_SENSITIVE.search(f1["path"]) or INDENT_SENSITIVE.search(f2["path"])
+                d1, d2 = _indent(h1["lines"][idx1[rk]][3]), _indent(h2["lines"][idx2[k]][3])
+                n = 0
+                while k + n < len(idx2) and rk + n < len(idx1) and (rn, rk + n) not in used:
+                    a, b = h2["lines"][idx2[k + n]][3], h1["lines"][idx1[rk + n]][3]
+                    if a.strip() != b.strip() or (sensitive and a.strip() and _indent(a) - d2 != _indent(b) - d1):
+                        break
+                    n += 1
+                while n and not text(h2, idx2[k + n - 1]):
+                    n -= 1
+                if n > best[0]:
+                    best = (n, (rn, rk))
+            n, src = best
+            body = [text(h2, idx2[k + j]) for j in range(n)]
+            if src and sum(1 for x in body if x) >= MOVE_MIN_LINES and sum(c.isalnum() for x in body for c in x) >= MOVE_MIN_ALNUM:
+                rn, rk = src
+                _f1, h1, idx1 = removed[rn]
+                used.update((rn, rk + j) for j in range(n))
+                h1["moves"].append({"side": "-", "start": idx1[rk], "end": idx1[rk] + n, "to": h2["id"],
+                                    "line": f"R{h2['lines'][idx2[k]][2]}"})
+                h2["moves"].append({"side": "+", "start": idx2[k], "end": idx2[k] + n, "from": h1["id"],
+                                    "line": f"L{h1['lines'][idx1[rk]][1]}"})
+                k += n
+            else:
+                k += 1
+    for f in files:
+        for h in f["hunks"]:
+            h["moves"] = sorted(h.get("moves", []), key=lambda m: m["start"])
+
+
+def moved_rows(h, side=None):
+    return {i for m in h.get("moves", ()) if side in (None, m["side"]) for i in range(m["start"], m["end"])}
+
+
+def hunk_sig(f, h):
+    """What a hunk changes, without where: the same edit after a rebase or a regrouping keeps its signature."""
+    body = "\n".join(r[0] + r[3] for r in h["lines"] if r[0] != " ")
+    return hashlib.sha1(f"{f['path']}\n{body}".encode()).hexdigest()[:12]
+
+
+def blame(repo, rng, path, lines, reverse=False):
+    """{line: sha} for the given lines: the commit in the range that wrote each, or with reverse, the last one
+    it still existed in. Lines older than the range come back as the range's own start."""
+    spans, out = [], {}
+    for n in sorted(lines):
+        if spans and n == spans[-1][1] + 1:
+            spans[-1][1] = n
+        else:
+            spans.append([n, n])
+    args = ["blame", "--porcelain", *(["--reverse"] if reverse else []),
+            *(x for a, b in spans for x in ("-L", f"{a},{b}")), rng, "--", path]
+    for m in re.finditer(r"^([0-9a-f]{40}) \d+ (\d+)", git(repo, *args, check=False), re.M):
+        out[int(m.group(2))] = m.group(1)
+    return out
+
+
+COMMIT_MAP_MAX_FILES = 150
+
+
+def map_commits(repo, meta, files):
+    """Give each hunk the commits that wrote its added lines or removed its removed ones, as indexes into
+    meta["commits"], so the page can show one commit's part of the change."""
+    shas = meta["shas"]
+    work = [f for f in files if not f["noise"] and f["hunks"]]
+    if len(shas) < 2 or len(work) > COMMIT_MAP_MAX_FILES:
+        return False
+    at = {s: i for i, s in enumerate(shas)}
+    rng = f"{meta['mergeBase']}..{meta['headSha']}"
+    children = {}
+    for line in git(repo, "rev-list", "--reverse", "--parents", rng).split("\n"):
+        sha, *parents = line.split() or [""]
+        for p in parents:
+            children.setdefault(p, []).append(sha)
+    for f in work:
+        new = {r[2] for h in f["hunks"] for r in h["lines"] if r[0] == "+"}
+        old = {r[1] for h in f["hunks"] for r in h["lines"] if r[0] == "-"}
+        wrote = blame(repo, rng, f["path"], new) if new and f["status"] != "deleted" else {}
+        kept = blame(repo, rng, f["oldPath"] or f["path"], old, reverse=True) if old else {}
+        for h in f["hunks"]:
+            got = {at[wrote[r[2]]] for r in h["lines"] if r[0] == "+" and wrote.get(r[2]) in at}
+            for r in h["lines"]:
+                # A line last seen in a commit was removed by the first commit after it.
+                nxt = [at[c] for c in children.get(kept.get(r[1]), []) if c in at] if r[0] == "-" else []
+                got.update(nxt[:1])
+            h["commits"] = sorted(got)
+    return True
+
+
+def pass_path(repo, meta):
+    """Where this clone remembers the heads it built a page for, per PR or branch, inside its git directory."""
+    common = git(repo, "rev-parse", "--git-common-dir").strip()
+    key = f"pr-{meta['number']}" if meta["number"] else "branch-" + re.sub(r"[^\w.-]", "_", meta["head"])
+    return os.path.join(repo, common, "pr-review-guide", "passes", key + ".json")
+
+
+def read_passes(path):
+    try:
+        with open(path) as fh:
+            return json.load(fh).get("passes") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def mark_since(data, passes):
+    """Mark the hunks that are new since the last page built at another head. A hunk counts as new when its
+    signature is, so a rebase that only moves the change leaves it as it was."""
+    head = data["meta"]["headSha"]
+    prev = next((p for p in reversed(passes) if p.get("head") != head), None)
+    if not prev:
+        return
+    seen, now = set(prev.get("sigs") or []), set()
+    fresh = 0
+    for f in data["files"]:
+        for h in f["hunks"]:
+            now.add(h["sig"])
+            h["fresh"] = h["sig"] not in seen
+            fresh += h["fresh"] and not f["noise"] and not h["noise"]
+    data["meta"]["lastPass"] = {"headSha": prev["head"], "at": prev.get("at"), "fresh": fresh, "gone": len(seen - now)}
+
+
+def record_pass(path, data, keep=5):
+    passes = [p for p in read_passes(path) if p.get("head") != data["meta"]["headSha"]]
+    passes.append({"head": data["meta"]["headSha"], "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                   "sigs": [h["sig"] for f in data["files"] for h in f["hunks"]]})
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump({"passes": passes[-keep:]}, fh)
+
+
 def collect(a):
     meta = resolve(a)
     raw = git(a.repo, "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "-M",
@@ -634,6 +887,7 @@ def collect(a):
         f["additions"] = f["deletions"] = 0
         for j, h in enumerate(f["hunks"], 1):
             h["id"] = f"{f['id']}h{j}"
+            h["sig"] = hunk_sig(f, h)
             h["oldLines"] = sum(1 for r in h["lines"] if r[0] != "+")
             h["newLines"] = sum(1 for r in h["lines"] if r[0] != "-")
             for b in h["blocks"]:
@@ -658,11 +912,17 @@ def collect(a):
                     stats.setdefault(f["category"], {"files": set(), "add": 0, "del": 0})["files"].add(f["id"])
     for s in stats.values():
         s["files"] = len(s["files"])
+    find_moves(files)
     connect(files)
     tells = find_tells(files)
+    meta["commitMap"] = map_commits(a.repo, meta, files)
+    annotations = place_annotations(files, meta.pop("annotations"))
     total = {"files": len(files), "add": sum(f["additions"] for f in files), "del": sum(f["deletions"] for f in files)}
-    return {"meta": meta, "stats": {"categories": stats, "noise": noise_lines, "total": total}, "files": files,
-            "tells": tells}
+    moved = sum(m["end"] - m["start"] for f in files for h in f["hunks"] for m in h["moves"] if m["side"] == "+")
+    data = {"meta": meta, "stats": {"categories": stats, "noise": noise_lines, "total": total, "moved": moved},
+            "files": files, "tells": tells, "annotations": annotations}
+    mark_since(data, read_passes(pass_path(a.repo, meta)))
+    return data
 
 
 def reviewable_text(data):
@@ -699,8 +959,16 @@ def reviewable_text(data):
                 lines.append("    used by: " + ", ".join(f"{hid} ({', '.join(ns)})" for hid, ns in h["usedBy"].items()))
             noisy = {i for b in h["blocks"] if b["noise"] for i in range(b["start"], b["end"])}
             moved = {i for b in h["blocks"] for i in b.get("reindented", ())}
+            gone = moved_rows(h, "-")
+            moves = {m["start"]: m for m in h.get("moves", ())}
             shown = 0
             for i, (t, _o, _n, body) in enumerate(h["lines"]):
+                if i in moves:
+                    mv = moves[i]
+                    lines.append(f"  ({mv['end'] - mv['start']} lines moved unchanged to {mv['to']})" if t == "-" else
+                                 f"  (the next {mv['end'] - mv['start']} lines moved here unchanged from {mv['from']})")
+                if i in gone:
+                    continue
                 if i in moved:
                     # shown once, as context, the way a whitespace-blind diff shows it
                     if t == "+":
@@ -965,6 +1233,46 @@ def self_test():
     assert got[0]["url"] == "https://github.com/o/r/issues/7" and got[3]["url"].startswith("https://linear.app/") and not text
     assert [x["ref"] for x in linked_issues("/nonexistent", "o/r", None, "release-2 work", "", [], "release-2")[0]] == []
     assert same_owner("O/other", "o/r") and not same_owner("other/repo", "o/r") and not same_owner("", "o/r")
+    got = {x["ref"]: x["closes"] for x in linked_issues(
+        "/nonexistent", "o/r", None, "adds the thing",
+        "Fixes ENG-1 and ENG-2. Part of ENG-4. Implements #5 and ENG-6. Refs #8.\nIgnore ENG-7, skip #9.\nfixes #9",
+        ["abc1234 tidies ENG-7"], "me/eng-10-thing")[0]}
+    assert got == {"#5": False, "#8": False, "ENG-1": True, "ENG-2": True, "ENG-4": False,
+                   "ENG-6": True, "ENG-10": True}, got
+    def hunk(hid, rows):
+        return {"id": hid, "noise": None, "lines": rows}
+    body = ["export function slugify(text) {", "  return text", '    .replace(/[^a-z0-9]+/g, "-")', "}"]
+    src = {"path": "a.ts", "noise": False, "hunks": [hunk("f1h1", [["-", 10 + k, None, x] for k, x in enumerate(body)])]}
+    dst = {"path": "b.ts", "noise": False, "hunks": [hunk("f2h1", [["+", None, 1, "// slugs"]] +
+                                                          [["+", None, 2 + k, "  " + x] for k, x in enumerate(body)])]}
+    for f in (src, dst):
+        mark_blocks(f)
+    find_moves([src, dst])
+    assert src["hunks"][0]["moves"] == [{"side": "-", "start": 0, "end": 4, "to": "f2h1", "line": "R2"}], src
+    assert dst["hunks"][0]["moves"] == [{"side": "+", "start": 1, "end": 5, "from": "f1h1", "line": "L10"}], dst
+    # Python keeps the move only while the lines keep their indentation relative to each other.
+    py_body = ["def f(x):", "    if x:", "        return slow(x)", "    return fast(x)"]
+    src = {"path": "a.py", "noise": False, "hunks": [hunk("f1h1", [["-", 1 + k, None, x] for k, x in enumerate(py_body)])]}
+    dst = {"path": "b.py", "noise": False, "hunks": [hunk("f2h1", [["+", None, 1 + k, x] for k, x in enumerate(
+        py_body[:2] + ["    return slow(x)"] + py_body[3:])])]}
+    for f in (src, dst):
+        mark_blocks(f)
+    find_moves([src, dst])
+    assert dst["hunks"][0]["moves"] == [], "a statement moved out of its block is not a plain move"
+    short = {"path": "a.ts", "noise": False, "hunks": [hunk("f1h1", [["-", 1, None, "return null;"], ["+", None, 9, "return null;"]])]}
+    mark_blocks(short)
+    find_moves([short])
+    assert short["hunks"][0]["moves"] == []
+    f = {"path": "a.ts", "hunks": []}
+    assert hunk_sig(f, {"lines": [[" ", 1, 1, "a"], ["-", 2, None, "b"]]}) == hunk_sig(f, {"lines": [[" ", 7, 9, "z"], ["-", 8, None, "b"]]})
+    assert hunk_sig(f, {"lines": [["-", 2, None, "b"]]}) != hunk_sig({"path": "c.ts"}, {"lines": [["-", 2, None, "b"]]})
+    data = {"meta": {"headSha": "new"}, "files": [{"noise": False, "hunks": [{"sig": "s1", "noise": None}, {"sig": "s2", "noise": None}]}]}
+    mark_since(data, [{"head": "old", "sigs": ["s1", "s3"]}, {"head": "new", "sigs": ["s1", "s2"]}])
+    assert [h["fresh"] for h in data["files"][0]["hunks"]] == [False, True] and data["meta"]["lastPass"]["gone"] == 1, data
+    anns = place_annotations([{"id": "f1", "path": "a.ts", "noise": False, "hunks": [
+        {"id": "f1h1", "lines": [[" ", 4, 4, "a"], ["-", 5, None, "b"], ["+", None, 5, "c"]]}]}],
+        [{"path": "a.ts", "line": 4, "end": 6}, {"path": "a.ts", "line": 40, "end": 40}])
+    assert anns[0]["row"] == "R5" and anns[0]["hunk"] == "f1h1" and "hunk" not in anns[1], anns
     print("self-test ok")
 
 
@@ -984,6 +1292,7 @@ def main():
     a.repo = os.path.abspath(a.repo)
     data = collect(a)
     count, nbatches = write(data, a.out)
+    record_pass(pass_path(a.repo, data["meta"]), data)
     s = data["stats"]
     print(f"{data['meta']['repo']} {data['meta']['title']!r}: {s['total']['files']} files, "
           f"+{s['total']['add']} -{s['total']['del']}")
@@ -991,13 +1300,23 @@ def main():
         print(f"  {cat:15} {v['files']:3} files  +{v['add']} -{v['del']}")
     print(f"  {'formatting':15}       +{s['noise']['add']} -{s['noise']['del']}")
     print(f"reviewable changed lines: {count} ({data['ready']['band']}), batches: {nbatches}")
+    if s["moved"]:
+        print(f"moved unchanged: {s['moved']} lines")
     hunkless = sum(1 for f in data["files"] if not f["noise"] and not f["hunks"])
     if hunkless:
         print(f"files with no line changes (binary, renamed or mode only): {hunkless}")
+    last = data["meta"].get("lastPass")
+    if last:
+        print(f"since the page built at {last['headSha'][:7]}: {last['fresh']} hunks new or changed, {last['gone']} gone")
+    if not data["meta"]["commitMap"] and len(data["meta"]["commits"]) > 1:
+        print(f"commit filter skipped: more than {COMMIT_MAP_MAX_FILES} files")
     checks = data["ready"]["checks"]
     if checks:
         print(f"CI: {checks['pass']} passing, {checks['fail']} failing, {checks['cancel']} cancelled, "
               f"{checks['pending']} pending" + (", on the pushed head, not this one" if checks.get("stale") else ""))
+    if data["annotations"]:
+        on = sum(1 for x in data["annotations"] if x.get("hunk"))
+        print(f"CI annotations: {on} on changed lines, {len(data['annotations']) - on} elsewhere")
     if data["ready"]["implChanged"] and not data["ready"]["testsChanged"]:
         print("no test changes")
     if data["tells"]:
@@ -1005,7 +1324,8 @@ def main():
         print("tells: " + ", ".join(f"{n} {k}" for k, n in kinds.most_common()))
     issues = data["meta"]["issues"]
     if issues:
-        print("linked issues: " + ", ".join(f"{x['ref']} ({'in issue.md' if x['fetched'] else 'not fetched'})" for x in issues))
+        print("linked issues: " + ", ".join(f"{x['ref']} ({'closes' if x['closes'] else 'related'}, "
+                                            f"{'in issue.md' if x['fetched'] else 'not fetched'})" for x in issues))
     print(f"wrote {a.out}/hunks.json, review.diff, description.md, batches/" + (", issue.md" if any(x["fetched"] for x in issues) else ""))
 
 
