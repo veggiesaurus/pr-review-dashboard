@@ -5,7 +5,7 @@ Usage: fixture.py OUT
 
 Writes OUT/repo (the repo), OUT/work (what collect.py writes, plus a guide, a description check and the page
 at OUT/work/page.html) and OUT/stack, a two-layer stack page made from copies of it. The branch has three commits, moves a function between files, edits code, skips a
-test, and is then amended once and collected again, so the page has a last pass to compare with.
+test, makes formatting-only changes, and is then amended once and collected again, so the page has a last pass to compare with.
 """
 import json
 import os
@@ -32,6 +32,9 @@ POSTS = '''import { slugify } from "./util";
 export function postPath(title: string): string {
   return `/posts/${slugify(title)}`;
 }
+'''
+FORMAT = '''export const LIMIT = 20;
+export const ORDER = "desc";
 '''
 TEST = '''import { postPath } from "../src/posts";
 
@@ -76,6 +79,7 @@ def main():
     write(repo, "src/util.ts", UTIL)
     write(repo, "src/posts.ts", POSTS)
     write(repo, "tests/posts.test.ts", TEST)
+    write(repo, "src/format.ts", FORMAT)
     commit(repo, "initial")
     sh(repo, "git", "checkout", "-q", "-b", "feature")
     # 1: move slugify into its own file
@@ -91,11 +95,13 @@ def main():
     # 3: a test left skipped
     write(repo, "tests/posts.test.ts", TEST.replace('it("builds', 'it.skip("builds').replace("/posts/", "/blog/")
           + '\nit("keeps digits", () => {\n  console.log(postPath("v2"));\n  expect(postPath("v2")).toBe("/blog/v2");\n});\n')
+    write(repo, "src/format.ts", FORMAT.replace(";", ""))
     commit(repo, "updates the tests")
     collect(repo, work)
     # A second pass: one more change, so the page has something new since the last one.
-    with open(os.path.join(repo, "src/util.ts"), "a") as fh:
-        fh.write("\nexport const MAX_TITLE = 80;\n")
+    # and a formatting-only edit inside the same hunk
+    util = open(os.path.join(repo, "src/util.ts")).read().replace("c => c.toUpperCase()", "(c) => c.toUpperCase()")
+    write(repo, "src/util.ts", util + "\nexport const MAX_TITLE = 80;\n")
     commit(repo, "caps title length")
     print(collect(repo, work))
     sys.path.insert(0, SCRIPTS)

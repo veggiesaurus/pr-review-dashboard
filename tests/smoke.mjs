@@ -18,7 +18,12 @@ const visible = sel => page.locator(sel).filter({ visible: true }).count();
 
 await open(process.argv[2]);
 await page.waitForSelector(".sec");
-check(await count(".sec") === 2, "two sections");
+check(await visible(".sec") === 2, "two sections, with the formatting one hidden");
+check(await count("td.noise") === 0, "formatting lines inside a hunk show once, as context");
+await page.check(".fmtchk input");
+check(await visible(".sec") === 3 && await count("td.noise") > 0, "the formatting switch shows them, dimmed, and their section");
+await page.uncheck(".fmtchk input");
+check(await visible(".sec") === 2 && await count("td.noise") === 0, "and hides them again");
 check(await count("tr.mv") === 2, "a moved block shows where it went and where it came from");
 check(await count("td.code.moved") === 6, "the moved copy is marked line by line");
 check(await count("tr.ann") === 1, "the CI annotation on a changed line sits under it");
@@ -29,7 +34,7 @@ for (const want of ["Try by hand", "In the diff:", "Not in the diff:", "CI annot
 const options = await page.locator(".pick option").allInnerTexts();
 check(options.length === 6 && options[1].startsWith("New since"), "the filter lists the last pass and four commits");
 await page.selectOption(".pick", "fresh");
-check(await visible(".card") === 1, "since the last pass, only the file that changed shows");
+check(await visible(".card") === 1 && await visible(".sec") === 1, "since the last pass, only the file that changed shows, in its section");
 await page.selectOption(".pick", "c1");
 check(await visible(".card") === 1 && (await page.locator(".card:visible .bn").innerText()) === "posts.ts", "one commit shows only its file");
 await page.click(".filtering button");
@@ -43,7 +48,7 @@ await page.click('tr.composer [data-act="done"]');
 check(await count("tr.note") === 1, "a note shows under its line");
 
 await page.click('.seg button[data-view="split"]');
-check(await count("table.d.split") === 4, "split view draws every diff in two halves");
+check(await count("table.d:not(.split)") === 0, "split view draws every diff in two halves");
 check(await count("tr.note") === 1, "the note finds its line again after the redraw");
 const paired = await page.locator("table.d.split tr.line.chg").evaluateAll(rows => rows.some(r => r.querySelector("td.del") && r.querySelector("td.add")));
 check(paired, "a removed and an added line share a row");
@@ -55,7 +60,7 @@ await box.check();
 await page.reload();
 await page.waitForSelector(".sec");
 check(await page.locator(".card .chk input").first().isChecked(), "a tick survives a reload");
-check(await count("table.d.split") === 4, "the layout choice survives a reload");
+check(await count("table.d:not(.split)") === 0, "the layout choice survives a reload");
 
 console.log("page ok");
 
@@ -66,7 +71,7 @@ if (process.argv[3]) {
   check(await page.locator(".layer:not([hidden]) h1").innerText() === "layer 12", "the stack opens on its top layer");
   check(await count("tr.xref") >= 1, "a hunk names what it shares with another layer");
   await page.click('.layer:not([hidden]) .seg button[data-view="split"]');
-  check(await page.locator(".layer").evaluateAll(ls => ls.every(l => l.querySelectorAll("table.d.split").length === 4)), "split view redraws every layer");
+  check(await page.locator(".layer").evaluateAll(ls => ls.every(l => !l.querySelector("table.d:not(.split)"))), "split view redraws every layer");
   await page.click('button.lrow[data-n="11"]');
   check(await page.locator(".layer:not([hidden]) h1").innerText() === "layer 11", "a layer opens from the list");
   console.log("stack page ok");

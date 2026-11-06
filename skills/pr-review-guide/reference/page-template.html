@@ -153,6 +153,7 @@ h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; margin: 0; te
 .seg button { background: none; border: 0; padding: 0.1rem 0.6rem; cursor: pointer; color: var(--muted-foreground); font-size: 13px; }
 .seg button[aria-pressed="true"] { background: var(--secondary); color: var(--foreground); }
 .filtering { color: var(--muted-foreground); font-size: 13px; }
+.fmtchk { color: var(--muted-foreground); font-size: 13px; }
 .filtering button { background: none; border: 0; padding: 0; color: var(--primary); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .index { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; padding: 0; list-style: none; }
 .index a { display: inline-flex; gap: 0.4rem; align-items: baseline; text-decoration: none; color: var(--foreground); border: 1px solid var(--border); border-radius: 999px; padding: 0.15rem 0.65rem; font-size: 13px; background: var(--card); }
@@ -370,6 +371,9 @@ tr.xref code { color: var(--foreground); }
   let splitPref = false;
   try { splitPref = localStorage.getItem("prg:view") === "split"; } catch (e) { /* storage blocked: unified */ }
   const isSplit = () => splitPref && wide.matches;
+  // Formatting changes are hidden unless the viewer asks for them, also kept in this browser.
+  let fmtPref = false;
+  try { fmtPref = localStorage.getItem("prg:fmt") === "show"; } catch (e) { /* storage blocked: hidden */ }
   const COLS = () => (isSplit() ? 6 : 3);
   const MOUNTS = [];
   // Every layer redraws its diffs, then the notes find their lines again.
@@ -534,7 +538,8 @@ tr.xref code { color: var(--foreground); }
       return row[0] === "-" ? lineTr(true, half(f, row, lang, html, cls), half(f, null)) : lineTr(true, half(f, null), half(f, row, lang, html, cls));
     }
 
-    // A hunk's rows. Re-indented lines show once, as context, the way a whitespace-blind diff shows them. A block
+    // A hunk's rows. Formatting-only and re-indented lines show once, as context, the way a whitespace-blind diff
+    // shows them, unless formatting is shown; then they show dimmed, both sides. A block
     // moved away folds into one row saying where it went, and the copy it became is marked as moved. In split view
     // removed and added lines pair up side by side within each run of changes. `code` collects each line's code cell.
     function hunkRows(f, h, lang, code) {
@@ -543,10 +548,11 @@ tr.xref code { color: var(--foreground); }
       const moves = h.moves || [], htmls = hlHunk(h, lang), units = [];
       h.lines.forEach((row, i) => {
         const m = moves.find(x => i >= x.start && i < x.end);
-        if (reind.has(i)) { if (row[0] === "+") units.push({ t: " ", i, row: [" ", ...row.slice(1)] }); return; }
+        // With formatting hidden, a formatting-only line shows once, in its new form, as context.
+        if (!fmtPref && (reind.has(i) || noisy.has(i))) { if (row[0] === "+") units.push({ t: " ", i, row: [" ", ...row.slice(1)] }); return; }
         if (m && m.side === "-") { if (i === m.start) units.push({ t: "mv", m }); return; }
         if (m && i === m.start) units.push({ t: "mv", m });
-        units.push({ t: row[0], i, row, moved: !!m, cls: m ? ["moved"] : noisy.has(i) ? ["noise"] : [] });
+        units.push({ t: row[0], i, row, moved: !!m, cls: m ? ["moved"] : noisy.has(i) || reind.has(i) ? ["noise"] : [] });
       });
       const cell = (u, old) => { const tds = half(f, u.row, lang, htmls[u.i], u.cls, old); if (!old) code[u.i] = tds[2]; return tds; };
       const blank = () => half(f, null);
@@ -590,6 +596,8 @@ tr.xref code { color: var(--foreground); }
 
     // ---- rendering a file card with a chosen set of hunks ----
     const owner = {};   // hunk id -> section index, for "changes shown in §n" gaps
+    // The section a hunk shows in, or null when that is the formatting section and formatting is hidden.
+    const shownIn = id => owner[id] != null && (fmtPref || D.sections[owner[id]].kind !== "formatting") ? owner[id] : null;
     function hunkEnd(h) { return { o: h.oldStart + h.oldLines, n: h.newStart + h.newLines }; }
 
     function gapRow(f, fromNew, toNew, oldOffset, other, lang) {
@@ -640,8 +648,8 @@ tr.xref code { color: var(--foreground); }
         const gapFrom = prevIdx < 0 ? 1 : prevEnd.n;
         const gapTo = h.newStart - 1;
         if (between.length) {
-          const b = between.find(x => owner[x.id] != null && owner[x.id] !== secIdx) || between[0];
-          const sec = owner[b.id];
+          const b = between.find(x => shownIn(x.id) != null && shownIn(x.id) !== secIdx) || between[0];
+          const sec = shownIn(b.id);
           if (sec != null && sec !== secIdx) gapTb.appendChild(gapRow(f, gapFrom, Math.max(gapFrom, gapTo), offset, { sec, hunk: b.id }, lang));
           else gapTb.appendChild(gapRow(f, gapFrom, Math.max(gapFrom, gapTo), offset, null, lang));
         } else if (gapTo >= gapFrom && f.status !== "added" && f.status !== "deleted") {
@@ -669,13 +677,13 @@ tr.xref code { color: var(--foreground); }
       });
       const last = shown[shown.length - 1];
       const after = last ? all.slice(all.indexOf(last) + 1) : [];
-      const elsewhere = after.find(x => owner[x.id] != null && owner[x.id] !== secIdx);
+      const elsewhere = after.find(x => shownIn(x.id) != null && shownIn(x.id) !== secIdx);
       if (elsewhere) {
         const end = hunkEnd(last);
         const tb = el("tbody");
-        tb.appendChild(gapRow(f, end.n, Math.max(end.n, elsewhere.newStart - 1), end.o - end.n, { sec: owner[elsewhere.id], hunk: elsewhere.id }, lang));
+        tb.appendChild(gapRow(f, end.n, Math.max(end.n, elsewhere.newStart - 1), end.o - end.n, { sec: shownIn(elsewhere.id), hunk: elsewhere.id }, lang));
         table.appendChild(tb);
-      } else if (last && f.newText && !after.length) {
+      } else if (last && f.newText && !after.some(x => shownIn(x.id) != null)) {
         const end = hunkEnd(last);
         const total = f.newText.length - (f.newText[f.newText.length - 1] === "" ? 1 : 0);
         if (total >= end.n) {
@@ -722,7 +730,7 @@ tr.xref code { color: var(--foreground); }
       const tags = [];
       if (f.status === "renamed") tags.push(`<span class="tag" title="from ${esc(f.oldPath)}">renamed</span>`);
       if (f.category !== "implementation") tags.push(`<span class="tag">${esc(f.category)}</span>`);
-      if (hunkIds.length && hunkIds.length < f.hunks.length && sec.kind === "guide") tags.push(`<span class="tag split" title="Other hunks of this file are in other sections">part</span>`);
+      if (sec.kind === "guide" && f.hunks.some(h => !hunkIds.includes(h.id) && shownIn(h.id) != null)) tags.push(`<span class="tag split" title="Other hunks of this file are in other sections">part</span>`);
       if (M.lastPass && hunkIds.some(id => hunks[id].h.fresh)) tags.push(`<span class="tag fresh" title="Changed since the page built at ${esc(M.lastPass.headSha.slice(0, 7))}">new</span>`);
       const key = tickKey({ id: f.id, hunks: hunkIds });
       card.innerHTML = `<header><button class="fold" type="button" aria-label="Collapse">▾</button>`
@@ -814,7 +822,8 @@ tr.xref code { color: var(--foreground); }
         + `${S.moved ? ` ${S.moved} added lines only moved, unchanged, and are counted where they landed.` : ""}</p></div></span>`
         + `<span class="progress" id="${P}progress"></span>`
         + `<span class="view">${opts.length > 1 ? `<select class="pick" id="${P}pick" aria-label="Which part of the change to show">${opts.join("")}</select>` : ""}`
-        + `<span class="seg" role="group" aria-label="Diff layout"><button type="button" data-view="unified">Unified</button><button type="button" data-view="split">Split</button></span></span>`
+        + `<span class="seg" role="group" aria-label="Diff layout"><button type="button" data-view="unified">Unified</button><button type="button" data-view="split">Split</button></span>`
+        + `<label class="chk fmtchk" title="Show formatting-only changes, dimmed"><input type="checkbox"> Formatting</label></span>`
         + `<span class="filtering" id="${P}filtering" hidden></span>`;
       const btn = meta.querySelector(".loc"), pop = meta.querySelector(".loc-pop");
       btn.onclick = e => { e.stopPropagation(); pop.hidden = !pop.hidden; btn.setAttribute("aria-expanded", String(!pop.hidden)); };
@@ -826,6 +835,11 @@ tr.xref code { color: var(--foreground); }
         try { localStorage.setItem("prg:view", splitPref ? "split" : "unified"); } catch (e) { /* storage blocked: the choice lasts this visit */ }
         redrawAll();
       });
+      meta.querySelector(".fmtchk input").onchange = e => {
+        fmtPref = e.target.checked;
+        try { localStorage.setItem("prg:fmt", fmtPref ? "show" : "hide"); } catch (err) { /* storage blocked: the choice lasts this visit */ }
+        redrawAll();
+      };
     }
 
     function sectionText(sec, i, guideCount) {
@@ -840,6 +854,7 @@ tr.xref code { color: var(--foreground); }
       main.replaceChildren();
       index.replaceChildren();
       document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String((b.dataset.view === "split") === splitPref)));
+      document.querySelectorAll(".fmtchk input").forEach(x => { x.checked = fmtPref; });
       const guideCount = D.sections.filter(s => s.kind === "guide").length;
       D.sections.forEach((sec, i) => sec.files.forEach(x => x.hunks.forEach(h => { owner[h] = i; })));
       D.sections.forEach((sec, i) => {
@@ -920,9 +935,10 @@ tr.xref code { color: var(--foreground); }
           if (li) li.hidden = off;
           if (!off) { shown++; nf++; nh += mine.length; }
         });
-        s.hidden = !shown;
+        const off = !shown || (sec.kind === "formatting" && !fmtPref);
+        s.hidden = off;
         const a = $("index").querySelector(`a[data-sec="${i}"]`);
-        if (a) a.parentElement.hidden = !shown;
+        if (a) a.parentElement.hidden = off;
       });
       const note = $("filtering");
       note.hidden = !on;
