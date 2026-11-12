@@ -1,0 +1,402 @@
+/* Motion: short, mostly opacity and small shifts, and none of it under prefers-reduced-motion. */
+
+:root {
+  --motion-exit: 100ms;
+  --motion-quick: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 260ms;
+  --motion-linger: 1600ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --motion-shift: 4px;
+}
+
+@theme inline {
+  --default-transition-duration: var(--motion-quick);
+  --default-transition-timing-function: var(--motion-ease);
+  --ease-enter: var(--motion-ease-enter);
+  --ease-exit: var(--motion-ease-exit);
+}
+
+/* Registered so a nested motion element doesn't inherit its parent's offsets. */
+@property --motion-from-x {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --motion-from-y {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --motion-to-x {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --motion-to-y {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --motion-from-scale {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+@property --motion-tint {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@keyframes motion-in {
+  from {
+    opacity: 0;
+    translate: var(--motion-from-x) var(--motion-from-y);
+    scale: var(--motion-from-scale);
+  }
+}
+
+@keyframes motion-out {
+  to {
+    opacity: 0;
+    translate: var(--motion-to-x) var(--motion-to-y);
+  }
+}
+
+@keyframes motion-grow {
+  from {
+    block-size: 0;
+    overflow: clip;
+  }
+  to {
+    block-size: auto;
+    overflow: clip;
+  }
+}
+
+@keyframes motion-shrink {
+  from {
+    overflow: clip;
+  }
+  to {
+    block-size: 0;
+    overflow: clip;
+  }
+}
+
+@keyframes motion-flash {
+  0%,
+  40% {
+    outline-color: var(--ring);
+    --motion-tint: color-mix(in oklch, var(--ring) 16%, transparent);
+  }
+  to {
+    outline-color: transparent;
+    --motion-tint: transparent;
+  }
+}
+
+@keyframes motion-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes motion-think {
+  0%,
+  60%,
+  100% {
+    translate: 0 0;
+    opacity: 0.35;
+  }
+  30% {
+    translate: 0 -3px;
+    opacity: 1;
+  }
+}
+
+@keyframes motion-shimmer {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@layer components {
+  /* The shadcn primitives animate with tw-animate-css; this only sets their timing. */
+  :is(
+    [data-slot="hover-card-content"],
+    [data-slot="tooltip-content"],
+    [data-slot="popover-content"],
+    [data-slot="dropdown-menu-content"],
+    [data-slot="select-content"],
+    [data-slot="dialog-content"],
+    [data-slot="dialog-overlay"]
+  ) {
+    --tw-duration: var(--motion-quick);
+    --tw-ease: var(--motion-ease-enter);
+  }
+  :is(
+    [data-slot="hover-card-content"],
+    [data-slot="tooltip-content"],
+    [data-slot="popover-content"],
+    [data-slot="dropdown-menu-content"],
+    [data-slot="select-content"],
+    [data-slot="dialog-content"],
+    [data-slot="dialog-overlay"]
+  )[data-state="closed"] {
+    --tw-duration: var(--motion-exit);
+    --tw-ease: var(--motion-ease-exit);
+  }
+
+  .motion-pop {
+    --motion-from-y: calc(var(--motion-shift) * -1);
+    --motion-from-scale: 0.97;
+    transform-origin: top;
+    animation: motion-in var(--motion-quick) var(--motion-ease-enter) backwards;
+  }
+  .motion-pop[data-side="top"] {
+    --motion-from-y: var(--motion-shift);
+    transform-origin: bottom;
+  }
+  .motion-pop[data-side="left"] {
+    --motion-from-y: 0px;
+    --motion-from-x: var(--motion-shift);
+  }
+  .motion-pop[data-side="right"] {
+    --motion-from-y: 0px;
+    --motion-from-x: calc(var(--motion-shift) * -1);
+  }
+  .motion-pop[data-state="closed"] {
+    animation: motion-out var(--motion-exit) var(--motion-ease-exit) both;
+  }
+
+  .motion-drawer {
+    --motion-from-y: calc(var(--motion-shift) * 2);
+    animation: motion-in var(--motion-base) var(--motion-ease-enter) backwards;
+  }
+  .motion-drawer[data-side="right"] {
+    --motion-from-y: 0px;
+    --motion-from-x: calc(var(--motion-shift) * 4);
+  }
+  .motion-drawer[data-state="closed"] {
+    --motion-to-y: var(--motion-shift);
+    animation: motion-out var(--motion-exit) var(--motion-ease-exit) both;
+  }
+  .motion-drawer[data-side="right"][data-state="closed"] {
+    --motion-to-y: 0px;
+    --motion-to-x: calc(var(--motion-shift) * 2);
+  }
+
+  .motion-grow {
+    animation: motion-in var(--motion-base) var(--motion-ease-enter) backwards;
+  }
+
+  .motion-arrive {
+    --motion-from-y: calc(var(--motion-shift) * 1.5);
+    animation: motion-in var(--motion-slow) var(--motion-ease-enter) backwards;
+  }
+
+  @supports (interpolate-size: allow-keywords) {
+    .motion-drawer:not([data-side]),
+    .motion-grow,
+    .motion-arrive {
+      interpolate-size: allow-keywords;
+    }
+    .motion-drawer:not([data-side]) {
+      animation:
+        motion-in var(--motion-base) var(--motion-ease-enter) backwards,
+        motion-grow var(--motion-slow) var(--motion-ease) backwards;
+    }
+    .motion-drawer:not([data-side])[data-state="closed"] {
+      animation:
+        motion-out var(--motion-exit) var(--motion-ease-exit) both,
+        motion-shrink var(--motion-exit) var(--motion-ease-exit) both;
+    }
+    .motion-grow {
+      animation:
+        motion-in var(--motion-base) var(--motion-ease-enter) backwards,
+        motion-grow var(--motion-base) var(--motion-ease) backwards;
+    }
+    .motion-arrive {
+      animation:
+        motion-in var(--motion-slow) var(--motion-ease-enter) backwards,
+        motion-grow var(--motion-slow) var(--motion-ease) backwards;
+    }
+  }
+
+  @supports (interpolate-size: allow-keywords) and selector(::details-content) {
+    details.motion-expand {
+      interpolate-size: allow-keywords;
+    }
+    details.motion-expand::details-content {
+      block-size: 0;
+      overflow-y: clip;
+      opacity: 0;
+      transition:
+        block-size var(--motion-slow) var(--motion-ease),
+        opacity var(--motion-quick) var(--motion-ease),
+        content-visibility var(--motion-slow) allow-discrete;
+    }
+    /* Opening flips content-visibility at once: while it's hidden, scrollIntoView can't find what reveal() opened. */
+    details.motion-expand[open]::details-content {
+      block-size: auto;
+      opacity: 1;
+      transition:
+        block-size var(--motion-slow) var(--motion-ease),
+        opacity var(--motion-quick) var(--motion-ease);
+    }
+    :is([data-motion-instant], [data-motion-instant] *)::details-content,
+    :root[data-motion-settle] ::details-content {
+      transition: none;
+    }
+  }
+
+  /* For a change of tab. Not a view transition: those swallow clicks until they finish. */
+  .motion-panel {
+    --motion-from-y: var(--motion-shift);
+    animation: motion-in var(--motion-base) var(--motion-ease-enter) backwards;
+  }
+  .motion-tab-pill {
+    transition-property: translate, width;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--motion-ease);
+  }
+
+  /* A transition, not an animation, so ticks loaded from storage don't ring on first paint. */
+  .motion-tick {
+    border-radius: 0.2rem;
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 55%, transparent);
+  }
+  .motion-tick:checked {
+    box-shadow: 0 0 0 0.4rem color-mix(in oklch, var(--primary) 0%, transparent);
+    transition: box-shadow var(--motion-slow) var(--motion-ease-enter);
+  }
+
+  .motion-thinking > span {
+    animation: motion-think 1.2s var(--motion-ease) infinite;
+  }
+  .motion-thinking > span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .motion-thinking > span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+  .motion-status {
+    position: relative;
+    transition-property: color, background-color, border-color;
+    transition-duration: var(--motion-base);
+    transition-timing-function: var(--motion-ease);
+  }
+  /* The ring is a pseudo-element because Chromium won't interpolate color-mix() with currentColor. */
+  .motion-status[data-status]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 0.45;
+  }
+  .motion-status[data-status]:not([data-status="pending"])::after {
+    box-shadow: 0 0 0 0.3rem currentColor;
+    opacity: 0;
+    transition:
+      box-shadow 600ms var(--motion-ease-enter),
+      opacity 600ms var(--motion-ease-enter);
+  }
+  .motion-pending {
+    animation: motion-breathe 1.6s ease-in-out infinite;
+  }
+
+  [data-flash] {
+    background-image: linear-gradient(var(--motion-tint), var(--motion-tint));
+    animation: motion-flash var(--motion-linger) var(--motion-ease-exit) both;
+  }
+
+  /* The 150ms delay here and on .motion-loading keeps a fast answer from flashing them. */
+  .motion-skeleton {
+    border-radius: var(--radius-sm);
+    background-color: var(--muted);
+    background-image: linear-gradient(90deg, transparent, color-mix(in oklch, var(--foreground) 7%, transparent), transparent);
+    background-size: 50% 100%;
+    background-repeat: no-repeat;
+    animation:
+      motion-in var(--motion-base) var(--motion-ease) 150ms backwards,
+      motion-shimmer 1.4s var(--motion-ease) infinite;
+  }
+
+  /* For table rows, which can't be clipped to grow. */
+  .motion-fade {
+    animation: motion-in var(--motion-base) var(--motion-ease) backwards;
+  }
+
+  .motion-loading {
+    animation: motion-in var(--motion-base) var(--motion-ease) 150ms backwards;
+  }
+
+  .motion-swap {
+    --motion-from-scale: 0.96;
+    animation: motion-in var(--motion-quick) var(--motion-ease-enter) backwards;
+  }
+
+  .motion-progress {
+    transform-origin: left;
+    transition-property: scale, inline-size, width;
+    transition-duration: var(--motion-slow);
+    transition-timing-function: var(--motion-ease);
+  }
+
+  :is([data-motion-instant], [data-motion-instant] *):is(
+    .motion-pop,
+    .motion-drawer,
+    .motion-grow,
+    .motion-arrive,
+    .motion-fade,
+    .motion-loading,
+    .motion-swap,
+    .motion-panel
+  ) {
+    animation: none;
+  }
+  :is([data-motion-instant], [data-motion-instant] *):is(.motion-tab-pill, .motion-progress) {
+    transition: none;
+  }
+}
+
+/* Unlayered, so it beats every layer Tailwind writes without !important. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition: none;
+  }
+  ::details-content {
+    transition: none;
+  }
+  /* The jump highlight carries information, so it stays, unanimated, while data-flash is set. */
+  [data-flash] {
+    animation: none;
+    --motion-tint: color-mix(in oklch, var(--ring) 16%, transparent);
+  }
+  .motion-skeleton {
+    background-image: none;
+  }
+}
+
+.motion-thinking > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--primary);
+}

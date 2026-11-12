@@ -1,0 +1,141 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./theme.css";
+@import "./motion.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-diff-add: var(--diff-add);
+  --color-diff-add-edge: var(--diff-add-edge);
+  --color-diff-del: var(--diff-del);
+  --color-diff-del-edge: var(--diff-del-edge);
+
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* set for a moment on whatever a link jumps to */
+  [data-flash] {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+}
+
+/* Takes the hue of --tint and keeps its lightness inside the theme's range. */
+.tint {
+  color: oklch(from var(--tint) clamp(var(--tint-min-l), l, var(--tint-max-l)) c h);
+}
+.tint-bg {
+  background-color: oklch(from var(--tint) clamp(var(--tint-min-l), l, var(--tint-max-l)) c h);
+}
+
+/* The scrollbar's room is kept when the page is too short to need one, so folding the last open card away doesn't
+   move the whole page sideways under the pointer. */
+@supports (scrollbar-gutter: stable) {
+  html {
+    scrollbar-gutter: stable;
+  }
+  /* Radix pushes the body in by the scrollbar's width while a dialog or menu holds the scroll. The room is already
+     kept, so that push would move the page instead of holding it still. */
+  html body[data-scroll-locked] {
+    /* biome-ignore lint/complexity/noImportantStyles: Radix sets its margin with !important */
+    margin-right: 0 !important;
+  }
+}
+
+/* Scrollbars like the Claude app's: a thin rounded thumb and no track. Chrome ignores the ::-webkit-scrollbar rules
+   once scrollbar-color is set, so the standard properties are only for browsers without them. */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-color: color-mix(in oklch, var(--foreground) 30%, transparent);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--foreground) 50%, transparent);
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 30%, transparent) transparent;
+  }
+}
+
+/* A line of text with a light passing over it, for the step a Trace shows as running. */
+@keyframes shimmer-text {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@utility shimmer {
+  background-image: linear-gradient(90deg, var(--muted-foreground) 40%, var(--foreground) 50%, var(--muted-foreground) 60%);
+  background-size: 200% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text 1.8s linear infinite;
+}
+@utility shimmer-none {
+  background-image: none;
+  color: inherit;
+  animation: none;
+}

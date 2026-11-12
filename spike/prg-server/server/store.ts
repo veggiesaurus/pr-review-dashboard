@@ -1,0 +1,596 @@
+import type { Database } from "bun:sqlite";
+
+import {
+  type Activity,
+  type Finding,
+  type Message,
+  type NewMessage,
+  type NoteState,
+  type Push,
+  type Reply,
+  type SessionInfo,
+  settled,
+  type ThreadEvent,
+} from "../shared/messages";
+import { noteOrder } from "../shared/order";
+import type { ReviewEffort } from "../shared/reviews";
+import { prKey, TICK_PREFIX } from "../shared/ticks";
+import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
+import { openDb } from "./db";
+import { chatFrame, notesFrames, recheckFrame, reviewFrame } from "./format";
+import type { Review } from "./review";
+
+type Pending = { frame: string; ids: string[] };
+// What a thread notes when the session settles it; starting work and answering show as steps and messages already.
+const STATE_NOTES: Partial<Record<NoteState, string>> = { done: "Marked done", declined: "Declined" };
+
+// The review as the session's frames name it, as the skill's page does.
+function scopeOf(review: Review) {
+  const { stack, layers } = review.response;
+  if (stack) {
+    return `${stack.repo} ${layers.map(layer => `#${layer.id}`).join(", ")}, a stack`;
+  }
+  const meta = layers[0]?.meta;
+  if (!meta) {
+    return "this review";
+  }
+  const sha = (meta.headSha ?? "").slice(0, 7);
+  return meta.number ? `${meta.repo}#${meta.number} at ${sha}` : `${meta.repo} ${meta.head} at ${sha}`;
+}
+
+export type StoreOptions = {
+  // Where messages and ticks are kept between runs; in memory when left out.
+  db?: Database;
+  // GitHub's number for the stack under review, which stays the same while its layers come and go.
+  stack?: number;
+  // The clone, named in a review request so the session knows where the code is.
+  repo?: string;
+  // How long the session's line on what it's doing stands before it lapses.
+  activityMs?: number;
+};
+
+export class Store {
+  messages: Message[] = [];
+
+  private pending: Pending[] = [];
+  private readonly pageSinks = new Set<(push: Push) => void>();
+  private readonly sessionSinks = new Set<(frame: string) => void>();
+  private readonly waiters = new Set<(text: string) => void>();
+  private activity: Activity | null = null;
+  private activityTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly db: Database;
+  // Every thread is kept with the PR it is about and, in a stack, the stack. A review shows the threads of its
+  // PRs and of its stack, so they follow a PR into another review and stay with a stack whose layers change.
+  private readonly stack: string | null;
+  // What each row held when it was last written, so a save writes only the messages that changed.
+  private readonly written = new Map<string, string>();
+
+  constructor(
+    private readonly review: Review,
+    private readonly options: StoreOptions = {},
+  ) {
+    this.db = options.db ?? openDb();
+    const { stack } = review.response;
+    this.stack = stack && options.stack ? `${stack.repo} stack ${options.stack}` : null;
+    this.restore();
+    review.onChange(() => this.reanchorAll());
+  }
+
+  get listening() {
+    return this.sessionSinks.size > 0 || this.waiters.size > 0;
+  }
+
+  // What the page is told about the session. Its last word on what it's doing only counts while it is listening.
+  get session(): SessionInfo {
+    return { listening: this.listening, activity: this.listening ? this.activity : null };
+  }
+
+  // The session's own line on what it is doing now. It lapses by itself, so a session that forgets to say it
+  // has stopped, or dies, doesn't leave the page claiming it is still at work.
+  setActivity(text: string, replyTo?: string) {
+    clearTimeout(this.activityTimer);
+    const line = text.replace(/\s+/g, " ").trim().slice(0, 200);
+    const thread = replyTo ? this.root(replyTo) : null;
+    this.activity = line ? { text: line, thread: thread?.id ?? null, at: new Date().toISOString() } : null;
+    // A line said for a thread is also kept on it, so what Claude did can be read back once it has moved on.
+    if (line && thread) {
+      this.log(thread, "step", line);
+      this.notify("messages");
+    }
+    if (this.activity) {
+      this.activityTimer = setTimeout(() => this.setActivity(""), this.options.activityMs ?? 120_000);
+      this.activityTimer.unref?.();
+    }
+    this.notify("session");
+  }
+
+  get connected() {
+    return this.pageSinks.size > 0 || this.listening;
+  }
+
+  addPageSink(sink: (push: Push) => void) {
+    this.pageSinks.add(sink);
+    return () => {
+      this.pageSinks.delete(sink);
+    };
+  }
+
+  addSessionSink(sink: (frame: string) => void) {
+    this.sessionSinks.add(sink);
+    this.flush();
+    this.notify("session");
+    return () => {
+      this.sessionSinks.delete(sink);
+      this.notify("session");
+    };
+  }
+
+  // The long-poll: resolves with whatever is waiting, or with the next thing the page sends.
+  wait(signal: AbortSignal): Promise<string> {
+    return new Promise(resolve => {
+      const waiter = (text: string) => {
+        resolve(text);
+        this.notify("session");
+      };
+      signal.addEventListener("abort", () => {
+        if (this.waiters.delete(waiter)) {
+          waiter("");
+        }
+      });
+      this.waiters.add(waiter);
+      this.notify("session");
+      this.flush();
+    });
+  }
+
+  find(id: string) {
+    return this.messages.find(m => m.id === id);
+  }
+
+  addUserMessage(input: NewMessage): Message | null {
+    const parent = input.replyTo ? this.root(input.replyTo) : undefined;
+    if (parent === null || parent?.status === "draft") {
+      return null;
+    }
+    const anchor = parent ? parent.anchor : resolveAnchor(this.review, input.anchor ?? { kind: "general" });
+    if (anchor === null) {
+      return null;
+    }
+    // A follow-up goes at once, and reopens a thread the session had settled.
+    const reopened = parent !== undefined && settled(parent.state);
+    if (parent && reopened) {
+      this.setState(parent, "open");
+      this.log(parent, "note", "Reopened by a follow-up");
+    }
+    if (parent) {
+      parent.archived = undefined;
+    }
+    const kind = parent ? "chat" : input.kind;
+    const message = this.insert(
+      {
+        from: "user",
+        kind,
+        text: input.text,
+        anchor,
+        replyTo: parent?.id,
+        status: kind === "note" ? "draft" : "sent",
+        state: "open",
+        resolved: false,
+        at: new Date().toISOString(),
+      },
+      parent,
+    );
+    if (kind === "chat") {
+      const finding = parent?.from === "claude" && parent.review ? parent : undefined;
+      this.deliver(chatFrame(message, scopeOf(this.review), reopened, finding), [message.id]);
+    }
+    this.notify("messages");
+    return message;
+  }
+
+  // The user asks Claude to review one PR. The request is a chat thread, so the wait and Claude's recommendation
+  // show as any other thread does; the findings come back as threads of their own.
+  requestReview(layerId: number, effort: ReviewEffort): Message | null {
+    const anchor = resolveAnchor(this.review, { kind: "general", layer: layerId });
+    if (!anchor) {
+      return null;
+    }
+    const last = this.db.query<{ n: number | null }, []>("select max(review) as n from messages").get();
+    const message = this.insert({
+      from: "user",
+      kind: "chat",
+      text: `Review this pull request, at ${effort} effort.`,
+      anchor,
+      status: "sent",
+      state: "open",
+      resolved: false,
+      review: { n: (last?.n ?? 0) + 1, effort },
+      at: new Date().toISOString(),
+    });
+    this.deliver(this.reviewFrameFor(message), [message.id]);
+    this.notify("messages");
+    return message;
+  }
+
+  private reviewFrameFor(request: Message) {
+    const layer = "layer" in request.anchor && request.anchor.layer !== undefined ? this.review.layer(request.anchor.layer) : undefined;
+    const target = layer?.meta.url ?? (layer?.meta.number ? `#${layer.meta.number}` : (layer?.meta.head ?? "the current branch"));
+    return reviewFrame(request, scopeOf(this.review), target, this.options.repo);
+  }
+
+  // What the review found, each as a thread Claude starts on the line, the file or the PR it is about.
+  addFindings(n: number, findings: Finding[]): Message[] | null {
+    const request = this.messages.find(m => m.review?.n === n && m.from === "user" && !m.replyTo);
+    const layer = request && "layer" in request.anchor ? request.anchor.layer : undefined;
+    if (!request || layer === undefined) {
+      return null;
+    }
+    const threads = findings.flatMap(finding => {
+      const line = Number.parseInt(String(finding.line ?? ""), 10);
+      const anchor = findingAnchor(this.review, layer, finding.file, line > 0 ? line : undefined);
+      if (!anchor) {
+        return [];
+      }
+      // A finding the diff can't show on its line still says where it is.
+      const where = anchor.kind === "line" ? "" : `${finding.file}${line > 0 ? `:${line}` : ""}: `;
+      return this.insert({
+        from: "claude",
+        kind: "chat",
+        text: `${where}${finding.summary}${finding.failure_scenario ? `\n\n${finding.failure_scenario}` : ""}`,
+        anchor,
+        status: "delivered",
+        state: "open",
+        resolved: false,
+        review: { n, severity: finding.severity, recommended: finding.recommended || undefined, seen: this.codeSeen(anchor) },
+        at: new Date().toISOString(),
+      });
+    });
+    this.notify("messages");
+    return threads;
+  }
+
+  archiveReview(n: number) {
+    const threads = this.messages.filter(m => m.review?.n === n && !m.replyTo);
+    for (const thread of threads) {
+      thread.archived = true;
+    }
+    this.notify("messages");
+    return threads.length;
+  }
+
+  // What the code a finding is about looks like now: every change to its file, or the head when it names no file.
+  private codeSeen(anchor: Message["anchor"]) {
+    const layer = "layer" in anchor && anchor.layer !== undefined ? this.review.layer(anchor.layer) : undefined;
+    const file = "file" in anchor ? layer?.files.find(f => f.id === anchor.file) : undefined;
+    return anchor.outdated ? "gone" : file ? file.hunks.map(hunk => hunk.sig).join(",") : (layer?.meta.headSha ?? "");
+  }
+
+  // After a rebuild, findings still open whose code changed since they were last looked at go back to the session.
+  private recheck() {
+    const stale = this.messages.filter(
+      m => m.from === "claude" && !m.replyTo && m.review && !m.resolved && !m.archived && m.review.seen !== this.codeSeen(m.anchor),
+    );
+    for (const finding of stale) {
+      finding.review = { n: 0, ...finding.review, seen: this.codeSeen(finding.anchor) };
+      this.log(finding, "note", "Sent back to Claude after a rebuild");
+    }
+    if (stale.length > 0) {
+      this.deliver(recheckFrame(stale, scopeOf(this.review)), []);
+    }
+  }
+
+  editDraft(id: string, text: string) {
+    const draft = this.messages.find(m => m.id === id && m.status === "draft");
+    if (!draft) {
+      return null;
+    }
+    draft.text = text;
+    draft.edited = new Date().toISOString();
+    this.notify("messages");
+    return draft;
+  }
+
+  // Reviewed ticks for this review's PRs. They are kept by PR, so the same PR in another review shows them too.
+  get ticks(): string[] {
+    const mine = this.tickScopes();
+    return this.db
+      .query<{ key: string }, []>("select key from ticks")
+      .all()
+      .map(row => row.key)
+      .filter(key => mine.some(scope => key.startsWith(scope)));
+  }
+
+  setTicks(keys: string[], done: boolean) {
+    const mine = this.tickScopes();
+    const change = this.db.query(done ? "insert or ignore into ticks (key) values (?)" : "delete from ticks where key = ?");
+    this.db.transaction(() => {
+      for (const key of keys.filter(key => mine.some(scope => key.startsWith(scope)))) {
+        change.run(key);
+      }
+    })();
+    this.notify("ticks");
+    return this.ticks;
+  }
+
+  private tickScopes() {
+    return this.review.response.layers.map(layer => `${TICK_PREFIX}${prKey(layer.meta)}:`);
+  }
+
+  // The thread has been on the user's screen, so nothing in it so far is news to them.
+  markSeen(id: string) {
+    const thread = this.root(id);
+    if (!thread) {
+      return null;
+    }
+    thread.seen = this.messages.findLast(m => m.id === thread.id || m.replyTo === thread.id)?.id;
+    this.notify("messages");
+    return thread;
+  }
+
+  setArchived(id: string, archived: boolean) {
+    const thread = this.root(id);
+    if (!thread || thread.status === "draft") {
+      return null;
+    }
+    thread.archived = archived || undefined;
+    this.notify("messages");
+    return thread;
+  }
+
+  deleteDraft(id: string) {
+    const before = this.messages.length;
+    this.messages = this.messages.filter(m => !(m.id === id && m.status === "draft"));
+    this.notify("messages");
+    return this.messages.length < before;
+  }
+
+  sendDrafts() {
+    const drafts = this.messages.filter(m => m.status === "draft").sort(this.pageOrder());
+    if (drafts.length > 0) {
+      const last = this.db.query<{ batch: number | null }, []>("select max(body ->> '$.batch') as batch from messages").get();
+      const batch = (last?.batch ?? 0) + 1;
+      const at = new Date().toISOString();
+      for (const draft of drafts) {
+        draft.status = "sent";
+        draft.batch = batch;
+        draft.sentAt = at;
+      }
+      const ids = drafts.map(d => d.id);
+      for (const frame of notesFrames(drafts, batch, scopeOf(this.review))) {
+        this.pending.push({ frame, ids });
+      }
+      this.flush();
+      this.notify("messages");
+    }
+    return drafts.length;
+  }
+
+  // Text adds Claude's message to the thread; a state (or the older resolved flag) says what it did with it.
+  addReply(reply: Reply): { message: Message | null; thread: Message | null } | null {
+    const parent = reply.replyTo ? this.root(reply.replyTo) : undefined;
+    if (parent === null) {
+      return null;
+    }
+    const state: NoteState | undefined = reply.state ?? (reply.resolved === undefined ? undefined : reply.resolved ? "done" : "open");
+    const became = parent && state && parent.state !== state ? STATE_NOTES[state] : undefined;
+    if (parent && state) {
+      this.setState(parent, state);
+    }
+    let message: Message | null = null;
+    if (reply.text !== undefined) {
+      message = this.insert(
+        {
+          from: "claude",
+          kind: parent?.kind ?? "chat",
+          text: reply.text,
+          anchor: parent?.anchor ?? { kind: "general", label: null, detail: null, path: null, code: null, loc: null, match: null },
+          replyTo: parent?.id,
+          status: "delivered",
+          state: "open",
+          resolved: false,
+          ask: reply.ask,
+          at: new Date().toISOString(),
+        },
+        parent,
+      );
+      // An answer ends the work the session said it was doing on that thread.
+      if (this.activity?.thread && this.activity.thread === parent?.id) {
+        this.setActivity("");
+      }
+    }
+    // After the message, so the note sits under what Claude said about it.
+    if (parent && became) {
+      this.log(parent, "note", became);
+    }
+    this.notify("messages");
+    return { message, thread: parent ?? null };
+  }
+
+  markPosted(ids: string[], posted: NonNullable<Message["posted"]>, keep: boolean) {
+    for (const id of ids) {
+      const note = this.find(id);
+      if (note) {
+        note.posted = posted;
+      }
+    }
+    if (!keep) {
+      this.messages = this.messages.filter(m => !(ids.includes(m.id) && m.status === "draft"));
+    }
+    this.notify("messages");
+  }
+
+  // As the skill's page sends notes, in the order the page draws them; the page's own list and Copy notes agree.
+  private pageOrder() {
+    const order = noteOrder(this.review.response.layers);
+    return (a: Message, b: Message) => order(a.anchor, b.anchor) || Number(a.id.slice(1)) - Number(b.id.slice(1));
+  }
+
+  // Kept short: the last hundred are what a thread shows.
+  private log(thread: Message, kind: ThreadEvent["kind"], text: string) {
+    const events = thread.events ?? [];
+    if (kind === "step" && events.at(-1)?.kind === "step" && events.at(-1)?.text === text) {
+      return;
+    }
+    thread.events = [...events, { kind, text, at: new Date().toISOString() }].slice(-100);
+  }
+
+  private setState(root: Message, state: NoteState) {
+    root.state = state;
+    root.resolved = settled(state);
+  }
+
+  private root(id: string): Message | null {
+    const message = this.find(id);
+    if (!message) {
+      return null;
+    }
+    return message.replyTo ? (this.find(message.replyTo) ?? message) : message;
+  }
+
+  // After a reload each thread looks for what it was about; a reply follows its thread.
+  private reanchorAll() {
+    if (this.messages.length === 0) {
+      return;
+    }
+    const roots = new Map<string, Message["anchor"]>();
+    for (const message of this.messages) {
+      if (!message.replyTo) {
+        message.anchor = reanchor(this.review, message.anchor);
+        roots.set(message.id, message.anchor);
+      }
+    }
+    for (const message of this.messages) {
+      if (message.replyTo) {
+        message.anchor = roots.get(message.replyTo) ?? message.anchor;
+      }
+    }
+    this.recheck();
+    this.notify("messages");
+  }
+
+  private deliver(frame: string, ids: string[]) {
+    this.pending.push({ frame, ids });
+    this.flush();
+  }
+
+  // Frames wait here until a session is watching the socket or holding the long-poll open.
+  private flush() {
+    if (this.pending.length === 0 || !this.listening) {
+      return;
+    }
+    const batch = this.pending;
+    this.pending = [];
+    if (this.sessionSinks.size > 0) {
+      for (const { frame } of batch) {
+        for (const sink of this.sessionSinks) {
+          sink(frame);
+        }
+      }
+    } else {
+      const waiters = [...this.waiters];
+      this.waiters.clear();
+      for (const waiter of waiters) {
+        waiter(batch.map(p => p.frame).join("\n\n"));
+      }
+    }
+    const delivered = new Set(batch.flatMap(p => p.ids));
+    for (const message of this.messages) {
+      if (delivered.has(message.id)) {
+        message.status = "delivered";
+      }
+    }
+    this.notify("messages");
+  }
+
+  notify(type: Push["type"], layer?: number) {
+    if (type === "messages") {
+      this.save();
+    }
+    for (const sink of this.pageSinks) {
+      sink(layer === undefined ? { type } : { type, layer });
+    }
+  }
+
+  // Whether a page has its socket open; the CI poller only runs while one does.
+  get watching() {
+    return this.pageSinks.size > 0;
+  }
+
+  // A frame that isn't a message, such as a CI change the page asked the session to hear about.
+  tell(frame: string) {
+    this.deliver(frame, []);
+  }
+
+  // The PR a new thread is kept under: the layer it names, or the top of the review when it is about no one layer.
+  private prOf(anchor: Message["anchor"]) {
+    const { layers } = this.review.response;
+    const named = "layer" in anchor && anchor.layer !== undefined ? this.review.layer(anchor.layer) : undefined;
+    const layer = named ?? layers.at(-1);
+    return layer ? prKey(layer.meta) : "";
+  }
+
+  // The database numbers a message as it goes in, so ids never repeat across reviews. A reply is kept with its thread.
+  private insert(fields: Omit<Message, "id">, thread?: Message): Message {
+    const body = JSON.stringify(fields);
+    const row = thread
+      ? this.db
+          .query<{ n: number }, [string, number]>(
+            "insert into messages (pr, stack, body) select pr, stack, ? from messages where n = ? returning n",
+          )
+          .get(body, Number(thread.id.slice(1)))
+      : this.db
+          .query<{ n: number }, [string, string | null, string]>("insert into messages (pr, stack, body) values (?, ?, ?) returning n")
+          .get(this.prOf(fields.anchor), this.stack, body);
+    if (!row) {
+      throw new Error("the message wasn't kept");
+    }
+    const message = { ...fields, id: `m${row.n}` };
+    this.messages.push(message);
+    return message;
+  }
+
+  private save() {
+    const update = this.db.query("update messages set body = ? where n = ?");
+    const remove = this.db.query("delete from messages where n = ?");
+    const now = new Map(this.messages.map(message => [message.id, JSON.stringify(message)]));
+    this.db.transaction(() => {
+      for (const [id, body] of now) {
+        if (this.written.get(id) !== body) {
+          update.run(body, Number(id.slice(1)));
+          this.written.set(id, body);
+        }
+      }
+      for (const id of [...this.written.keys()].filter(id => !now.has(id))) {
+        remove.run(Number(id.slice(1)));
+        this.written.delete(id);
+      }
+    })();
+  }
+
+  // Threads from earlier runs about this review's PRs or its stack, found again in what is loaded now.
+  private restore() {
+    const prs = JSON.stringify(this.review.response.layers.map(layer => prKey(layer.meta)));
+    this.messages = this.db
+      .query<{ n: number; body: string }, [string, string | null]>(
+        "select n, body from messages where pr in (select value from json_each(?)) or stack = ? order by n",
+      )
+      .all(prs, this.stack)
+      .map(row => ({ ...(JSON.parse(row.body) as Message), id: `m${row.n}` }));
+    for (const message of this.messages) {
+      this.written.set(message.id, JSON.stringify(message));
+    }
+    this.reanchorAll();
+    // What was sent and never reached a session waits for the next one, as it did before the restart.
+    const scope = scopeOf(this.review);
+    const waiting = this.messages.filter(m => m.status === "sent");
+    for (const chat of waiting.filter(m => m.batch === undefined)) {
+      const frame = chat.review && !chat.replyTo ? this.reviewFrameFor(chat) : chatFrame(chat, scope, false);
+      this.pending.push({ frame, ids: [chat.id] });
+    }
+    for (const batch of new Set(waiting.flatMap(m => m.batch ?? []))) {
+      const notes = waiting.filter(m => m.batch === batch).sort(this.pageOrder());
+      const ids = notes.map(m => m.id);
+      this.pending.push(...notesFrames(notes, batch, scope).map(frame => ({ frame, ids })));
+    }
+  }
+}
