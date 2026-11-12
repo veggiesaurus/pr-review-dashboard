@@ -13,14 +13,15 @@ import {
   type ThreadEvent,
 } from "../shared/messages";
 import { noteOrder } from "../shared/order";
-import { DISMISS_TEXT, type DismissReason, type ReviewEffort } from "../shared/reviews";
+import { DISMISS_TEXT, type DismissReason, fixable, type ReviewEffort } from "../shared/reviews";
 import { prKey, TICK_PREFIX } from "../shared/ticks";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
-import { chatFrame, fixFrame, notesFrames, recheckFrame, reviewFrame } from "./format";
+import { chatFrame, fixFrames, notesFrames, recheckFrames, reviewFrame } from "./format";
 import type { Review } from "./review";
 
-type Pending = { frame: string; ids: string[] };
+// A frame for the session and the messages it carries; n is its row, kept until the session is heard from.
+type Pending = { n: number; frame: string; ids: string[] };
 // What a thread notes when the session settles it; starting work and answering show as steps and messages already.
 const STATE_NOTES: Partial<Record<NoteState, string>> = { done: "Marked done", declined: "Declined" };
 
@@ -53,6 +54,8 @@ export class Store {
   messages: Message[] = [];
 
   private pending: Pending[] = [];
+  // Written to a session that hasn't been heard from since: they go again if it leaves without a word.
+  private unheard: Pending[] = [];
   private readonly pageSinks = new Set<(push: Push) => void>();
   private readonly sessionSinks = new Set<(frame: string) => void>();
   private readonly waiters = new Set<(text: string) => void>();
@@ -116,17 +119,52 @@ export class Store {
   }
 
   addSessionSink(sink: (frame: string) => void) {
+    // A listener where there was none may be a new session: it gets what the last one never answered for.
+    if (!this.listening) {
+      this.requeue();
+      this.reoffer();
+    }
     this.sessionSinks.add(sink);
     this.flush();
     this.notify("session");
     return () => {
       this.sessionSinks.delete(sink);
+      if (this.sessionSinks.size === 0) {
+        this.requeue();
+        this.flush();
+      }
       this.notify("session");
     };
   }
 
+  // Something came from the session after these frames went out, so it has them: a message on its socket for one
+  // frame, a request of its own for all of them.
+  heard(count = this.unheard.length) {
+    const got = this.unheard.splice(0, count);
+    if (got.length === 0) {
+      return;
+    }
+    const remove = this.db.query("delete from frames where n = ?");
+    for (const { n } of got) {
+      remove.run(n);
+    }
+    const delivered = new Set(got.flatMap(p => p.ids));
+    for (const message of this.messages) {
+      if (delivered.has(message.id)) {
+        message.status = "delivered";
+      }
+    }
+    this.notify("messages");
+  }
+
+  private requeue() {
+    this.pending.unshift(...this.unheard.splice(0));
+  }
+
   // The long-poll: resolves with whatever is waiting, or with the next thing the page sends.
   wait(signal: AbortSignal): Promise<string> {
+    // ponytail: coming back for more answers for the last poll, whoever polls; give polls a cursor if two sessions ever share one.
+    this.heard();
     return new Promise(resolve => {
       const waiter = (text: string) => {
         resolve(text);
@@ -185,7 +223,7 @@ export class Store {
       parent,
     );
     if (kind === "chat") {
-      this.deliver(chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message)), [message.id]);
+      this.deliver([chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message))], [message.id]);
     }
     this.notify("messages");
     return message;
@@ -211,7 +249,7 @@ export class Store {
       review: { n: (last?.n ?? 0) + 1, effort, sigs },
       at: new Date().toISOString(),
     });
-    this.deliver(this.reviewFrameFor(message), [message.id]);
+    this.deliver([this.reviewFrameFor(message)], [message.id]);
     this.notify("messages");
     return message;
   }
@@ -307,13 +345,19 @@ export class Store {
     return this.messages.filter(m => m.from === "claude" && !m.replyTo && m.review && !m.resolved && !m.archived && !m.anchor.outdated);
   }
 
-  // The recommended findings of a review that nothing has been asked of yet, sent to the session to fix in one go.
+  // The recommended findings of a review with no ask still waiting on them, sent to the session to fix in one go.
   fixRecommended(n: number) {
     if (!this.messages.some(m => m.review?.n === n && !m.replyTo)) {
       return null;
     }
     const findings = this.openFindings().filter(
-      m => m.review?.n === n && m.review.recommended && !this.messages.some(reply => reply.replyTo === m.id),
+      m =>
+        m.review?.n === n &&
+        m.review.recommended &&
+        fixable(
+          m,
+          this.messages.filter(reply => reply.replyTo === m.id),
+        ),
     );
     if (findings.length > 0) {
       const at = new Date().toISOString();
@@ -334,7 +378,7 @@ export class Store {
         ),
       );
       this.deliver(
-        fixFrame(findings, n, scopeOf(this.review)),
+        fixFrames(findings, n, scopeOf(this.review)),
         asks.map(ask => ask.id),
       );
       this.notify("messages");
@@ -350,7 +394,32 @@ export class Store {
       this.log(finding, "note", "Sent back to Claude after a rebuild");
     }
     if (stale.length > 0) {
-      this.deliver(recheckFrame(stale, scopeOf(this.review)), []);
+      this.deliver(recheckFrames(stale, scopeOf(this.review)), []);
+    }
+  }
+
+  // The frames that ask the session for what one message of the user's wants.
+  private framesFor(ask: Message) {
+    const scope = scopeOf(this.review);
+    if (ask.batch !== undefined) {
+      return notesFrames([ask], ask.batch, scope);
+    }
+    return [ask.review && !ask.replyTo ? this.reviewFrameFor(ask) : chatFrame(ask, scope, false, this.findingOf(ask))];
+  }
+
+  // A thread a session said it was working on and never settled is asked again: that session may be gone.
+  private reoffer() {
+    const left = this.messages.filter(m => !m.replyTo && m.state === "working");
+    for (const thread of left) {
+      this.setState(thread, "open");
+      this.log(thread, "note", "Offered again: the session working on it stopped listening");
+      const ask = this.messages.findLast(m => (m.id === thread.id || m.replyTo === thread.id) && m.from === "user");
+      for (const frame of ask ? this.framesFor(ask) : []) {
+        this.queue(`${frame}\n(offered again: it was being worked on when the session stopped listening; carry on if that was you)`, []);
+      }
+    }
+    if (left.length > 0) {
+      this.notify("messages");
     }
   }
 
@@ -442,11 +511,10 @@ export class Store {
         draft.batch = batch;
         draft.sentAt = at;
       }
-      const ids = drafts.map(d => d.id);
-      for (const frame of notesFrames(drafts, batch, scopeOf(this.review))) {
-        this.pending.push({ frame, ids });
-      }
-      this.flush();
+      this.deliver(
+        notesFrames(drafts, batch, scopeOf(this.review)),
+        drafts.map(d => d.id),
+      );
       this.notify("messages");
     }
     return drafts.length;
@@ -560,18 +628,36 @@ export class Store {
     this.notify("messages");
   }
 
-  private deliver(frame: string, ids: string[]) {
-    this.pending.push({ frame, ids });
+  // Kept in the database as well, so a restart sends what no session has answered for.
+  private queue(frame: string, ids: string[]) {
+    const top = this.review.response.layers.at(-1);
+    const row = this.db
+      .query<{ n: number }, [string, string | null, string, string]>(
+        "insert into frames (pr, stack, frame, ids) values (?, ?, ?, ?) returning n",
+      )
+      .get(top ? prKey(top.meta) : "", this.stack, frame, JSON.stringify(ids));
+    if (!row) {
+      throw new Error("the frame wasn't kept");
+    }
+    this.pending.push({ n: row.n, frame, ids });
+  }
+
+  private deliver(frames: string[], ids: string[]) {
+    for (const frame of frames) {
+      this.queue(frame, ids);
+    }
     this.flush();
   }
 
-  // Frames wait here until a session is watching the socket or holding the long-poll open.
+  // Frames wait here until a session is watching the socket or holding the long-poll open. Going out isn't
+  // delivery: a message is delivered once the session is heard from.
   private flush() {
     if (this.pending.length === 0 || !this.listening) {
       return;
     }
     const batch = this.pending;
     this.pending = [];
+    this.unheard.push(...batch);
     if (this.sessionSinks.size > 0) {
       for (const { frame } of batch) {
         for (const sink of this.sessionSinks) {
@@ -585,13 +671,6 @@ export class Store {
         waiter(batch.map(p => p.frame).join("\n\n"));
       }
     }
-    const delivered = new Set(batch.flatMap(p => p.ids));
-    for (const message of this.messages) {
-      if (delivered.has(message.id)) {
-        message.status = "delivered";
-      }
-    }
-    this.notify("messages");
   }
 
   notify(type: Push["type"], layer?: number) {
@@ -610,7 +689,7 @@ export class Store {
 
   // A frame that isn't a message, such as a CI change the page asked the session to hear about.
   tell(frame: string) {
-    this.deliver(frame, []);
+    this.deliver([frame], []);
   }
 
   // The PR a new thread is kept under: the layer it names, or the top of the review when it is about no one layer.
@@ -671,18 +750,21 @@ export class Store {
     for (const message of this.messages) {
       this.written.set(message.id, JSON.stringify(message));
     }
+    // What no session answered for waits for the next one, as it did before the restart.
+    this.pending = this.db
+      .query<{ n: number; frame: string; ids: string }, [string, string | null]>(
+        "select n, frame, ids from frames where pr in (select value from json_each(?)) or stack = ? order by n",
+      )
+      .all(prs, this.stack)
+      .map(row => ({ n: row.n, frame: row.frame, ids: JSON.parse(row.ids) as string[] }));
     this.reanchorAll();
-    // What was sent and never reached a session waits for the next one, as it did before the restart.
-    const scope = scopeOf(this.review);
-    const waiting = this.messages.filter(m => m.status === "sent");
-    for (const chat of waiting.filter(m => m.batch === undefined)) {
-      const frame = chat.review && !chat.replyTo ? this.reviewFrameFor(chat) : chatFrame(chat, scope, false, this.findingOf(chat));
-      this.pending.push({ frame, ids: [chat.id] });
+    // A message sent before frames were kept has none; it gets one made now.
+    const kept = new Set(this.pending.flatMap(p => p.ids));
+    for (const ask of this.messages.filter(m => m.status === "sent" && !kept.has(m.id))) {
+      for (const frame of this.framesFor(ask)) {
+        this.queue(frame, [ask.id]);
+      }
     }
-    for (const batch of new Set(waiting.flatMap(m => m.batch ?? []))) {
-      const notes = waiting.filter(m => m.batch === batch).sort(this.pageOrder());
-      const ids = notes.map(m => m.id);
-      this.pending.push(...notesFrames(notes, batch, scope).map(frame => ({ frame, ids })));
-    }
+    this.reoffer();
   }
 }

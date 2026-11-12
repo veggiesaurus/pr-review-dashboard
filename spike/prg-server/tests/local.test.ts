@@ -94,6 +94,10 @@ describe("what the checkout has that the reviewed head doesn't", () => {
     elsewhere.meta.head = "a-branch-checked-out-nowhere";
     const other = setup({ raw: elsewhere, repo });
     expect(await (await other.page("/api/layers/12/local")).json()).toEqual({ where: null, files: {} });
+
+    // A fork's PR from its own main: the checkout of main here is the base, not that PR.
+    const fork = { ...raw, meta: { ...raw.meta, base: `origin/${raw.meta.head}` } };
+    expect(await (await setup({ raw: fork, repo }).page("/api/layers/12/local")).json()).toEqual({ where: null, files: {} });
   });
 
   test("one edit is taken back out of the checkout, and only while it is still what the page saw", async () => {

@@ -66,6 +66,8 @@ export type ResolvedAnchor = Anchor & {
   loc: string | null;
   // What a reload looks for to find the same thing again; outdated when it found nothing.
   match: string | null;
+  // On a line: the few lines just above and below it, which tell it from another line with the same text.
+  around?: [string[], string[]];
   outdated?: boolean;
 };
 

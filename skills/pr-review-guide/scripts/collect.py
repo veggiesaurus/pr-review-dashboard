@@ -443,7 +443,8 @@ def mark_reindented(f, ws):
     moved out of a block stays a change."""
     old, new = ws
     sensitive = INDENT_SENSITIVE.search(f["path"])
-    words = lambda s: " ".join(s.split())
+    # A line's words with its string literals verbatim: -w ignores whitespace inside a literal too, where it is a change.
+    words = _key
     for h in f["hunks"]:
         changed = [t != " " and (o in old if t == "-" else n in new) for t, o, n, _b in h["lines"]]
         openers = {_indent(r[3]) for r, c in zip(h["lines"], changed) if c and r[3].rstrip().endswith(":")}
@@ -490,8 +491,9 @@ def mark_blocks(f):
                 start = None
     # Imports removed in one place and added unchanged in another have only moved. Code that moves
     # stays a change: the same line can mean something else in another function.
-    gone = Counter(_key(x) for _b, rem, _a in pure for x in rem if x.strip())
-    came = Counter(_key(x) for _b, _r, add in pure for x in add if x.strip())
+    # At the same depth only: an import moved under a condition or into a function no longer runs at load.
+    gone = Counter((_indent(x), _key(x)) for _b, rem, _a in pure for x in rem if x.strip())
+    came = Counter((_indent(x), _key(x)) for _b, _r, add in pure for x in add if x.strip())
     if gone and gone == came:
         for b, _r, _a in pure:
             b["noise"] = "moved"
@@ -704,9 +706,10 @@ MOVE_MIN_ALNUM = 40
 def find_moves(files):
     """Runs of removed lines that come back unchanged somewhere else in the diff: code moved, not written.
 
-    Lines match once their indentation is ignored; where indentation means something they must also keep it
-    relative to each other. A move is still a change, since the same lines can mean something else in their
-    new place, so the page shows the new copy marked as moved and folds the old one into a pointer to it."""
+    Lines match once their indentation is ignored; where indentation means something they must keep it, since
+    the same statements a level out or in run under something else. A move is still a change, since the same
+    lines can mean something else in their new place, so the page shows the new copy marked as moved and folds
+    the old one into a pointer to it."""
     def runs(tag):
         out = []
         for f in files:
@@ -740,11 +743,10 @@ def find_moves(files):
             for rn, rk in index.get(text(h2, idx2[k]), [])[:50]:
                 f1, h1, idx1 = removed[rn]
                 sensitive = INDENT_SENSITIVE.search(f1["path"]) or INDENT_SENSITIVE.search(f2["path"])
-                d1, d2 = _indent(h1["lines"][idx1[rk]][3]), _indent(h2["lines"][idx2[k]][3])
                 n = 0
                 while k + n < len(idx2) and rk + n < len(idx1) and (rn, rk + n) not in used:
                     a, b = h2["lines"][idx2[k + n]][3], h1["lines"][idx1[rk + n]][3]
-                    if a.strip() != b.strip() or (sensitive and a.strip() and _indent(a) - d2 != _indent(b) - d1):
+                    if a.strip() != b.strip() or (sensitive and a.strip() and _indent(a) != _indent(b)):
                         break
                     n += 1
                 while n and not text(h2, idx2[k + n - 1]):
@@ -1155,6 +1157,15 @@ def self_test():
     mark_blocks(joined)
     mark_reindented(joined, (set(), set()))
     assert "reindented" not in joined["hunks"][0]["blocks"][0], joined
+    literal = {"path": ts, "hunks": [{"lines": [["-", 1, None, 'const INDENT = "    ";'], ["+", None, 1, 'const INDENT = "  ";']]}]}
+    mark_blocks(literal)
+    mark_reindented(literal, (set(), set()))
+    assert "reindented" not in literal["hunks"][0]["blocks"][0], "whitespace inside a string literal is a change"
+    lazy = {"path": py, "hunks": [
+        {"lines": [[" ", 1, 1, "import os"], ["-", 2, None, "from models import User"], [" ", 3, 2, "x = 1"]]},
+        {"lines": [[" ", 9, 8, "if TYPE_CHECKING:"], ["+", None, 9, "    from models import User"], [" ", 10, 10, "y = 2"]]}]}
+    mark_blocks(lazy)
+    assert [h["noise"] for h in lazy["hunks"]] == [None, None], "an import moved into a block is a change"
     guard = {"path": "x.go", "hunks": [
         {"lines": [[" ", 1, 1, "func deleteUser() {"], ["-", 2, None, '    return "forbidden"'], [" ", 3, 2, "    drop()"]]},
         {"lines": [[" ", 9, 8, "func listUsers() {"], ["+", None, 9, '    return "forbidden"'], [" ", 10, 10, "    rows()"]]}]}
@@ -1259,7 +1270,7 @@ def self_test():
     find_moves([src, dst])
     assert src["hunks"][0]["moves"] == [{"side": "-", "start": 0, "end": 4, "to": "f2h1", "line": "R2"}], src
     assert dst["hunks"][0]["moves"] == [{"side": "+", "start": 1, "end": 5, "from": "f1h1", "line": "L10"}], dst
-    # Python keeps the move only while the lines keep their indentation relative to each other.
+    # Python keeps the move only while the lines keep their indentation.
     py_body = ["def f(x):", "    if x:", "        return slow(x)", "    return fast(x)"]
     src = {"path": "a.py", "noise": False, "hunks": [hunk("f1h1", [["-", 1 + k, None, x] for k, x in enumerate(py_body)])]}
     dst = {"path": "b.py", "noise": False, "hunks": [hunk("f2h1", [["+", None, 1 + k, x] for k, x in enumerate(
@@ -1268,6 +1279,12 @@ def self_test():
         mark_blocks(f)
     find_moves([src, dst])
     assert dst["hunks"][0]["moves"] == [], "a statement moved out of its block is not a plain move"
+    tail = ["running_total += cost(item)", "log.info(running_total)", "flush_everything(running_total)"]
+    dedent = {"path": "a.py", "noise": False, "hunks": [hunk("f1h1", [[" ", 1, 1, "for item in items:"]] +
+        [["-", 2 + k, None, "    " + x] for k, x in enumerate(tail)] + [["+", None, 2 + k, x] for k, x in enumerate(tail)])]}
+    mark_blocks(dedent)
+    find_moves([dedent])
+    assert dedent["hunks"][0]["moves"] == [], "statements dedented out of a loop are not a plain move"
     short = {"path": "a.ts", "noise": False, "hunks": [hunk("f1h1", [["-", 1, None, "return null;"], ["+", None, 9, "return null;"]])]}
     mark_blocks(short)
     find_moves([short])

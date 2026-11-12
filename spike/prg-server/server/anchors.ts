@@ -5,6 +5,7 @@ import type { Review } from "./review";
 
 const CODE_LIMIT = 4000;
 const QUOTED_LINES = 12;
+const AROUND = 3;
 const STACK_KINDS: Record<string, string> = {
   churn: "rewritten further up",
   placement: "belongs in another layer",
@@ -52,6 +53,29 @@ function lineRows(file: ReviewFile, hunk: Hunk, side: Side, from: number, to: nu
     rows.push(row);
   }
   return rows;
+}
+
+// The nearest few lines with something on them, outward from one index; blank lines tell no two places apart.
+function nearby(lines: string[], from: number, step: 1 | -1, end: number) {
+  const out: string[] = [];
+  for (let i = from; i >= 0 && i < end && out.length < AROUND; i += step) {
+    if (lines[i]?.trim()) {
+      out.push((lines[i] as string).slice(0, 200));
+    }
+  }
+  return out;
+}
+
+// What sits just above and below a range on its side: in the head's text when there is one, else in the hunk's rows.
+function around(file: ReviewFile, hunk: Hunk, side: Side, from: number, to: number, text: string[] | undefined): [string[], string[]] {
+  if (side === "R" && text) {
+    const count = file.lineCount ?? 0;
+    return [nearby(text, from - 2, -1, count), nearby(text, to, 1, count)];
+  }
+  const rows = rowsOn(hunk.lines, side);
+  const lines = rows.map(row => row[3]);
+  const at = (n: number) => rows.findIndex(row => numberOn(row, side) === n);
+  return [nearby(lines, at(from) - 1, -1, lines.length), nearby(lines, at(to) + 1, 1, lines.length)];
 }
 
 // How far a hunk's head lines are from line n.
@@ -109,7 +133,14 @@ function hunkLocations(review: Review, layer: Layer, ids: string[]) {
 export function resolveAnchor(review: Review, anchor: Anchor): ResolvedAnchor | null {
   const found = (
     label: string | null,
-    more: { detail?: string | null; path?: string | null; code?: string | null; loc?: string | null; match?: string | null } = {},
+    more: {
+      detail?: string | null;
+      path?: string | null;
+      code?: string | null;
+      loc?: string | null;
+      match?: string | null;
+      around?: [string[], string[]];
+    } = {},
   ): ResolvedAnchor => ({
     ...anchor,
     label: label === null ? null : flat(label),
@@ -118,6 +149,7 @@ export function resolveAnchor(review: Review, anchor: Anchor): ResolvedAnchor | 
     code: more.code ?? null,
     loc: more.loc ? flat(more.loc) : null,
     match: more.match ?? null,
+    ...(more.around && { around: more.around }),
   });
 
   if (anchor.kind === "general") {
@@ -162,8 +194,9 @@ export function resolveAnchor(review: Review, anchor: Anchor): ResolvedAnchor | 
       const file = fileOf(anchor.file);
       const hunk = file?.hunks.find(h => h.id === anchor.hunk);
       const end = anchor.endLine ?? anchor.line;
-      const rows = file && hunk ? lineRows(file, hunk, anchor.side, anchor.line, end, review.text(layer.id, file.id)) : null;
-      if (!file || !rows) {
+      const text = file && review.text(layer.id, file.id);
+      const rows = file && hunk ? lineRows(file, hunk, anchor.side, anchor.line, end, text) : null;
+      if (!file || !hunk || !rows) {
         return null;
       }
       const code = rows
@@ -172,7 +205,13 @@ export function resolveAnchor(review: Review, anchor: Anchor): ResolvedAnchor | 
         .slice(0, CODE_LIMIT);
       const range = end !== anchor.line ? `${anchor.side}${anchor.line}-${anchor.side}${end}` : `${anchor.side}${anchor.line}`;
       const loc = `${at}${file.path}:${range}${sha}`;
-      return found(`${loc} | ${oneLine(rows[0]?.[3] ?? "")}`, { detail: numbered(rows, anchor.side), path: file.path, code, loc });
+      return found(`${loc} | ${oneLine(rows[0]?.[3] ?? "")}`, {
+        detail: numbered(rows, anchor.side),
+        path: file.path,
+        code,
+        loc,
+        around: around(file, hunk, anchor.side, anchor.line, end, text),
+      });
     }
     case "hunk": {
       const file = fileOf(anchor.file);
@@ -290,28 +329,35 @@ function nearest<T>(candidates: T[], distance: (item: T) => number): T | undefin
   return candidates.toSorted((a, b) => distance(a) - distance(b))[0];
 }
 
-// The same lines of code on the same side of the same file, nearest to where they were: in a hunk, or failing that
-// unchanged in the head's text and named on the nearest hunk that can hold them.
-function findLines(file: ReviewFile, side: Side, code: string, near: number, text: string[] | undefined) {
+// The same lines of code on the same side of the same file: in a hunk, or unchanged in the head's text and named on
+// the nearest hunk that can hold them. Of several copies, the one whose neighbours are the ones the thread kept.
+function findLines(file: ReviewFile, old: Extract<ResolvedAnchor, { kind: "line" }>, text: string[] | undefined) {
+  const { side } = old;
+  const code = old.code ?? "";
   const want = code.split("\n");
+  // Code over the limit was cut, perhaps mid-line: the range says how long it was, and its last line is only a start.
+  const cut = code.length >= CODE_LIMIT;
+  const span = cut ? (old.endLine ?? old.line) - old.line + 1 : want.length;
+  const same = (lines: string[]) =>
+    lines.length === span && want.every((line, j) => lines[j] === line || (cut && j === want.length - 1 && lines[j]?.startsWith(line)));
   const found: { hunk: Hunk; from: number; to: number }[] = [];
   for (const hunk of file.hunks) {
     const rows = rowsOn(hunk.lines, side);
-    for (let i = 0; i + want.length <= rows.length; i++) {
-      const window = rows.slice(i, i + want.length);
+    for (let i = 0; i + span <= rows.length; i++) {
+      const window = rows.slice(i, i + span);
       const from = numberOn(window[0] as HunkLine, side);
       const to = numberOn(window.at(-1) as HunkLine, side);
-      if (from !== null && to !== null && window.every((row, j) => row[3] === want[j])) {
+      if (from !== null && to !== null && same(window.map(row => row[3]))) {
         if (canAnchor(hunk.lines, side, from) && canAnchor(hunk.lines, side, to)) {
           found.push({ hunk, from, to });
         }
       }
     }
   }
-  if (found.length === 0 && side === "R" && text) {
-    for (let i = 0; i + want.length <= (file.lineCount ?? 0); i++) {
-      if (want.every((line, j) => text[i + j] === line)) {
-        const [from, to] = [i + 1, i + want.length];
+  if (side === "R" && text) {
+    for (let i = 0; i + span <= (file.lineCount ?? 0); i++) {
+      const [from, to] = [i + 1, i + span];
+      if (same(text.slice(i, i + span)) && !found.some(hit => hit.from === from)) {
         const hunk = file.hunks
           .toSorted((a, b) => distance(a, from) - distance(b, from))
           .find(h => lineRows(file, h, side, from, to, text));
@@ -321,7 +367,18 @@ function findLines(file: ReviewFile, side: Side, code: string, near: number, tex
       }
     }
   }
-  return nearest(found, hit => Math.abs(hit.from - near));
+  const closest = (hits: typeof found) => nearest(hits, hit => Math.abs(hit.from - old.line));
+  if (!old.around || found.length < 2) {
+    return closest(found);
+  }
+  const kept = old.around.flat();
+  const scores = found.map(hit => {
+    const now = around(file, hit.hunk, side, hit.from, hit.to, text).flat();
+    return kept.filter(line => now.includes(line)).length;
+  });
+  const best = Math.max(...scores);
+  // Twins that most of the neighbours don't tell apart: outdated beats a guess.
+  return best * 2 < kept.length ? undefined : closest(found.filter((_, i) => scores[i] === best));
 }
 
 // Where a review's finding goes: on its line when the diff can show it, else on its file, else on the PR as a whole.
@@ -360,7 +417,7 @@ function findAgain(review: Review, old: ResolvedAnchor): Anchor | null {
   const base = { layer: layer.id };
   switch (old.kind) {
     case "line": {
-      const hit = file && old.code !== null ? findLines(file, old.side, old.code, old.line, review.text(layer.id, file.id)) : undefined;
+      const hit = file && old.code !== null ? findLines(file, old, review.text(layer.id, file.id)) : undefined;
       if (!file || !hit) {
         return null;
       }

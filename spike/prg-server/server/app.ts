@@ -74,9 +74,11 @@ export function createApp(deps: AppDeps) {
     }
 
     const url = new URL(c.req.url);
+    // The path as the router decodes it: /%61pi/review routes to /api/review, so the raw one can't decide who may call.
+    const path = c.req.path;
     const code = url.searchParams.get("t");
     const cookieName = `prg_${port}`;
-    const opening = c.req.method === "GET" && url.pathname === "/" && code !== null;
+    const opening = c.req.method === "GET" && path === "/" && code !== null;
     if (opening) {
       if (!safeEqual(code, deps.linkCode)) {
         return c.text("unauthorised\n", 401);
@@ -85,20 +87,20 @@ export function createApp(deps: AppDeps) {
     }
 
     // Monitor's ws source and the browser's WebSocket can't set a header, so those two sockets alone carry theirs in the query.
-    const bearer = c.req.header("authorization")?.replace(/^Bearer /, "") ?? (url.pathname === "/api/session/ws" ? code : null);
-    const key = c.req.header("x-prg-key") ?? (url.pathname === "/api/ws" ? url.searchParams.get("k") : null);
+    const bearer = c.req.header("authorization")?.replace(/^Bearer /, "") ?? (path === "/api/session/ws" ? code : null);
+    const key = c.req.header("x-prg-key") ?? (path === "/api/ws" ? url.searchParams.get("k") : null);
     const cookie = getCookie(c, cookieName);
     if (bearer && safeEqual(bearer, deps.token)) {
       c.set("who", "session");
     } else if (opening || (cookie && safeEqual(cookie, deps.cookieSecret))) {
       // Browsers send Origin on every write and every socket, so a cookie request without one isn't from the page.
-      const needsOrigin = !["GET", "HEAD"].includes(c.req.method) || url.pathname === "/api/ws";
+      const needsOrigin = !["GET", "HEAD"].includes(c.req.method) || path === "/api/ws";
       if (needsOrigin && !origin) {
         return c.text("forbidden\n", 403);
       }
       // A cookie goes to every port on this host, so another local server can end up holding it. The key lives in
       // the page's own storage, which is per port, and the API wants both.
-      const open = c.req.method === "GET" && (!url.pathname.startsWith("/api/") || PICTURE.test(url.pathname));
+      const open = c.req.method === "GET" && (!path.startsWith("/api/") || PICTURE.test(path));
       if (!open && !(key && safeEqual(key, deps.linkCode))) {
         return c.text("unauthorised: open the link your Claude session gave you\n", 401);
       }

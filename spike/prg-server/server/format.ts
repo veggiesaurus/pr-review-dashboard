@@ -40,19 +40,8 @@ export function chatFrame(message: Message, scope: string, reopened = false, fin
   return clip(lines.join("\n"), FRAME_LIMIT);
 }
 
-// A batch goes as one frame when it fits, else as parts that each fit and say how many there are.
-export function notesFrames(notes: Message[], batch: number, scope: string) {
-  const intro =
-    `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} on ${flat(scope)}. ` +
-    "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. " +
-    'For each note, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
-    '{"replyTo":"<id>","state":"done"|"answered"|"declined","text":"what you did, the answer, or why not"}.' +
-    (notes.some(note => note.intent)
-      ? " A note marked (fix) wants the change made, (question) an answer and no change, (nit) the change only if it is trivial."
-      : "");
-  const items = notes.map(note =>
-    clip(`${note.id}${note.intent ? ` (${note.intent})` : ""} ${about(note)}\n${indent(note.text)}`, NOTE_LIMIT),
-  );
+// One frame when it all fits, else parts that each fit: the first says how many there are, the rest are headed by name.
+function inParts(intro: string, items: string[], name: string) {
   const parts = [intro];
   for (const item of items) {
     const last = parts.length - 1;
@@ -67,9 +56,24 @@ export function notesFrames(notes: Message[], batch: number, scope: string) {
   }
   return parts.map((part, i) =>
     i === 0
-      ? part.replace(intro, `${intro} It comes in ${parts.length} parts.`)
-      : `[review page] batch ${batch}, part ${i + 1} of ${parts.length}\n\n${part}`,
+      ? `${intro} It comes in ${parts.length} parts.${part.slice(intro.length)}`
+      : `[review page] ${name}, part ${i + 1} of ${parts.length}\n\n${part}`,
   );
+}
+
+export function notesFrames(notes: Message[], batch: number, scope: string) {
+  const intro =
+    `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} on ${flat(scope)}. ` +
+    "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. " +
+    'For each note, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
+    '{"replyTo":"<id>","state":"done"|"answered"|"declined","text":"what you did, the answer, or why not"}.' +
+    (notes.some(note => note.intent)
+      ? " A note marked (fix) wants the change made, (question) an answer and no change, (nit) the change only if it is trivial."
+      : "");
+  const items = notes.map(note =>
+    clip(`${note.id}${note.intent ? ` (${note.intent})` : ""} ${about(note)}\n${indent(note.text)}`, NOTE_LIMIT),
+  );
+  return inParts(intro, items, `batch ${batch}`);
 }
 
 const patchOf = (finding: Message, name: string) =>
@@ -118,21 +122,21 @@ const findingItem = (finding: Message) =>
   clip([`${finding.id} ${about(finding)}`, indent(finding.text), ...patchOf(finding, "proposed patch")].join("\n"), NOTE_LIMIT);
 
 // Findings still open when the pull request gets a new head go back to the session to be looked at again.
-export function recheckFrame(findings: Message[], scope: string) {
+export function recheckFrames(findings: Message[], scope: string) {
   const intro =
     `[review page] re-check ${findings.length} review ${findings.length === 1 ? "finding" : "findings"} on ${flat(scope)}: ` +
     "the pull request has a new head, and a fix may be in another file than the finding. For each, " +
     'POST /api/replies {"replyTo":"<id>","state":"done","text":"how it was fixed"} when it no longer holds, ' +
     'or {"replyTo":"<id>","text":"why it still holds"} when it does.';
-  return clip([intro, ...findings.map(findingItem)].join("\n\n"), FRAME_LIMIT * 2);
+  return inParts(intro, findings.map(findingItem), "re-check");
 }
 
 // The findings the user asked to have fixed in one go, answered one by one as a batch of notes is.
-export function fixFrame(findings: Message[], n: number, scope: string) {
+export function fixFrames(findings: Message[], n: number, scope: string) {
   const intro =
     `[review page] fix ${findings.length} recommended ${findings.length === 1 ? "finding" : "findings"} of review ${n} on ${flat(scope)}. ` +
     "Fix each in the working tree and leave it unstaged. " +
     'For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
     '{"replyTo":"<id>","state":"done"|"declined","text":"what you changed, or why not"}.';
-  return clip([intro, ...findings.map(findingItem)].join("\n\n"), FRAME_LIMIT * 2);
+  return inParts(intro, findings.map(findingItem), `fix of review ${n}`);
 }

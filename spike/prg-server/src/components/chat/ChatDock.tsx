@@ -212,9 +212,10 @@ function Pane({ threads, archived, focus }: { threads: ClaudeThread[]; archived:
         <ClaudeThreadBlock key={thread.root.id} thread={thread} className="border" />
       ))}
       {composing || anchor.kind !== "general" ? (
-        <Composer anchor={anchor} bare />
+        // Keyed by what it is about, so text typed about one thing never follows the drawer to another.
+        <Composer key={key} anchor={anchor} bare />
       ) : (
-        <ReplyBox anchor={anchor} placeholder="Ask Claude about this review" />
+        <ReplyBox key={key} anchor={anchor} placeholder="Ask Claude about this review" />
       )}
     </div>
   );

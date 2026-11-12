@@ -19,6 +19,7 @@ export function reviewsRoutes({ store }: AppDeps) {
 
   // The session hands over what the review found; each finding becomes a thread Claude starts.
   app.post("/reviews/:n/findings", only("session"), small, zValidator("json", findingsSchema), c => {
+    store.heard();
     const threads = store.addFindings(number(c.req.param("n")), c.req.valid("json").findings);
     return threads ? c.json(threads, 201) : c.json({ error: "no review with that number" }, 404);
   });

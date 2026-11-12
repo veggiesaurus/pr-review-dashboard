@@ -1,6 +1,6 @@
 import { Crosshair, Ellipsis, MessagesSquare, ScanSearch } from "lucide-react";
 import type { Message } from "shared/messages";
-import { REVIEW_EFFORTS, type ReviewEffort, STANDINGS, standing } from "shared/reviews";
+import { fixable, REVIEW_EFFORTS, type ReviewEffort, STANDINGS, standing } from "shared/reviews";
 
 import { useChatStore } from "src/components/chat/chat.store";
 import { jumpTo, oneLine, shortLabel } from "src/components/chat/notes";
@@ -103,10 +103,8 @@ export function ReviewBlock({ layer }: { layer: number }) {
   }
   const answer = request.replies.findLast(m => m.from === "claude");
   const counts = STANDINGS.map(name => ({ name, count: findings.filter(t => standing(t.root) === name).length })).filter(c => c.count);
-  // The same findings the server sends: recommended, still open, and nothing asked of them yet.
-  const fixable = findings.filter(
-    t => t.root.review?.recommended && standing(t.root) === "open" && !t.root.resolved && t.replies.length === 0,
-  ).length;
+  // The same findings the server sends: recommended, with nothing asked of them still waiting on an answer.
+  const toFix = findings.filter(t => t.root.review?.recommended && fixable(t.root, t.replies)).length;
   return (
     <Block
       title={`Claude's review${answer ? ` (${findings.length})` : ""}`}
@@ -125,9 +123,9 @@ export function ReviewBlock({ layer }: { layer: number }) {
           {findings.length > 0 && (
             <p className={cn(NOTE, "flex flex-wrap items-center gap-x-3 gap-y-1.5")}>
               {counts.map(c => `${c.count} ${c.name}`).join(", ")}
-              {fixable > 0 && (
+              {toFix > 0 && (
                 <Button size="sm" variant="outline" className="text-foreground" disabled={fix.isPending} onClick={() => fix.mutate(n)}>
-                  Fix the recommended ({fixable})
+                  Fix the recommended ({toFix})
                 </Button>
               )}
             </p>

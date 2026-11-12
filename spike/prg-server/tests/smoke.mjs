@@ -59,8 +59,8 @@ async function stop({ child, origin, token }) {
   await exited;
 }
 
-async function open(link, hash = "") {
-  page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+async function open(link, hash = "", viewport = { width: 1400, height: 900 }) {
+  page = await browser.newPage({ viewport });
   await page.addInitScript(() => {
     document.addEventListener("securitypolicyviolation", event => {
       console.error(`CSP violation: ${event.violatedDirective} blocked ${event.blockedURI}`);
@@ -105,6 +105,15 @@ const choose = async name => {
 };
 const formatting = () => page.getByRole("checkbox", { name: "Formatting" });
 const unsplit = () => count(".prg-diff table:not(.table-fixed)");
+// What a box holds, or null when it isn't there: a probe that throws would end the walk.
+const typed = box =>
+  box
+    .last()
+    .inputValue({ timeout: 500 })
+    .catch(() => null);
+const composerBox = () => page.getByRole("textbox", { name: /^Note or question about/ });
+const followUp = () => page.getByRole("textbox", { name: /follow.?up/i });
+const threadList = () => page.getByRole("navigation", { name: "Threads with Claude" });
 
 try {
   const made = spawnSync("python3", [join(root, "tests/fixture.py"), fx], { encoding: "utf8" });
@@ -114,6 +123,10 @@ try {
   const work = await serve("work", join(fx, "work"));
   const stack = await serve("stack", join(fx, "stack"));
   browser = await chromium.launch();
+  // The test plays the session where one is needed.
+  const auth = { Authorization: `Bearer ${work.token}`, "content-type": "application/json" };
+  const asSession = (path, body) => fetch(`${work.origin}/api/${path}`, { method: "POST", headers: auth, body: JSON.stringify(body) });
+  const said = async () => (await fetch(`${work.origin}/api/messages`, { headers: auth })).json();
 
   await open(work.link);
   // The ready check's lists are on Overview and its chips in the header on every tab, where the template has both under the header.
@@ -154,6 +167,31 @@ try {
     () => labelled.count(),
     n => n === 0,
   );
+  // The drawer's box belongs to what it is about: Ask Claude on another thing opens that thing's own text.
+  const ask = key => page.locator(`button[data-ask='${key}']`).first().click();
+  await ask("try:0:0");
+  await composerBox().fill("About the step.");
+  await ask("claim:0:missing:0");
+  await check(
+    "text typed about one thing doesn't follow the drawer to another",
+    () => typed(composerBox()),
+    text => text === "",
+  );
+  await composerBox().fill("About the claim.");
+  await ask("try:0:0");
+  await check(
+    "and is there again on the way back",
+    () => typed(composerBox()),
+    text => text === "About the step.",
+  );
+  await composerBox().fill("");
+  await ask("claim:0:missing:0");
+  await check(
+    "while the other thing keeps its own",
+    () => typed(composerBox()),
+    text => text === "About the claim.",
+  );
+  await composerBox().fill("");
   // A reload puts the drawer back on the review as a whole, where the checks below expect it.
   await page.reload();
   await tryBlock.getByRole("checkbox").uncheck();
@@ -278,20 +316,23 @@ try {
   await page.getByRole("button", { name: /^Chat/ }).click();
   await page.getByRole("textbox", { name: "Ask Claude about this review" }).fill("Is this safe to merge?");
   await page.keyboard.press("Enter");
-  const threadList = page.getByRole("navigation", { name: "Threads with Claude" });
-  await threadList.getByRole("button", { name: /Is this safe to merge/ }).click();
+  await threadList()
+    .getByRole("button", { name: /Is this safe to merge/ })
+    .click();
   await page.getByRole("button", { name: "Archive this thread" }).click();
   await check(
     "archiving a thread moves it to the Archived list",
-    () => threadList.locator("summary").textContent(),
+    () => threadList().locator("summary").textContent(),
     text => text === "Archived (1)",
   );
-  await threadList.locator("summary").click();
-  await threadList.getByRole("button", { name: /Is this safe to merge/ }).click();
+  await threadList().locator("summary").click();
+  await threadList()
+    .getByRole("button", { name: /Is this safe to merge/ })
+    .click();
   await page.getByRole("button", { name: "Unarchive this thread" }).click();
   await check(
     "and unarchiving brings it back",
-    () => threadList.locator("summary").count(),
+    () => threadList().locator("summary").count(),
     n => n === 0,
   );
   await page.keyboard.press("Escape");
@@ -310,8 +351,6 @@ try {
   const running = page.getByRole("button", { name: /Review \d+ running/ });
   await check("asking for a review shows it running", () => running.count());
   const reviewNo = Number((await running.textContent()).match(/\d+/)[0]);
-  const auth = { Authorization: `Bearer ${work.token}`, "content-type": "application/json" };
-  const asSession = (path, body) => fetch(`${work.origin}/api/${path}`, { method: "POST", headers: auth, body: JSON.stringify(body) });
   await asSession(`reviews/${reviewNo}/findings`, {
     findings: [
       {
@@ -407,12 +446,77 @@ try {
     () => found.textContent(),
     text => text?.includes("1 open, 1 fixed, 1 dismissed") && text.includes("Dismissed: false positive"),
   );
+  // A rebuild at a new head sends the open finding back to Claude. An answer that it still holds settles nothing, so
+  // the finding can still be fixed or dismissed; one Claude declines is no longer open.
+  await page.keyboard.press("Escape");
+  const git = (...args) => spawnSync("git", ["-C", join(fx, "repo"), ...args], { encoding: "utf8" }).stdout.trim();
+  git("commit", "-q", "--allow-empty", "-m", "an empty commit, for a new head");
+  const newHead = git("rev-parse", "HEAD");
+  const hunksFile = join(fx, "work", "hunks.json");
+  const hunks = JSON.parse(readFileSync(hunksFile, "utf8"));
+  writeFileSync(hunksFile, JSON.stringify({ ...hunks, meta: { ...hunks.meta, headSha: newHead } }));
+  await asSession("reload", {});
+  await check(
+    "a rebuild at a new head sends the open finding back to Claude",
+    async () => (await finding("The prefix is hard-coded.")).review.seen,
+    seen => seen === newHead,
+  );
+  const hardcoded = await finding("The prefix is hard-coded.");
+  await asSession("replies", { replyTo: hardcoded.id, text: "It still holds: the prefix is still hard-coded." });
+  await found.getByRole("button", { name: "Open this finding's thread" }).first().click();
+  await check(
+    "a finding Claude says still holds keeps Fix this and Dismiss",
+    () =>
+      Promise.all([
+        page.getByRole("button", { name: "Fix this", exact: true }).count(),
+        page.getByRole("button", { name: "Dismiss" }).count(),
+      ]),
+    ([fix, dismiss]) => fix === 1 && dismiss === 1,
+  );
+  await check(
+    "and still counts for Fix the recommended",
+    () => found.textContent(),
+    text => text?.includes("Fix the recommended (1)"),
+  );
+  await asSession("replies", { replyTo: hardcoded.id, state: "declined", text: "Left as it is: the prefix lives in one place." });
+  await check(
+    "a finding Claude declines is no longer open or one to act on",
+    () => found.textContent(),
+    text => text?.includes("1 fixed, 1 declined, 1 dismissed") && !text.includes("Act on this"),
+  );
   await page.getByRole("button", { name: `Archive every thread of review ${reviewNo}` }).click();
   await check(
     "archiving a review puts all of its threads away",
     () => found.count(),
     n => n === 0,
   );
+  // Claude settles a thread while a follow-up is half typed: the text stays, through the drawer closing and a look at the notes.
+  await threadList()
+    .getByRole("button", { name: /Is this safe to merge/ })
+    .click();
+  await followUp().last().fill("And is it safe to dep");
+  const safe = (await said()).find(m => m.text === "Is this safe to merge?");
+  await asSession("replies", { replyTo: safe.id, state: "answered", text: "Yes, once CI is green." });
+  await check(
+    "Claude settling a thread leaves a half-typed follow-up in its box",
+    async () => [await page.getByText("Yes, once CI is green.").count(), await typed(followUp())],
+    ([answer, text]) => answer > 0 && text === "And is it safe to dep",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /^Chat/ }).click();
+  await check(
+    "it is still there after the drawer closes and opens",
+    () => typed(followUp()),
+    text => text === "And is it safe to dep",
+  );
+  await page.getByRole("button", { name: /^Notes/ }).click();
+  await page.getByRole("button", { name: /^Chat/ }).click();
+  await check(
+    "and after a look at the notes",
+    () => typed(followUp()),
+    text => text === "And is it safe to dep",
+  );
+  await followUp().last().fill("");
   await page.keyboard.press("Escape");
   await tab("Guide");
   await page.waitForSelector(SECTION);
@@ -538,6 +642,63 @@ try {
   );
   await page.close();
   console.log("page ok");
+
+  // The same page at a phone's width. Its socket goes through the walk, which can then drop it.
+  await open(work.link, "", { width: 390, height: 844 });
+  const sockets = new Set();
+  let down = false;
+  await page.routeWebSocket(/\/api\/ws/, socket => {
+    if (down) {
+      socket.close();
+    } else {
+      sockets.add(socket).add(socket.connectToServer());
+    }
+  });
+  await page.reload();
+  await tab("Guide");
+  await page.waitForSelector(SECTION);
+  await check("at a phone's width nothing runs off the side", () =>
+    page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  );
+  // The first card was ticked above and is folded, so the line is one that shows.
+  await page.locator("td[data-ln][data-line^='R']:visible").first().click();
+  await composerBox().fill("A note from the phone.");
+  await page.getByRole("button", { name: "Add note", exact: true }).click();
+  const phoneNote = page.locator(NOTE, { hasText: "A note from the phone." });
+  await check(
+    "a tap on a line's number takes a note there",
+    () => phoneNote.count(),
+    n => n === 1,
+  );
+  await phoneNote.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: /^Chat/ }).click();
+  const back = page.getByRole("button", { name: "All threads" });
+  await check(
+    "the drawer opens on the list of threads alone",
+    async () => [await threadList().isVisible(), await back.count()],
+    ([list, button]) => list && button === 0,
+  );
+  await threadList()
+    .getByRole("button", { name: /Is this safe to merge/ })
+    .click();
+  await check(
+    "a thread takes the list's place, with a way back",
+    async () => [await threadList().isVisible(), await page.getByText("Yes, once CI is green.").isVisible()],
+    ([list, thread]) => !list && thread,
+  );
+  await back.click();
+  await check("and All threads goes back to the list", () => threadList().isVisible());
+  await page.keyboard.press("Escape");
+  const status = text => page.locator("[aria-live=polite]", { hasText: text }).count();
+  down = true;
+  for (const socket of sockets) {
+    await socket.close();
+  }
+  await check("a dropped socket shows as a lost server", () => status("Lost the server"));
+  down = false;
+  await check("and the page is live again once the socket is back", () => status("Not listening"));
+  await page.close();
+  console.log("phone page ok");
 
   await open(stack.link);
   await check("the stack opens on its top layer", h1, title => title === "layer 12");

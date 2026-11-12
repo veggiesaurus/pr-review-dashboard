@@ -35,6 +35,7 @@ export function openDb(path?: string) {
     create table if not exists messages (n integer primary key autoincrement, pr text not null, stack text, body text not null);
     create index if not exists messages_pr on messages (pr);
     create table if not exists ticks (key text primary key);
+    create table if not exists frames (n integer primary key autoincrement, pr text not null, stack text, frame text not null, ids text not null);
   `);
   // Two servers can start at once on the same file, so the check and the change are one write transaction.
   db.transaction(() => {

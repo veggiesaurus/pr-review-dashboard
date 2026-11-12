@@ -41,7 +41,7 @@ Any PR, issue, commit or Linear key in the PR's own text or Claude's replies is 
 
 ## Talking to Claude
 
-The session listens with Monitor's `ws` source on `ws://127.0.0.1:<port>/api/session/ws?t=<token>`. Each thing the page sends arrives as one notification:
+The session listens by arming Monitor on `bun scripts/listen.mjs STATE.json`, which prints each frame and tells the server it arrived; Monitor's `ws` source on `ws://127.0.0.1:<port>/api/session/ws?t=<token>` works too, but a frame then only counts as delivered at the session's next request. A frame the session isn't heard from after goes again, through a restart too. Each thing the page sends arrives as one notification:
 
 - chat goes straight away, from the drawer or from any "Ask Claude" button (a line, a hunk, a file, a section, a check), and carries what it's about
 - notes are drafts on the page until "Send N notes to Claude", then go as one batch for Claude to work through

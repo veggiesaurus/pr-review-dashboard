@@ -51,9 +51,13 @@ function write(key: string, value: string | null) {
   }
 }
 
-// What was typed into a composer, kept in this browser as it is typed so a reload doesn't lose it.
-export const composerText = (anchor: Anchor) => read(TEXT_KEY + anchorKey(anchor)) ?? "";
-export const saveComposerText = (anchor: Anchor, text: string) => write(TEXT_KEY + anchorKey(anchor), text.trim() ? text : null);
+// What was typed into a box, kept in this browser as it is typed so a reload or a fold doesn't lose it: a composer's
+// under what it is about, a follow-up's under its thread.
+export const draftText = (key: string) => read(TEXT_KEY + key) ?? "";
+export const saveDraftText = (key: string, text: string) => write(TEXT_KEY + key, text.trim() ? text : null);
+export const replyKey = (thread: string) => `reply:${thread}`;
+export const composerText = (anchor: Anchor) => draftText(anchorKey(anchor));
+export const saveComposerText = (anchor: Anchor, text: string) => saveDraftText(anchorKey(anchor), text);
 
 const KINDS: AnchorKind[] = ["line", "hunk", "file", "section", "tell", "annotation", "check", "claim", "try", "stackIssue", "general"];
 

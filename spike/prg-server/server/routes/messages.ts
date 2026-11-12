@@ -15,6 +15,7 @@ export function messagesRoutes(deps: AppDeps) {
   // The session says what it is doing now, optionally for one thread; an empty line says it has stopped.
   app.post("/activity", only("session"), small, zValidator("json", activitySchema), c => {
     const { text, replyTo } = c.req.valid("json");
+    store.heard();
     store.setActivity(text, replyTo);
     return c.json(store.session);
   });
@@ -50,6 +51,7 @@ export function messagesRoutes(deps: AppDeps) {
 
   // 201 with Claude's message when there is text, else 200 with the thread whose state changed.
   app.post("/replies", only("session"), small, zValidator("json", replySchema), c => {
+    store.heard();
     const result = store.addReply(c.req.valid("json"));
     if (!result) {
       return c.json({ error: "no message with that id" }, 404);
@@ -67,6 +69,10 @@ export function messagesRoutes(deps: AppDeps) {
       return {
         onOpen(_event, ws) {
           remove = store.addSessionSink(frame => ws.send(frame));
+        },
+        // A listener that can write says so after each frame it has passed on; Monitor's own socket can't.
+        onMessage() {
+          store.heard(1);
         },
         onClose() {
           remove();

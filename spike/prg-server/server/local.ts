@@ -8,8 +8,13 @@ const MAX_LINES = 3000;
 // Paths as git prints them: nothing absolute, nothing that climbs out, nothing git could read as an option.
 const safe = (path: string) => !path.startsWith("/") && !path.startsWith("-") && !path.split("/").includes("..") && !/[\0\n]/.test(path);
 
-// Where a branch is checked out: the clone itself or one of its worktrees. Null when it is checked out nowhere.
-async function worktreeOf(runner: Runner, repo: string, branch: string): Promise<string | null> {
+// Where a layer's branch is checked out: the clone itself or one of its worktrees. Null when it is checked out nowhere.
+async function worktreeOf(runner: Runner, repo: string, { head: branch, base }: Layer["meta"]): Promise<string | null> {
+  // A fork's PR can come from a branch named like its base (main into main), and that checkout is the base, not the PR.
+  // ponytail: a fork branch that shares a name with an unrelated local branch still matches; record isCrossRepository to close it.
+  if (branch === base?.replace(/^origin\//, "")) {
+    return null;
+  }
   const listed = await runner(["git", "-C", repo, "worktree", "list", "--porcelain"], repo);
   if (listed.code !== 0) {
     return null;
@@ -66,7 +71,7 @@ export async function localChanges(runner: Runner, repo: string, layer: Layer): 
   if (!SHA.test(layer.meta.headSha) || byPath.size === 0) {
     return none;
   }
-  const tree = await worktreeOf(runner, repo, layer.meta.head);
+  const tree = await worktreeOf(runner, repo, layer.meta);
   if (!tree) {
     return none;
   }
@@ -106,7 +111,7 @@ export type Reverted = { ok: true; frame: string } | { ok: false; status: 404 | 
 // The edit must still be what the page saw, so a change made since is never thrown away unseen.
 export async function revertEdit(runner: Runner, repo: string, layer: Layer, fileId: string, edit: LocalEdit): Promise<Reverted> {
   const file = layer.files.find(f => f.id === fileId);
-  const tree = file && safe(file.path) && SHA.test(layer.meta.headSha) ? await worktreeOf(runner, repo, layer.meta.head) : null;
+  const tree = file && safe(file.path) && SHA.test(layer.meta.headSha) ? await worktreeOf(runner, repo, layer.meta) : null;
   if (!file || !tree) {
     return { ok: false, status: 404, error: "that file's branch isn't checked out anywhere" };
   }

@@ -61,6 +61,9 @@ describe("notes and chat", () => {
     expect(frame).toContain("m1 about src/slug.ts:R2@aaaaaaa | return title.trim().toLowerCase();\n    2 +   return title.trim()");
     expect(frame).toContain("\n  why trim here?");
     expect(frame).toContain("m2 about src/slug.ts:L2@aaaaaaa | return title.toLowerCase();\n    2 -   return title.toLowerCase();");
+    // Going out isn't delivery: the notes are delivered once the session is heard from.
+    expect(((await (await page("/api/messages")).json()) as Message[]).map(m => m.status)).toEqual(["sent", "sent"]);
+    await session("/api/replies", post({ replyTo: "m1", state: "working" }));
     const after = (await (await page("/api/messages")).json()) as Message[];
     expect(after.map(m => [m.status, m.batch])).toEqual([
       ["delivered", 1],
@@ -104,6 +107,8 @@ describe("notes and chat", () => {
     expect(frames[0]).toStartWith(
       "[review page] chat m1 on acme/shop#12 at aaaaaaa\nabout the review as a whole\n  is this safe to merge?",
     );
+    expect(store.messages[0]?.status).toBe("sent");
+    store.heard(1);
     expect(store.messages[0]?.status).toBe("delivered");
 
     await page("/api/messages", post({ kind: "chat", text: "and this line?", anchor: addedLine }));
@@ -137,6 +142,7 @@ describe("notes and chat", () => {
     await page("/api/messages", post({ kind: "note", text: "but the form trims already", replyTo: "m2" }));
     expect(frames[0]).toStartWith("[review page] chat m3 on acme/shop#12 at aaaaaaa, following up on m1 (reopened)\nabout src/slug.ts:R2");
     expect(store.messages[0]).toMatchObject({ state: "open", resolved: false });
+    store.heard();
     expect(store.messages[2]).toMatchObject({ kind: "chat", replyTo: "m1", status: "delivered" });
 
     expect((await session("/api/replies", post({ text: "x", replyTo: "m99" }))).status).toBe(404);
@@ -426,6 +432,7 @@ describe("after a reload", () => {
     const frames: string[] = [];
     again.addSessionSink(frame => frames.push(frame));
     expect(frames[0]).toStartWith("[review page] chat m2");
+    again.heard();
     expect(again.addUserMessage({ kind: "chat", text: "next" })?.id).toBe("m3");
 
     // What a query across reviews wants is in columns of its own.

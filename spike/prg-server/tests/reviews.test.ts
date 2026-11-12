@@ -41,8 +41,10 @@ async function reviewed() {
 
 describe("a review asked for from the page", () => {
   test("the request tells the session what to run and how to hand the findings back", async () => {
-    const { frames, request, page, session, post } = await reviewed();
-    expect(request).toMatchObject({ id: "m1", from: "user", kind: "chat", review: { n: 1, effort: "xhigh" }, status: "delivered" });
+    const { store, frames, request, page, session, post } = await reviewed();
+    // Sent when asked, delivered once the session came back with its findings.
+    expect(request).toMatchObject({ id: "m1", from: "user", kind: "chat", review: { n: 1, effort: "xhigh" }, status: "sent" });
+    expect(store.messages[0]?.status).toBe("delivered");
     expect(frames[0]).toStartWith("[review page] review 1 requested on acme/shop#12 at aaaaaaa, as chat m1");
     expect(frames[0]).toContain("/code-review xhigh #12");
     expect(frames[0]).toContain("Don't pass --comment or --fix");
@@ -153,6 +155,7 @@ describe("a review asked for from the page", () => {
     expect(frames.at(-1)).toContain("m2 about src/slug.ts:R2@aaaaaaa");
     expect(frames.at(-1)).toContain("    proposed patch:\n    -  return title.trim().toLowerCase();");
     expect(frames.at(-1)).not.toContain("m3 about");
+    store.heard();
     expect(store.messages.at(-1)).toMatchObject({ from: "user", text: "Fix this.", replyTo: "m2", status: "delivered" });
 
     expect(await (await page("/api/reviews/1/fix", { method: "POST" })).json()).toEqual({ sent: 0 });

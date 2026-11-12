@@ -29,7 +29,13 @@ Notes, chat and reviewed ticks are kept in `prg.db`, a SQLite file in the state 
 
 ## Listening
 
-Arm Monitor's `ws` source on `ws://127.0.0.1:<port>/api/session/ws?t=<token>`. Each text frame is one notification. Monitor expires after 30 minutes at most, so re-arm it when it does. While nothing listens, frames wait on the server and go when a session connects. A client that can't hold a socket can long-poll `GET /api/session/wait` with the bearer token instead.
+Arm Monitor on `bun scripts/listen.mjs STATE.json`, which prints each frame and tells the server it has. Monitor expires after 30 minutes at most, so re-arm it when it does. While nothing listens, frames wait on the server, through a restart too, and go when a session connects.
+
+A frame counts as delivered once the server hears from the session after sending it: the listener's word on the socket, or any `POST /api/replies`, `POST /api/activity`, findings or long-poll of yours. Until then the page shows the message as waiting, and the frame goes again to the next listener if the socket closes or the server restarts first. So a frame can reach you twice: check `GET /api/messages` before acting on one you may already have answered.
+
+A thread you marked `working` and never settled goes back to `open` when a session starts listening after none was, and its frame is sent again ending `(offered again: …)`. Carry on if it was yours, and say `working` again.
+
+Monitor's own `ws` source on `ws://127.0.0.1:<port>/api/session/ws?t=<token>` and the long-poll `GET /api/session/wait` (bearer token) still work for a client that can't run the script. Neither can answer on the socket, so their frames count as delivered only at your next request, and whatever you haven't answered for by the time the socket closes is sent again.
 
 ## The frames
 
@@ -150,7 +156,7 @@ m33 about #12 src/posts.ts:R4@63268a7 | return `/blog/${slugify(title)}`;
     +  return `${prefix}/${slugify(title)}`;
 ```
 
-After a rebuild at a new head, every finding still open goes back to you in one frame, whether or not its own file changed:
+After a rebuild at a new head, every finding still open goes back to you, whether or not its own file changed. Like a batch of notes, a re-check or a fix too long for one frame comes in parts, headed `[review page] re-check, part 2 of 3` or `[review page] fix of review 3, part 2 of 3`:
 
 ```
 [review page] re-check 2 review findings on o/r #11, #12, a stack: the pull request has a new head, and a fix may be in another file than the finding. For each, POST /api/replies {"replyTo":"<id>","state":"done","text":"how it was fixed"} when it no longer holds, or {"replyTo":"<id>","text":"why it still holds"} when it does.

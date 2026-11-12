@@ -2,8 +2,9 @@ import { ChevronDown, ChevronRight, ExternalLink, Pencil, Trash2 } from "lucide-
 import { type FormEvent, Fragment, useEffect, useRef, useState } from "react";
 import type { GithubComment } from "shared/comments";
 import type { Anchor, Message, NoteState } from "shared/messages";
-import { DISMISS_REASONS, DISMISS_TEXT, standing } from "shared/reviews";
+import { DISMISS_REASONS, DISMISS_TEXT, fixable, standing } from "shared/reviews";
 
+import { draftText, replyKey, saveDraftText } from "src/components/chat/chat.store";
 import { IntentBadge } from "src/components/chat/Intent";
 import { oneLine, STATE_TEXT, STATE_TONE } from "src/components/chat/notes";
 import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
@@ -18,6 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { errorText, useAddMessage, useArchiveThread, useDeleteDraft, useEditDraft, useMarkSeen } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useViewStore } from "src/store/view.store";
+import { anchorKey } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
 import { ago, fullDate } from "src/utils/dates";
 import { arrived } from "src/utils/motion";
@@ -212,15 +214,21 @@ export function Bubble({ message }: { message: Message }) {
   );
 }
 
-// A follow-up takes its thread's anchor; a new message from the drawer takes anchor.
+// A follow-up takes its thread's anchor; a new message from the drawer takes anchor. What is typed is kept as a
+// composer's is, so it outlives the thread folding or the drawer closing.
 export function ReplyBox({ replyTo, anchor, placeholder }: { replyTo?: string; anchor?: Anchor; placeholder: string }) {
-  const [text, setText] = useState("");
+  const key = replyTo ? replyKey(replyTo) : anchor ? anchorKey(anchor) : "";
+  const [text, setText] = useState(() => draftText(key));
   const add = useAddMessage();
 
+  const update = (value: string) => {
+    setText(value);
+    saveDraftText(key, value);
+  };
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (text.trim()) {
-      add.mutate({ kind: "chat", text, replyTo, anchor }, { onSuccess: () => setText("") });
+      add.mutate({ kind: "chat", text, replyTo, anchor }, { onSuccess: () => update("") });
     }
   };
 
@@ -229,7 +237,7 @@ export function ReplyBox({ replyTo, anchor, placeholder }: { replyTo?: string; a
       <div className="flex gap-2">
         <input
           value={text}
-          onChange={event => setText(event.target.value)}
+          onChange={event => update(event.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
           maxLength={4000}
@@ -250,7 +258,9 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   // A finding of a review the user asked for, which Claude wrote first, and whether its code has left the diff.
   const finding = root.from === "claude" && root.review !== undefined;
   const gone = finding && standing(root) === "outdated";
-  const [open, setOpen] = useState(expanded ?? !(root.resolved || gone));
+  // A follow-up left half typed keeps its thread open, so it isn't out of sight when Claude settles the thread.
+  const typing = () => draftText(replyKey(root.id)) !== "";
+  const [open, setOpen] = useState(() => expanded ?? (!(root.resolved || gone) || typing()));
   const [toggled, setToggled] = useState(false);
   const [wasResolved, setWasResolved] = useState(root.resolved);
   const add = useAddMessage();
@@ -275,7 +285,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   }, [unseen, root.id, markSeen]);
   if (wasResolved !== root.resolved) {
     setWasResolved(root.resolved);
-    setOpen(!root.resolved);
+    setOpen(!root.resolved || typing());
   }
   if (root.status === "draft") {
     return <DraftNote message={root} />;
@@ -355,7 +365,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             <Ask message={asking} pending={add.isPending} onAnswer={text => add.mutate({ kind: "chat", text, replyTo: root.id })} />
           )}
           {!(live && "steps" in (entries.at(-1) ?? {})) && <Working thread={root.id} waiting={awaited(root, replies)} />}
-          {finding && !root.resolved && !gone && replies.length === 0 && (
+          {finding && fixable(root, replies) && (
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" disabled={add.isPending} onClick={() => add.mutate({ kind: "chat", text: "Fix this.", replyTo: root.id })}>
                 Fix this

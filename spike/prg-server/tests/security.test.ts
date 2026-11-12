@@ -56,6 +56,16 @@ describe("who may call", () => {
     expect((await cookieOnly("/api/github/avatar/nobody", { method: "POST" })).status).toBe(401);
   });
 
+  test("an encoded path is held to the same rule as the path it routes to", async () => {
+    const { app } = setup();
+    const cookie = { host: HOST, cookie: `prg_${PORT}=${COOKIE}` };
+    for (const path of ["/%61pi/review", "/%61pi/messages", "/%61pi/ws", "/api%2Freview", "/%2561pi/review"]) {
+      expect((await app.request(path, { headers: cookie })).status, path).not.toBe(200);
+    }
+    expect((await app.request("/%61pi/review", { headers: cookie })).status).toBe(401);
+    expect((await app.request("/%61pi/ws", { headers: { ...cookie, "x-prg-key": LINK } })).status).toBe(403);
+  });
+
   test("neither the link's code nor the cookie can act as the session", async () => {
     const { app, page, post } = setup();
     const withLinkCode = await app.request("/api/replies", {
