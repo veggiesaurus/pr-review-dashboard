@@ -1,6 +1,7 @@
 import type { LocalChanges, LocalEdit } from "../shared/local";
 import type { Layer } from "../shared/payload";
 import type { Runner } from "./comments";
+import { flat } from "./format";
 
 const SHA = /^[0-9a-f]{40}$/;
 const MAX_LINES = 3000;
@@ -127,11 +128,11 @@ export async function revertEdit(runner: Runner, repo: string, layer: Layer, fil
   if (applied.code !== 0) {
     return { ok: false, status: 422, error: applied.stderr.trim().slice(0, 500) || "git could not take the change back out" };
   }
-  const taken = edit.add.slice(0, 20).map(line => `    ${line}`);
+  const taken = edit.add.slice(0, 20).map(line => `    ${flat(line)}`);
   return {
     ok: true,
     frame: [
-      `[review page] the user reverted a local change in ${tree}: ${file.path} after line ${edit.after} is the reviewed code again.`,
+      `[review page] the user reverted a local change in ${flat(tree)}: ${flat(file.path)} after line ${edit.after} is the reviewed code again.`,
       ...(taken.length
         ? ["What was taken out:", ...taken, ...(edit.add.length > 20 ? [`    (${edit.add.length - 20} more lines)`] : [])]
         : []),
