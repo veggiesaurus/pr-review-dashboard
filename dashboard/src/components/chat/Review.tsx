@@ -6,7 +6,7 @@ import { useChatStore } from "src/components/chat/chat.store";
 import { jumpTo, oneLine, shortLabel } from "src/components/chat/notes";
 import { FindingBadges, SeverityBadge, StateBadge } from "src/components/chat/ThreadBlock";
 import { type ClaudeThread, useThreads } from "src/components/chat/useThreads";
-import { Prose } from "src/components/links/Prose";
+import { MessageText } from "src/components/links/Markdown";
 import { Button } from "src/components/ui/button";
 import { ButtonGroup } from "src/components/ui/button-group";
 import { Block } from "src/components/ui/disclosure";
@@ -110,13 +110,11 @@ export function ReviewBlock({ layer }: { layer: number }) {
       title={`Claude's review${answer ? ` (${findings.length})` : ""}`}
       note={
         <>
-          <p className={NOTE}>
-            {answer ? (
-              <Prose text={answer.text} layer={layer} />
-            ) : (
-              "Claude is reviewing this pull request. Findings show here as they arrive."
-            )}
-          </p>
+          {answer ? (
+            <MessageText text={answer.text} layer={layer} className={NOTE} />
+          ) : (
+            <p className={NOTE}>Claude is reviewing this pull request. Findings show here as they arrive.</p>
+          )}
           {answer && findings.length === 0 && (
             <p className={NOTE}>No findings isn't a pass: a review like this catches a minority of what people flag.</p>
           )}

@@ -4,7 +4,9 @@ import type { Anchor } from "shared/messages";
 
 import { composerText, saveComposerText, useChatStore } from "src/components/chat/chat.store";
 import { IntentPicker } from "src/components/chat/Intent";
+import { MarkdownEditor } from "src/components/chat/MarkdownEditor";
 import { describe } from "src/components/chat/notes";
+import { Screenshots, useScreenshots } from "src/components/chat/Screenshots";
 import { Button } from "src/components/ui/button";
 import { errorText, useAddMessage } from "src/queries/messages.mutation";
 import { useReview } from "src/queries/review.query";
@@ -19,6 +21,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
   const close = useChatStore(state => state.closeComposer);
   const review = useReview().data;
   const add = useAddMessage();
+  const shots = useScreenshots();
   const empty = text.trim() === "";
   const where = label ?? describe(anchor, review);
 
@@ -31,14 +34,15 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
     close();
   };
   const submit = (kind: "note" | "chat") => {
-    if (!empty) {
+    if (!empty && !add.isPending && !shots.uploading) {
       add.mutate(
-        { kind, text, anchor, ...(kind === "note" && intent && { intent }) },
+        { kind, text, anchor, ...(kind === "note" && intent && { intent }), ...(shots.images.length && { images: shots.images }) },
         {
           onSuccess: () => {
             saveComposerText(anchor, "");
             setText("");
             setIntent(undefined);
+            shots.clear();
             if (anchor.kind === "line") {
               close();
             }
@@ -49,32 +53,27 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
   };
 
   return (
-    <div className="grid gap-2 border-y bg-card px-3 py-2.5 font-sans">
+    <div className="grid gap-2 border-y bg-card px-3 py-2.5 font-sans" {...shots.handlers}>
       {!bare && <p className="font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">{where}</p>}
-      <textarea
-        // biome-ignore lint/a11y/noAutofocus: the box opens because something was clicked
+      <MarkdownEditor
         autoFocus
         value={text}
-        onChange={event => update(event.target.value)}
-        onKeyDown={event => {
-          if (event.key === "Escape") {
-            close();
-          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-            submit(event.shiftKey ? "chat" : "note");
-          }
-        }}
-        rows={3}
-        maxLength={4000}
-        placeholder="A note for the batch, or a question for Claude now"
-        aria-label={`Note or question about ${where}`}
-        className="block w-full resize-y rounded-md border border-input bg-background p-2 text-sm placeholder:text-muted-foreground"
+        onChange={update}
+        onSend={shift => submit(shift ? "chat" : "note")}
+        onEscape={close}
+        onFiles={shots.take}
+        sendKey="mod-enter"
+        label={`Note or question about ${where}`}
+        placeholder="A note for the batch, or a question for Claude now. Drop or paste a screenshot to attach it."
+        className="[&_.ProseMirror]:min-h-16"
       />
+      <Screenshots ids={shots.images} onRemove={shots.remove} />
       <IntentPicker value={intent} onChange={setIntent} />
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           onClick={() => submit("note")}
-          disabled={empty || add.isPending}
+          disabled={empty || add.isPending || shots.uploading}
           title="Kept as a draft until you send your notes (⌘↵)"
         >
           Add note
@@ -83,7 +82,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
           size="sm"
           variant="outline"
           onClick={() => submit("chat")}
-          disabled={empty || add.isPending}
+          disabled={empty || add.isPending || shots.uploading}
           title="Goes to Claude now (⇧⌘↵)"
         >
           Ask Claude now
@@ -91,6 +90,8 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
         <Button size="sm" variant="ghost" onClick={cancel}>
           Cancel
         </Button>
+        {shots.uploading && <span className="text-muted-foreground text-sm">Attaching…</span>}
+        {shots.error && <span className="text-danger text-sm">{shots.error}</span>}
         {add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't save.")}</span>}
       </div>
     </div>

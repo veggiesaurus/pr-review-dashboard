@@ -7,8 +7,10 @@ import { useChatStore } from "src/components/chat/chat.store";
 import { IntentBadge } from "src/components/chat/Intent";
 import { copyText, jumpTo, onCode, oneLine, pageOrder, shortLabel } from "src/components/chat/notes";
 import { PostDialog } from "src/components/chat/PostDialog";
-import { ClaudeThreadBlock, DraftEditor, StateBadge } from "src/components/chat/ThreadBlock";
+import { Screenshots } from "src/components/chat/Screenshots";
+import { ClaudeThreadBlock, DraftEditor, layerOf, StateBadge } from "src/components/chat/ThreadBlock";
 import { type ClaudeThread, useThreads } from "src/components/chat/useThreads";
+import { MessageText } from "src/components/links/Markdown";
 import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
 import { Summary } from "src/components/ui/disclosure";
@@ -54,6 +56,7 @@ function Where({ note }: { note: Message }) {
 const Gone = () => <Badge tone="danger">No longer in the diff</Badge>;
 
 function DraftItem({ note, pick }: { note: Message; pick: boolean }) {
+  const shown = useViewStore(state => state.layer);
   const [editing, setEditing] = useState(false);
   const remove = useDeleteDraft();
   const copied = useChatStore(state => state.copied[note.id] === note.text);
@@ -94,7 +97,10 @@ function DraftItem({ note, pick }: { note: Message; pick: boolean }) {
       {editing ? (
         <DraftEditor message={note} onDone={() => setEditing(false)} />
       ) : (
-        <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{note.text}</p>
+        <>
+          <MessageText text={note.text} layer={layerOf(note, shown)} />
+          <Screenshots ids={note.images} />
+        </>
       )}
     </li>
   );

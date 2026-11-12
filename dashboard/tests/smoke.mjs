@@ -106,13 +106,26 @@ const choose = async name => {
 const formatting = () => page.getByRole("checkbox", { name: "Formatting" });
 const unsplit = () => count(".prg-diff table:not(.table-fixed)");
 // What a box holds, or null when it isn't there: a probe that throws would end the walk.
+// An editor's innerText, since its paragraphs are elements that textContent runs together.
 const typed = box =>
   box
     .last()
-    .inputValue({ timeout: 500 })
+    // biome-ignore lint/performance/useDomNodeTextContent: the line breaks between paragraphs are the point
+    .evaluate(element => ("value" in element ? element.value : element.innerText.replace(/\n+$/, "")), null, { timeout: 500 })
     .catch(() => null);
+// Empties an editor through Tiptap, which hangs itself on its element: fill("") and a select-all keypress both
+// sometimes leave text behind in headless Chromium.
+const clear = box => box.last().evaluate(element => element.editor.commands.clearContent(true));
 const composerBox = () => page.getByRole("textbox", { name: /^Note or question about/ });
 const followUp = () => page.getByRole("textbox", { name: /follow.?up/i });
+// A 1x1 PNG, dropped as a file would be from Finder.
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+const dropImage = locator =>
+  locator.evaluate((element, base64) => {
+    const data = new DataTransfer();
+    data.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], "shot.png", { type: "image/png" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }));
+  }, PNG);
 const threadList = () => page.getByRole("navigation", { name: "Threads with Claude" });
 
 try {
@@ -184,14 +197,14 @@ try {
     () => typed(composerBox()),
     text => text === "About the step.",
   );
-  await composerBox().fill("");
+  await clear(composerBox());
   await ask("claim:0:missing:0");
   await check(
     "while the other thing keeps its own",
     () => typed(composerBox()),
     text => text === "About the claim.",
   );
-  await composerBox().fill("");
+  await clear(composerBox());
   // A reload puts the drawer back on the review as a whole, where the checks below expect it.
   await page.reload();
   await tryBlock.getByRole("checkbox").uncheck();
@@ -314,8 +327,19 @@ try {
   );
 
   await page.getByRole("button", { name: /^Chat/ }).click();
+  await dropImage(page.getByRole("textbox", { name: "Ask Claude about this review" }));
+  await check(
+    "a screenshot dropped into the chat box waits there to be sent",
+    () => count("button[aria-label='Remove this screenshot']"),
+    n => n === 1,
+  );
   await page.getByRole("textbox", { name: "Ask Claude about this review" }).fill("Is this safe to merge?");
   await page.keyboard.press("Enter");
+  await check(
+    "and is sent with the message, which shows it",
+    () => page.locator("img[alt='Attached screenshot']").evaluateAll(images => images.map(image => image.naturalWidth)),
+    widths => widths.length === 1 && widths[0] === 1,
+  );
   await threadList()
     .getByRole("button", { name: /Is this safe to merge/ })
     .click();
@@ -516,7 +540,54 @@ try {
     () => typed(followUp()),
     text => text === "And is it safe to dep",
   );
-  await followUp().last().fill("");
+  // The follow-up box formats markdown as it is typed: Shift+Enter starts a line, a fence and a language then Enter start a code block, in which
+  // Enter is a new line, and ⌘↵ sends from anywhere.
+  await clear(followUp().last());
+  await followUp().last().pressSequentially("Try _this_ first");
+  await followUp().last().press("Shift+Enter");
+  await followUp().last().pressSequentially("```ts");
+  await followUp().last().press("Enter");
+  await followUp().last().pressSequentially("const a = 1");
+  await followUp().last().press("Enter");
+  await followUp().last().pressSequentially("export { a }");
+  await check(
+    "the follow-up box shows emphasis and a code block as they are typed, and Enter in the block doesn't send",
+    async () => [
+      await followUp().last().locator("em").count(),
+      await followUp()
+        .last()
+        .locator("pre")
+        .textContent()
+        .catch(() => null),
+    ],
+    ([em, code]) => em === 1 && code === "const a = 1\nexport { a }",
+  );
+  await followUp().last().press("ControlOrMeta+Enter");
+  await check(
+    "and what is sent is markdown, which the thread shows formatted, its code coloured",
+    async () => [
+      (await said()).findLast(m => m.text.includes("export { a }"))?.text,
+      await page.locator(".prg-chat em, [role=dialog] em, em").filter({ hasText: "this" }).count(),
+      await page.locator("pre", { hasText: "export { a }" }).locator(".hljs-keyword").count(),
+    ],
+    ([sent, em, pre]) => sent === "Try *this* first\n\n```ts\nconst a = 1\nexport { a }\n```" && em > 0 && pre > 0,
+  );
+  await page.keyboard.press("Escape");
+
+  // Rebuild at the top asks the session as a chat thread, which the button opens until the session settles it.
+  await page.getByRole("button", { name: "Rebuild the guide", exact: true }).click();
+  const rebuild = async () => (await said()).find(m => m.text.startsWith("Rebuild the guide"));
+  await check(
+    "Rebuild asks the session, and with none listening says the request is waiting rather than spinning",
+    async () => [Boolean(await rebuild()), await page.getByRole("button", { name: "Rebuild the guide (waiting for a session)" }).count()],
+    ([asked, busy]) => asked && busy === 1,
+  );
+  await asSession("replies", { replyTo: (await rebuild()).id, state: "done", text: "Rebuilt: unchanged." });
+  await check(
+    "and goes back to Rebuild once the session has done it",
+    () => page.getByRole("button", { name: "Rebuild the guide", exact: true }).count(),
+    n => n === 1,
+  );
   await page.keyboard.press("Escape");
   await tab("Guide");
   await page.waitForSelector(SECTION);

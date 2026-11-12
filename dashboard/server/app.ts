@@ -3,10 +3,11 @@ import { resolve, sep } from "node:path";
 
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-
+import { IMAGE_ID } from "../shared/messages";
 import type { Runner } from "./comments";
 import type { Env } from "./guards";
 import type { Review } from "./review";
+import { attachmentsRoutes } from "./routes/attachments";
 import { commentsRoutes } from "./routes/comments";
 import { fontsRoutes } from "./routes/fonts";
 import { githubRoutes } from "./routes/github";
@@ -31,6 +32,8 @@ export type AppDeps = {
   host?: string;
   repo: string;
   staticDir: string;
+  // Where screenshots dropped into the chat are kept.
+  attachments: string;
   linearKey?: string;
   fetcher?: typeof fetch;
   // gh and git go through this, so tests can stand in for them.
@@ -42,7 +45,10 @@ export type AppDeps = {
 };
 
 // What a cookie gets with no key: pictures and font files, which an <img> or a stylesheet asks for and can't put a header on.
-const PICTURE = /^\/api\/(?:(?:github|linear\/[^/]+|layers\/\d+\/comments)\/avatar\/[^/]+|fonts\/file\/[\w/.-]+)$/;
+// A screenshot's name is the hash of its content, so it can't be guessed.
+const PICTURE = new RegExp(
+  `^/api/(?:(?:github|linear/[^/]+|layers/\\d+/comments)/avatar/[^/]+|fonts/file/[\\w/.-]+|attachments/${IMAGE_ID.source.slice(1, -1)})$`,
+);
 
 function safeEqual(a: string, b: string) {
   const left = Buffer.from(a);
@@ -122,6 +128,7 @@ export function createApp(deps: AppDeps) {
   app.route("/api", usagesRoutes(deps));
   app.route("/api", commentsRoutes(deps));
   app.route("/api", fontsRoutes(deps));
+  app.route("/api", attachmentsRoutes(deps));
   deps.review.onChange(() => deps.store.notify("review"));
 
   app.all("/api/*", c => c.json({ error: "not found" }, 404));

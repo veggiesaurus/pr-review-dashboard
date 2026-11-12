@@ -1,15 +1,18 @@
 import type { Element, ElementContent, Root, RootContent } from "hast";
 import { ImageIcon } from "lucide-react";
 import type { RootContent as MdContent, Nodes as MdNodes, Root as MdRoot, Paragraph, PhrasingContent } from "mdast";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { shortRef, splitRefs, urlRef } from "shared/refs";
 
+import { CodeText } from "src/components/diff/CodeText";
+import { useHighlighter } from "src/components/diff/hooks";
 import { LINK } from "src/components/links/Prose";
 import { RefLink } from "src/components/links/RefLink";
 import { useLayer } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
+import { cn } from "src/utils/cn";
 
 const ANCHOR = /^(\d+:)?f\d+(h\d+)?$/;
 const LEAVE = new Set(["a", "code", "pre"]);
@@ -148,7 +151,7 @@ function rehypeRefs({ repo }: { repo: string | null }) {
 
 // A PR or issue description: GitHub's markdown, with raw HTML reduced to its text, links only to https, pictures as links, and the
 // same references as Prose unfurled inside it.
-export function Markdown({ source, layer }: { source: string; layer: number }) {
+export function Markdown({ source, layer, className }: { source: string; layer: number; className?: string }) {
   const repo = useLayer(layer)?.meta.repo || null;
   const goTo = useViewStore(state => state.goTo);
 
@@ -223,7 +226,14 @@ export function Markdown({ source, layer }: { source: string; layer: number }) {
         <li className={className === "task-list-item" ? "-ml-5 list-none [&>ul]:mt-1" : "pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1"}>{children}</li>
       ),
       blockquote: ({ children }) => <blockquote className="grid gap-2 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>,
-      code: ({ children }) => <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.875em]">{children}</code>,
+      code: ({ children, className }) => {
+        const language = /\blanguage-([\w+#-]+)/.exec(className ?? "")?.[1]?.toLowerCase();
+        return (
+          <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.875em]">
+            {language && typeof children === "string" ? <Highlighted text={children} language={language} /> : children}
+          </code>
+        );
+      },
       pre: ({ children }) => (
         <pre className="whitespace-pre-wrap rounded-md border bg-muted/60 p-3 font-mono text-[13px] leading-normal [overflow-wrap:anywhere] [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[1em]">
           {children}
@@ -250,10 +260,32 @@ export function Markdown({ source, layer }: { source: string; layer: number }) {
   );
 
   return (
-    <div className="text-[15px] leading-relaxed [overflow-wrap:anywhere] [&>*+*]:mt-3">
+    <div className={cn("text-[15px] leading-relaxed [overflow-wrap:anywhere] [&>*+*]:mt-3", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkHtmlText]} rehypePlugins={[[rehypeRefs, { repo }]]} skipHtml components={components}>
         {source}
       </ReactMarkdown>
     </div>
+  );
+}
+
+// A fenced block's code coloured as the diff colours code, once highlight.js has loaded; plain until then, or for a
+// language it doesn't know.
+function Highlighted({ text, language }: { text: string; language: string }) {
+  const highlighter = useHighlighter();
+  const lines = useMemo(() => text.replace(/\n$/, "").split("\n"), [text]);
+  const segments = useMemo(() => highlighter?.highlightLines(lines, language), [highlighter, lines, language]);
+  return lines.map((line, i) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: a block's lines never reorder
+    <Fragment key={i}>
+      {i > 0 && "\n"}
+      <CodeText text={line} segments={segments?.[i]} />
+    </Fragment>
+  ));
+}
+
+// A message typed in a chat box: markdown at the size of the thread, with a line break kept where it was typed.
+export function MessageText({ text, layer, className }: { text: string; layer: number; className?: string }) {
+  return (
+    <Markdown source={text} layer={layer} className={cn("text-sm leading-normal [&>*+*]:mt-2 [&_p]:whitespace-pre-wrap", className)} />
   );
 }

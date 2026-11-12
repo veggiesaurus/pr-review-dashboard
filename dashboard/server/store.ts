@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 
 import {
   type Activity,
+  type Attention,
   type Finding,
   type Message,
   type NewMessage,
@@ -48,6 +49,8 @@ export type StoreOptions = {
   repo?: string;
   // How long the session's line on what it's doing stands before it lapses.
   activityMs?: number;
+  // Where attached screenshots are kept, named in frames so the session can open them.
+  attachments?: string;
 };
 
 export class Store {
@@ -85,7 +88,23 @@ export class Store {
 
   // What the page is told about the session. Its last word on what it's doing only counts while it is listening.
   get session(): SessionInfo {
-    return { listening: this.listening, activity: this.listening ? this.activity : null };
+    return {
+      listening: this.listening,
+      activity: this.listening ? this.activity : null,
+      // A session that has stopped listening, closed or interrupted, is no longer waiting on anyone.
+      attention: this.listening ? this.attention : null,
+    };
+  }
+
+  private attention: Attention | null = null;
+
+  // A hook says the session is waiting at a prompt in its terminal; an empty text, or the session acting again, ends it.
+  setAttention(text: string) {
+    const line = text.replace(/\s+/g, " ").trim().slice(0, 300);
+    if (line || this.attention) {
+      this.attention = line ? { text: line, at: new Date().toISOString() } : null;
+      this.notify("session");
+    }
   }
 
   // The session's own line on what it is doing now. It lapses by itself, so a session that forgets to say it
@@ -218,12 +237,13 @@ export class Store {
         state: "open",
         resolved: false,
         ...(kind === "note" && input.intent && { intent: input.intent }),
+        ...(input.images?.length && { images: input.images }),
         at: new Date().toISOString(),
       },
       parent,
     );
     if (kind === "chat") {
-      this.deliver([chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message))], [message.id]);
+      this.deliver([chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message), this.options.attachments)], [message.id]);
     }
     this.notify("messages");
     return message;
@@ -402,9 +422,11 @@ export class Store {
   private framesFor(ask: Message) {
     const scope = scopeOf(this.review);
     if (ask.batch !== undefined) {
-      return notesFrames([ask], ask.batch, scope);
+      return notesFrames([ask], ask.batch, scope, this.options.attachments);
     }
-    return [ask.review && !ask.replyTo ? this.reviewFrameFor(ask) : chatFrame(ask, scope, false, this.findingOf(ask))];
+    return [
+      ask.review && !ask.replyTo ? this.reviewFrameFor(ask) : chatFrame(ask, scope, false, this.findingOf(ask), this.options.attachments),
+    ];
   }
 
   // A thread a session said it was working on and never settled is asked again: that session may be gone.
@@ -512,7 +534,7 @@ export class Store {
         draft.sentAt = at;
       }
       this.deliver(
-        notesFrames(drafts, batch, scopeOf(this.review)),
+        notesFrames(drafts, batch, scopeOf(this.review), this.options.attachments),
         drafts.map(d => d.id),
       );
       this.notify("messages");

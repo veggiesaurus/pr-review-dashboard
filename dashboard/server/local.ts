@@ -29,6 +29,36 @@ async function worktreeOf(runner: Runner, repo: string, { head: branch, base }: 
   return null;
 }
 
+const branchOf = (ref: string | undefined) => ref?.replace(/^origin\//, "");
+
+// Where to read a layer's local changes, and for which of its paths. Its own branch's checkout holds for all of them.
+// In a stack the work often happens in the top layer's checkout, so failing that the nearest layer above that is
+// checked out holds for the paths no layer between changed: those files are the same there as at this layer's head.
+async function checkoutFor(runner: Runner, repo: string, layer: Layer, stack: Layer[], paths: string[]) {
+  const own = await worktreeOf(runner, repo, layer.meta);
+  if (own) {
+    return { tree: own, paths };
+  }
+  const seen = new Set([layer]);
+  for (let upper = layer; ; ) {
+    const next = stack.find(other => !seen.has(other) && branchOf(other.meta.base) === upper.meta.head);
+    if (!next || !SHA.test(next.meta.headSha)) {
+      return null;
+    }
+    seen.add(next);
+    upper = next;
+    const tree = await worktreeOf(runner, repo, upper.meta);
+    if (tree) {
+      const changed = await runner(
+        ["git", "-C", tree, "diff", "--name-only", "--no-renames", layer.meta.headSha, upper.meta.headSha, "--", ...paths],
+        tree,
+      );
+      const between = new Set(changed.stdout.split("\n"));
+      return changed.code === 0 ? { tree, paths: paths.filter(path => !between.has(path)) } : null;
+    }
+  }
+}
+
 // A hunk that removes nothing names the line it comes after; one that removes names its first removed line.
 function afterOf(header: string) {
   const [, start, count] = /^@@ -(\d+)(?:,(\d+))? /.exec(header) ?? [];
@@ -66,17 +96,18 @@ const localDiff = (runner: Runner, tree: string, headSha: string, paths: Iterabl
 
 // What the checkout of a layer's branch has that its reviewed head doesn't, in the files the review shows:
 // commits not pushed, a rebase, and anything uncommitted, Claude's fixes among it.
-export async function localChanges(runner: Runner, repo: string, layer: Layer): Promise<LocalChanges> {
+export async function localChanges(runner: Runner, repo: string, layer: Layer, stack: Layer[] = [layer]): Promise<LocalChanges> {
   const none: LocalChanges = { where: null, files: {} };
   const byPath = new Map(layer.files.filter(file => file.status !== "deleted" && safe(file.path)).map(file => [file.path, file.id]));
   if (!SHA.test(layer.meta.headSha) || byPath.size === 0) {
     return none;
   }
-  const tree = await worktreeOf(runner, repo, layer.meta);
-  if (!tree) {
+  const checkout = await checkoutFor(runner, repo, layer, stack, [...byPath.keys()]);
+  if (!checkout || checkout.paths.length === 0) {
     return none;
   }
-  const diff = await localDiff(runner, tree, layer.meta.headSha, byPath.keys());
+  const { tree } = checkout;
+  const diff = await localDiff(runner, tree, layer.meta.headSha, checkout.paths);
   if (diff.code !== 0) {
     return none;
   }
@@ -110,9 +141,18 @@ export type Reverted = { ok: true; frame: string } | { ok: false; status: 404 | 
 
 // Puts the reviewed code back in the checkout at one edit, leaving the rest of the file's local changes alone.
 // The edit must still be what the page saw, so a change made since is never thrown away unseen.
-export async function revertEdit(runner: Runner, repo: string, layer: Layer, fileId: string, edit: LocalEdit): Promise<Reverted> {
+export async function revertEdit(
+  runner: Runner,
+  repo: string,
+  layer: Layer,
+  fileId: string,
+  edit: LocalEdit,
+  stack: Layer[] = [layer],
+): Promise<Reverted> {
   const file = layer.files.find(f => f.id === fileId);
-  const tree = file && safe(file.path) && SHA.test(layer.meta.headSha) ? await worktreeOf(runner, repo, layer.meta) : null;
+  const checkout =
+    file && safe(file.path) && SHA.test(layer.meta.headSha) ? await checkoutFor(runner, repo, layer, stack, [file.path]) : null;
+  const tree = checkout?.paths.length ? checkout.tree : null;
   if (!file || !tree) {
     return { ok: false, status: 404, error: "that file's branch isn't checked out anywhere" };
   }

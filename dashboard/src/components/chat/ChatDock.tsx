@@ -233,15 +233,18 @@ export function ChatDock({ connected }: { connected: boolean }) {
   // With nothing said, a thread that waits on an answer still shows Claude at work.
   const waiting = threads.flatMap(t => awaited(t.root, t.replies) ?? []).at(-1);
   const busy = listening && (activity !== null || waiting !== undefined);
+  const attention = connected ? (session?.attention ?? null) : null;
   const status = !connected
     ? "Lost the server"
-    : activity
-      ? activity.text
-      : busy
-        ? `${verbFor(waiting?.id ?? "")}…`
-        : listening
-          ? "Listening"
-          : "Not listening. Messages are kept for later.";
+    : attention
+      ? `Waiting for you in the terminal: ${attention.text}`
+      : activity
+        ? activity.text
+        : busy
+          ? `${verbFor(waiting?.id ?? "")}…`
+          : listening
+            ? "Listening"
+            : "Not listening. Messages are kept for later.";
   const open = threads.filter(t => t.root.status !== "draft" && !t.root.resolved).length;
 
   // Escape closes the drawer, unless a dialog or menu over it is open and takes the key first. What was typed is kept.
@@ -334,17 +337,17 @@ export function ChatDock({ connected }: { connected: boolean }) {
         )}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
           <span className="flex min-w-0 items-center gap-2 text-sm" aria-live="polite">
-            {busy ? (
+            {busy && !attention ? (
               <Thinking />
             ) : (
               <span
                 className={cn(
                   "motion-status size-2 shrink-0 rounded-full",
-                  listening ? "bg-success" : connected ? "bg-warning" : "bg-danger",
+                  attention ? "animate-pulse bg-warning" : listening ? "bg-success" : connected ? "bg-warning" : "bg-danger",
                 )}
               />
             )}
-            <span className="truncate" title={status}>
+            <span className={cn("truncate", attention && "font-medium")} title={status}>
               {status}
             </span>
           </span>

@@ -61,7 +61,8 @@ export function setup(
   } = {},
 ) {
   const review = new Review(loaded(options.raw), options.load ?? (async () => loaded(options.raw)));
-  const store = new Store(review);
+  const attachments = mkdtempSync(join(tmpdir(), "prg-attachments-"));
+  const store = new Store(review, { attachments });
   const app = createApp({
     store,
     review,
@@ -71,6 +72,7 @@ export function setup(
     port: () => PORT,
     repo: options.repo ?? staticDir,
     staticDir,
+    attachments,
     linearKey: LINEAR_KEY,
     fetcher: options.fetcher,
     runner: options.runner,
@@ -90,7 +92,7 @@ export function setup(
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
-  return { app, store, review, session, page, post };
+  return { app, store, review, session, page, post, attachments };
 }
 
 export const addedLine = { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 };

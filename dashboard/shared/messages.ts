@@ -125,6 +125,8 @@ export type Message = {
   };
   // On a note, when the user said what it asks for.
   intent?: NoteIntent;
+  // Screenshots the user attached, by id under GET /api/attachments/<id>.
+  images?: string[];
   // Which send took this note, from 1, and when.
   batch?: number;
   sentAt?: string;
@@ -134,17 +136,23 @@ export type Message = {
   edited?: string;
 };
 
+// A screenshot kept on the server: its content's sha256 and its type.
+export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif" } as const;
+export const IMAGE_ID = new RegExp(`^[0-9a-f]{64}\\.(?:${Object.keys(IMAGE_TYPES).join("|")})$`);
+
 export const newMessageSchema = z.object({
   kind: z.enum(["chat", "note"]),
-  text: z.string().trim().min(1).max(4000),
+  // The editor stops at 4,000 characters; its markdown escapes can make the stored text longer.
+  text: z.string().trim().min(1).max(8000),
   // Left out means general; ignored on a follow-up, which takes its thread's.
   anchor: anchorSchema.optional(),
   replyTo: messageId.optional(),
   // Kept on a note only.
   intent: z.enum(NOTE_INTENTS).optional(),
+  images: z.array(z.string().regex(IMAGE_ID)).max(6).optional(),
 });
 
-export const editSchema = z.object({ text: z.string().trim().min(1).max(4000) });
+export const editSchema = z.object({ text: z.string().trim().min(1).max(8000) });
 // reason says why a review finding is being put away.
 export const archiveSchema = z.object({ archived: z.boolean(), reason: z.enum(DISMISS_REASONS).optional() });
 export const reviewRequestSchema = z.object({ layer, effort: z.enum(REVIEW_EFFORTS) });
@@ -186,9 +194,12 @@ export const replySchema = z
 
 // What the session says it is doing, in a line. An empty line says it has stopped.
 export const activitySchema = z.object({ text: z.string().max(400), replyTo: messageId.optional() });
+export const attentionSchema = z.object({ text: z.string().max(400) });
 // thread is the first message of the thread the work is for, when the session named one.
 export type Activity = { text: string; thread: string | null; at: string };
-export type SessionInfo = { listening: boolean; activity: Activity | null };
+// The session is stopped at a prompt in its terminal, such as a request for permission, which only the user can answer.
+export type Attention = { text: string; at: string };
+export type SessionInfo = { listening: boolean; activity: Activity | null; attention: Attention | null };
 
 export type NewMessage = z.infer<typeof newMessageSchema>;
 export type Reply = z.infer<typeof replySchema>;

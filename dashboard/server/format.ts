@@ -1,5 +1,8 @@
+import { join } from "node:path";
+
 import type { Message } from "../shared/messages";
 import { DISMISS_TEXT } from "../shared/reviews";
+import { typedText } from "../shared/typed";
 
 const FRAME_LIMIT = 6000;
 const NOTE_LIMIT = 2500;
@@ -26,15 +29,22 @@ function about(message: Message) {
   return lines.join("\n");
 }
 
+// Where a message's screenshots are on disk; the session reads them as it reads any image.
+const shots = (message: Message, dir?: string) =>
+  dir && message.images?.length
+    ? [indent(`screenshots attached, open each with Read: ${message.images.map(id => join(dir, id)).join(" ")}`)]
+    : [];
+
 // One frame is one notification in the session, so each carries the ids Claude needs to answer.
 // finding is the review finding a follow-up answers, quoted so the session needn't remember what it wrote.
-export function chatFrame(message: Message, scope: string, reopened = false, finding?: Message) {
+export function chatFrame(message: Message, scope: string, reopened = false, finding?: Message, dir?: string) {
   const follow = message.replyTo ? `, following up on ${message.replyTo}${reopened ? " (reopened)" : ""}` : "";
   const lines = [
     `[review page] chat ${message.id} on ${flat(scope)}${follow}`,
     about(message),
     ...(finding ? [indent(`the finding: ${clip(finding.text, 1200)}`, "    "), ...patchOf(finding, "its proposed patch")] : []),
-    indent(message.text),
+    ...shots(message, dir),
+    indent(typedText(message.text)),
     `(answer with POST /api/replies {"replyTo":"${message.id}","text":"…"})`,
   ];
   return clip(lines.join("\n"), FRAME_LIMIT);
@@ -61,7 +71,7 @@ function inParts(intro: string, items: string[], name: string) {
   );
 }
 
-export function notesFrames(notes: Message[], batch: number, scope: string) {
+export function notesFrames(notes: Message[], batch: number, scope: string, dir?: string) {
   const intro =
     `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} on ${flat(scope)}. ` +
     "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. " +
@@ -71,7 +81,10 @@ export function notesFrames(notes: Message[], batch: number, scope: string) {
       ? " A note marked (fix) wants the change made, (question) an answer and no change, (nit) the change only if it is trivial."
       : "");
   const items = notes.map(note =>
-    clip(`${note.id}${note.intent ? ` (${note.intent})` : ""} ${about(note)}\n${indent(note.text)}`, NOTE_LIMIT),
+    clip(
+      [`${note.id}${note.intent ? ` (${note.intent})` : ""} ${about(note)}`, ...shots(note, dir), indent(typedText(note.text))].join("\n"),
+      NOTE_LIMIT,
+    ),
   );
   return inParts(intro, items, `batch ${batch}`);
 }

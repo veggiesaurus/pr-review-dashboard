@@ -61,6 +61,8 @@ about the file src/slug.ts@63268a7 (added, +6 -0)
 (answer with POST /api/replies {"replyTo":"m20","text":"…"})
 ```
 
+A chat or a note can carry screenshots the user dropped or pasted in. The frame then has a line `  screenshots attached, open each with Read: PATH …` after the text, with absolute paths to PNG, JPEG, WebP or GIF files beside `prg.db`. Read each before answering; they are often what the question is about.
+
 A batch of notes, sent when the user presses Send, in page order (bottom layer first, down each file). A batch longer than about 6,000 characters comes as several frames, the first saying how many and the rest headed `[review page] batch 1, part 2 of 3`.
 
 ```
@@ -179,6 +181,10 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "content-type: application/json
 
 The page shows the choices under your message, with room for another answer; `"multiple": true` on a question lets several be picked. The answer comes back as an ordinary follow-up on that thread, the picked option as its text, or one line per question when there are several. Don't set a state with it: the thread stays open until you have the answer.
 
+## Waiting at a prompt
+
+The plugin's hooks tell the dashboard when this session stops at a permission prompt in its terminal: the page's bar says "Waiting for you in the terminal" with the prompt's text until the next tool call, the end of the turn, a new prompt, or your next `POST /api/activity` or reply. The server knows its session from `CLAUDE_CODE_SESSION_ID`, written to the state file as `session`, so start it from the session's own shell.
+
 ## Saying what you're doing
 
 While you work on something the page sent, tell it where you are, a short line at each step:
@@ -191,6 +197,19 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "content-type: application/json
 The page shows the line in its bottom bar, and under the thread when `replyTo` names one, with a small animation. A line said for a thread is also kept on it as a step, so once you have answered the thread shows "3 steps" that open to what you did. Leave `replyTo` out for work that isn't for one thread. A line stands until the next one, until you answer that thread, or for two minutes, so repeat it during long steps; an empty `text` clears it at once. With no line, a thread whose last message is the user's shows one of Claude Code's verbs ("Contemplating…") while a session listens.
 
 `GET /api/messages` returns every message with its anchor, state and batch, for a session that has lost track.
+
+## Rebuilding the guide
+
+The page's Rebuild button sends a chat that starts `Rebuild the guide`. Answer it by rebuilding, keeping the last guide wherever its code is unchanged, unless it says from scratch. `DATA` is the folder the server was started with, `SCRIPTS` the skill's `scripts/`:
+
+1. Say `working` on the thread, and `rm -rf DATA.prev && cp -R DATA DATA.prev`, since `cp` into an existing folder would nest the copy and keep the older guide.
+2. Collect again into `DATA`, as the skill's step 1 did (`collect.py --pr N --out DATA`, or `stack.py --pr N --out DATA` for a stack).
+3. `python3 SCRIPTS/carry.py DATA.prev DATA`. It writes each layer's `guide.json` (and `description.json` and `stack-guide.json`) with the last build's sections moved to the new hunk ids, and prints per layer what no section holds yet and which sections' code changed.
+4. For each layer with anything listed, spawn a worker with the skill's `reference/update-prompt.md`, all in one message. A layer that carries over unchanged needs nothing; a layer new to the stack gets the skill's steps 2 to 6.
+5. Run the description check again for a layer whose `description.md` differs from the copy in `DATA.prev`, and on a stack where any layer changed, the stack check.
+6. `python3 SCRIPTS/render.py DATA --check` until it passes, then `POST /api/reload` and answer the thread `done` with one line per layer: unchanged, or the sections added and changed.
+
+The second reader (the skill's step 4) isn't run for an update; say so if a layer changed a lot. From scratch means the skill's steps 2 to 6 for every layer, with no carry.
 
 ## After a rebuild
 
