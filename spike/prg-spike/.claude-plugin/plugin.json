@@ -1,6 +1,0 @@
-{
-  "name": "prg-spike",
-  "version": "0.1.0",
-  "description": "M0 spike for the pr-review-guide mod: a docked guide pane, a clickable hunk, gh, Linear, a notes card and a hidden worker.",
-  "types": "./types/index.d.ts"
-}
