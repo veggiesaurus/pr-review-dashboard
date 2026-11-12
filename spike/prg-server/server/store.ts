@@ -13,11 +13,11 @@ import {
   type ThreadEvent,
 } from "../shared/messages";
 import { noteOrder } from "../shared/order";
-import type { ReviewEffort } from "../shared/reviews";
+import { DISMISS_TEXT, type DismissReason, type ReviewEffort } from "../shared/reviews";
 import { prKey, TICK_PREFIX } from "../shared/ticks";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
-import { chatFrame, notesFrames, recheckFrame, reviewFrame } from "./format";
+import { chatFrame, fixFrame, notesFrames, recheckFrame, reviewFrame } from "./format";
 import type { Review } from "./review";
 
 type Pending = { frame: string; ids: string[] };
@@ -164,6 +164,9 @@ export class Store {
     }
     if (parent) {
       parent.archived = undefined;
+      if (parent.review?.dismissed) {
+        parent.review = { ...parent.review, dismissed: undefined };
+      }
     }
     const kind = parent ? "chat" : input.kind;
     const message = this.insert(
@@ -176,13 +179,13 @@ export class Store {
         status: kind === "note" ? "draft" : "sent",
         state: "open",
         resolved: false,
+        ...(kind === "note" && input.intent && { intent: input.intent }),
         at: new Date().toISOString(),
       },
       parent,
     );
     if (kind === "chat") {
-      const finding = parent?.from === "claude" && parent.review ? parent : undefined;
-      this.deliver(chatFrame(message, scopeOf(this.review), reopened, finding), [message.id]);
+      this.deliver(chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message)), [message.id]);
     }
     this.notify("messages");
     return message;
@@ -196,6 +199,7 @@ export class Store {
       return null;
     }
     const last = this.db.query<{ n: number | null }, []>("select max(review) as n from messages").get();
+    const sigs = this.review.layer(layerId)?.files.flatMap(file => file.hunks.map(hunk => hunk.sig));
     const message = this.insert({
       from: "user",
       kind: "chat",
@@ -204,7 +208,7 @@ export class Store {
       status: "sent",
       state: "open",
       resolved: false,
-      review: { n: (last?.n ?? 0) + 1, effort },
+      review: { n: (last?.n ?? 0) + 1, effort, sigs },
       at: new Date().toISOString(),
     });
     this.deliver(this.reviewFrameFor(message), [message.id]);
@@ -212,10 +216,29 @@ export class Store {
     return message;
   }
 
+  private layerOf(anchor: Message["anchor"]) {
+    return "layer" in anchor && anchor.layer !== undefined ? this.review.layer(anchor.layer) : undefined;
+  }
+
   private reviewFrameFor(request: Message) {
-    const layer = "layer" in request.anchor && request.anchor.layer !== undefined ? this.review.layer(request.anchor.layer) : undefined;
+    const layer = this.layerOf(request.anchor);
     const target = layer?.meta.url ?? (layer?.meta.number ? `#${layer.meta.number}` : (layer?.meta.head ?? "the current branch"));
-    return reviewFrame(request, scopeOf(this.review), target, this.options.repo);
+    const before = {
+      dismissed: layer ? this.dismissedIn(layer.meta.repo) : [],
+      open: this.openFindings().filter(m => m.review?.n !== request.review?.n && this.layerOf(m.anchor) === layer),
+    };
+    return reviewFrame(request, scopeOf(this.review), target, this.options.repo, before);
+  }
+
+  // What the user called wrong or intended in earlier reviews of this repo, newest first, for the next review to leave out.
+  private dismissedIn(repo: string) {
+    return this.db
+      .query<{ body: string }, [string, string, string]>(
+        "select body from messages where substr(pr, 1, length(?) + 1) in (? || '#', ? || '@') " +
+          "and body ->> '$.review.dismissed' in ('false-positive', 'intentional') order by n desc limit 20",
+      )
+      .all(repo, repo, repo)
+      .map(row => JSON.parse(row.body) as Message);
   }
 
   // What the review found, each as a thread Claude starts on the line, the file or the PR it is about.
@@ -225,6 +248,19 @@ export class Store {
     if (!request || layer === undefined) {
       return null;
     }
+    // What earlier reviews of this PR read: a finding on a hunk they had too is one they missed.
+    const earlier = new Set(
+      this.messages.flatMap(m =>
+        m.from === "user" && m.review && m.review.n < n && this.layerOf(m.anchor)?.id === layer ? (m.review.sigs ?? []) : [],
+      ),
+    );
+    const sigOf = (anchor: Message["anchor"]) =>
+      anchor.kind === "line"
+        ? this.review
+            .layer(layer)
+            ?.files.find(file => file.id === anchor.file)
+            ?.hunks.find(hunk => hunk.id === anchor.hunk)?.sig
+        : undefined;
     const threads = findings.flatMap(finding => {
       const line = Number.parseInt(String(finding.line ?? ""), 10);
       const anchor = findingAnchor(this.review, layer, finding.file, line > 0 ? line : undefined);
@@ -233,6 +269,7 @@ export class Store {
       }
       // A finding the diff can't show on its line still says where it is.
       const where = anchor.kind === "line" ? "" : `${finding.file}${line > 0 ? `:${line}` : ""}: `;
+      const sig = sigOf(anchor);
       return this.insert({
         from: "claude",
         kind: "chat",
@@ -241,7 +278,14 @@ export class Store {
         status: "delivered",
         state: "open",
         resolved: false,
-        review: { n, severity: finding.severity, recommended: finding.recommended || undefined, seen: this.codeSeen(anchor) },
+        review: {
+          n,
+          severity: finding.severity,
+          recommended: finding.recommended || undefined,
+          patch: finding.patch?.trim() ? finding.patch : undefined,
+          seen: this.layerOf(anchor)?.meta.headSha,
+          missed: (sig && earlier.has(sig)) || undefined,
+        },
         at: new Date().toISOString(),
       });
     });
@@ -258,25 +302,62 @@ export class Store {
     return threads.length;
   }
 
-  // What the code a finding is about looks like now: every change to its file, or the head when it names no file.
-  private codeSeen(anchor: Message["anchor"]) {
-    const layer = "layer" in anchor && anchor.layer !== undefined ? this.review.layer(anchor.layer) : undefined;
-    const file = "file" in anchor ? layer?.files.find(f => f.id === anchor.file) : undefined;
-    return anchor.outdated ? "gone" : file ? file.hunks.map(hunk => hunk.sig).join(",") : (layer?.meta.headSha ?? "");
+  // Findings nobody has settled or put away, on code the diff still has.
+  private openFindings() {
+    return this.messages.filter(m => m.from === "claude" && !m.replyTo && m.review && !m.resolved && !m.archived && !m.anchor.outdated);
   }
 
-  // After a rebuild, findings still open whose code changed since they were last looked at go back to the session.
-  private recheck() {
-    const stale = this.messages.filter(
-      m => m.from === "claude" && !m.replyTo && m.review && !m.resolved && !m.archived && m.review.seen !== this.codeSeen(m.anchor),
+  // The recommended findings of a review that nothing has been asked of yet, sent to the session to fix in one go.
+  fixRecommended(n: number) {
+    if (!this.messages.some(m => m.review?.n === n && !m.replyTo)) {
+      return null;
+    }
+    const findings = this.openFindings().filter(
+      m => m.review?.n === n && m.review.recommended && !this.messages.some(reply => reply.replyTo === m.id),
     );
+    if (findings.length > 0) {
+      const at = new Date().toISOString();
+      const asks = findings.map(finding =>
+        this.insert(
+          {
+            from: "user",
+            kind: "chat",
+            text: "Fix this.",
+            anchor: finding.anchor,
+            replyTo: finding.id,
+            status: "sent",
+            state: "open",
+            resolved: false,
+            at,
+          },
+          finding,
+        ),
+      );
+      this.deliver(
+        fixFrame(findings, n, scopeOf(this.review)),
+        asks.map(ask => ask.id),
+      );
+      this.notify("messages");
+    }
+    return findings.length;
+  }
+
+  // At a new head every finding still open goes back to the session once: its fix may be anywhere in the PR.
+  private recheck() {
+    const stale = this.openFindings().filter(m => m.review?.seen !== this.layerOf(m.anchor)?.meta.headSha);
     for (const finding of stale) {
-      finding.review = { n: 0, ...finding.review, seen: this.codeSeen(finding.anchor) };
+      finding.review = { n: 0, ...finding.review, seen: this.layerOf(finding.anchor)?.meta.headSha };
       this.log(finding, "note", "Sent back to Claude after a rebuild");
     }
     if (stale.length > 0) {
       this.deliver(recheckFrame(stale, scopeOf(this.review)), []);
     }
+  }
+
+  // The review finding a follow-up is on, quoted in its frame.
+  private findingOf(message: Message) {
+    const thread = message.replyTo ? this.find(message.replyTo) : undefined;
+    return thread?.from === "claude" && thread.review ? thread : undefined;
   }
 
   editDraft(id: string, text: string) {
@@ -327,12 +408,18 @@ export class Store {
     return thread;
   }
 
-  setArchived(id: string, archived: boolean) {
+  setArchived(id: string, archived: boolean, reason?: DismissReason) {
     const thread = this.root(id);
     if (!thread || thread.status === "draft") {
       return null;
     }
     thread.archived = archived || undefined;
+    if (thread.review && thread.from === "claude") {
+      thread.review = { ...thread.review, dismissed: archived ? reason : undefined };
+      if (archived && reason) {
+        this.log(thread, "note", `Dismissed: ${DISMISS_TEXT[reason].toLowerCase()}`);
+      }
+    }
     this.notify("messages");
     return thread;
   }
@@ -455,7 +542,12 @@ export class Store {
     const roots = new Map<string, Message["anchor"]>();
     for (const message of this.messages) {
       if (!message.replyTo) {
+        const was = message.anchor.outdated;
         message.anchor = reanchor(this.review, message.anchor);
+        // A finding on code the diff no longer has is settled here; the session isn't asked about it.
+        if (!was && message.anchor.outdated && message.from === "claude" && message.review && !message.resolved) {
+          this.log(message, "note", "Outdated: its code is gone from the diff");
+        }
         roots.set(message.id, message.anchor);
       }
     }
@@ -584,7 +676,7 @@ export class Store {
     const scope = scopeOf(this.review);
     const waiting = this.messages.filter(m => m.status === "sent");
     for (const chat of waiting.filter(m => m.batch === undefined)) {
-      const frame = chat.review && !chat.replyTo ? this.reviewFrameFor(chat) : chatFrame(chat, scope, false);
+      const frame = chat.review && !chat.replyTo ? this.reviewFrameFor(chat) : chatFrame(chat, scope, false, this.findingOf(chat));
       this.pending.push({ frame, ids: [chat.id] });
     }
     for (const batch of new Set(waiting.flatMap(m => m.batch ?? []))) {

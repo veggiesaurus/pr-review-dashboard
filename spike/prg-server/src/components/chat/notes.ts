@@ -30,6 +30,7 @@ export const GROUPS: { name: string; kinds: AnchorKind[] }[] = [
   { name: "Guide sections", kinds: ["section"] },
   { name: "CI", kinds: ["annotation", "check"] },
   { name: "Description", kinds: ["claim"] },
+  { name: "Things to try", kinds: ["try"] },
   { name: "Stack", kinds: ["stackIssue"] },
   { name: "The review as a whole", kinds: ["general"] },
 ];
@@ -74,6 +75,8 @@ export function describe(anchor: Anchor, review: ReviewResponse | undefined): st
       const text = row ? ("claim" in row ? row.claim : "what" in row ? row.what : row.ask) : "";
       return `${at}the description check: "${text}"`;
     }
+    case "try":
+      return `${at}a thing to try by hand: "${plain(layer?.try[anchor.index] ?? "")}"`;
     case "stackIssue":
       return `the stack issue "${plain(review?.stack?.check?.issues[anchor.index]?.problem ?? "")}"`;
     case "general":
@@ -100,9 +103,9 @@ export function copyText(review: ReviewResponse, notes: Message[]) {
   const intro =
     `pr-review-guide: please work through ${many ? `these ${notes.length} review notes` : "this review note"} on ${scopeOf(review)}. ` +
     `${many ? "Each starts" : "It starts"} with its location. Fix what they ask in the working tree, leave it unstaged, and report back with one line per note.`;
-  return [intro, ...notes.map(note => `${note.anchor.loc ?? note.anchor.label ?? "The review as a whole"}\n${note.text.trim()}`)].join(
-    "\n\n",
-  );
+  const where = (note: Message) =>
+    `${note.anchor.loc ?? note.anchor.label ?? "The review as a whole"}${note.intent ? ` (${note.intent})` : ""}`;
+  return [intro, ...notes.map(note => `${where(note)}\n${note.text.trim()}`)].join("\n\n");
 }
 
 // Notes in page order, the same as the session gets them in a batch.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -94,5 +94,33 @@ describe("what the checkout has that the reviewed head doesn't", () => {
     elsewhere.meta.head = "a-branch-checked-out-nowhere";
     const other = setup({ raw: elsewhere, repo });
     expect(await (await other.page("/api/layers/12/local")).json()).toEqual({ where: null, files: {} });
+  });
+
+  test("one edit is taken back out of the checkout, and only while it is still what the page saw", async () => {
+    const { repo, reviewed } = await checkout();
+    const raw = structuredClone(rawReview);
+    raw.meta.headSha = reviewed;
+    const { page, session } = setup({ raw, repo });
+    const revert = (who: typeof page, edit: object) =>
+      who("/api/layers/12/local/revert", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file: "f1", edit }),
+      });
+    const edit = {
+      after: 1,
+      gone: ["  return title.trim().toLowerCase();"],
+      add: ["  const trimmed = title.trim();", "  return trimmed.toLowerCase();"],
+    };
+
+    expect((await session("/api/layers/12/local/revert", { method: "POST" })).status).toBe(403);
+    expect((await revert(page, { ...edit, add: ["  something else"] })).status).toBe(409);
+    expect((await revert(page, edit)).status).toBe(200);
+    expect(readFileSync(join(repo, "src/slug.ts"), "utf8")).toBe(
+      'export function slug(title: string) {\n  return title.trim().toLowerCase();\n}\n\nexport const SEPARATOR = "-";\n',
+    );
+    expect(readFileSync(join(repo, "unrelated.ts"), "utf8")).toBe("two\n");
+    expect(await (await session("/api/session/wait")).text()).toContain("reverted a local change");
+    expect((await revert(page, edit)).status).toBe(409);
   });
 });

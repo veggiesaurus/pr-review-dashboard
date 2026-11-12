@@ -1,4 +1,5 @@
 import type { Message } from "../shared/messages";
+import { DISMISS_TEXT } from "../shared/reviews";
 
 const FRAME_LIMIT = 6000;
 const NOTE_LIMIT = 2500;
@@ -32,7 +33,7 @@ export function chatFrame(message: Message, scope: string, reopened = false, fin
   const lines = [
     `[review page] chat ${message.id} on ${flat(scope)}${follow}`,
     about(message),
-    ...(finding ? [indent(`the finding: ${clip(finding.text, 1200)}`, "    ")] : []),
+    ...(finding ? [indent(`the finding: ${clip(finding.text, 1200)}`, "    "), ...patchOf(finding, "its proposed patch")] : []),
     indent(message.text),
     `(answer with POST /api/replies {"replyTo":"${message.id}","text":"…"})`,
   ];
@@ -45,8 +46,13 @@ export function notesFrames(notes: Message[], batch: number, scope: string) {
     `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} on ${flat(scope)}. ` +
     "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. " +
     'For each note, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
-    '{"replyTo":"<id>","state":"done"|"answered"|"declined","text":"what you did, the answer, or why not"}.';
-  const items = notes.map(note => clip(`${note.id} ${about(note)}\n${indent(note.text)}`, NOTE_LIMIT));
+    '{"replyTo":"<id>","state":"done"|"answered"|"declined","text":"what you did, the answer, or why not"}.' +
+    (notes.some(note => note.intent)
+      ? " A note marked (fix) wants the change made, (question) an answer and no change, (nit) the change only if it is trivial."
+      : "");
+  const items = notes.map(note =>
+    clip(`${note.id}${note.intent ? ` (${note.intent})` : ""} ${about(note)}\n${indent(note.text)}`, NOTE_LIMIT),
+  );
   const parts = [intro];
   for (const item of items) {
     const last = parts.length - 1;
@@ -66,28 +72,67 @@ export function notesFrames(notes: Message[], batch: number, scope: string) {
   );
 }
 
+const patchOf = (finding: Message, name: string) =>
+  finding.review?.patch ? [indent(`${name}:\n${clip(finding.review.patch, 1200)}`, "    ")] : [];
+
+// An earlier finding in a line, indented so nothing in it can start a line of the frame.
+function brief(finding: Message) {
+  const why = finding.review?.dismissed ? `(${DISMISS_TEXT[finding.review.dismissed].toLowerCase()}) ` : "";
+  const where = finding.anchor.kind === "line" && finding.anchor.path ? `${finding.anchor.path}: ` : "";
+  return `    - ${why}${flat(`${where}${finding.text.split("\n")[0]}`).slice(0, 240)}`;
+}
+
 // A review request names its target and says how the findings come back, since the page never sees the skill's report.
-export function reviewFrame(message: Message, scope: string, target: string, repo?: string) {
+// before is what earlier reviews leave for this one: findings the user dismissed, and those still open on this PR.
+export function reviewFrame(
+  message: Message,
+  scope: string,
+  target: string,
+  repo?: string,
+  before: { dismissed: Message[]; open: Message[] } = { dismissed: [], open: [] },
+) {
   const { n, effort } = message.review ?? { n: 0 };
   const lines = [
     `[review page] review ${n} requested on ${flat(scope)}, as chat ${message.id}`,
     about(message),
     `Run the code-review skill at ${effort} effort on ${flat(target)}${repo ? `, whose clone is ${flat(repo)}` : ""}: /code-review ${effort} ${flat(target)}`,
     "Don't pass --comment or --fix: nothing goes to GitHub, and the user picks what to fix on the page.",
-    `Then POST /api/reviews/${n}/findings {"findings":[{"file":"path from the repo's root","line":12,"summary":"…","failure_scenario":"…","severity":"high","recommended":true}]}`,
-    'with every finding, most severe first, "severity" high, medium or low, and "recommended" true on the ones worth acting on (an empty list when there are none),',
+    "If the clone has a REVIEW.md at its root, read it first and apply it to what you report and how severe you call it.",
+    ...(before.dismissed.length
+      ? [
+          "The user dismissed these findings in earlier reviews of this repo. Drop any finding that repeats one, and say in your reply how many you dropped:",
+          ...before.dismissed.map(brief),
+        ]
+      : []),
+    ...(before.open.length
+      ? ["These are still open from earlier reviews of this pull request, so don't report them again:", ...before.open.map(brief)]
+      : []),
+    `Then POST /api/reviews/${n}/findings {"findings":[{"file":"path from the repo's root","line":12,"summary":"…","failure_scenario":"…","severity":"high","recommended":true,"patch":"-old line\\n+new line"}]}`,
+    'with every finding, most severe first, "severity" high, medium or low, "recommended" true on the ones worth acting on, and "patch" (a few lines of unified diff) only when the fix is that small (an empty list when there are none),',
     `and POST /api/replies {"replyTo":"${message.id}","state":"answered","text":"which findings to act on and why"}.`,
   ];
   return lines.join("\n");
 }
 
-// Findings still open whose code changed in a rebuild go back to the session to be looked at again.
+const findingItem = (finding: Message) =>
+  clip([`${finding.id} ${about(finding)}`, indent(finding.text), ...patchOf(finding, "proposed patch")].join("\n"), NOTE_LIMIT);
+
+// Findings still open when the pull request gets a new head go back to the session to be looked at again.
 export function recheckFrame(findings: Message[], scope: string) {
   const intro =
     `[review page] re-check ${findings.length} review ${findings.length === 1 ? "finding" : "findings"} on ${flat(scope)}: ` +
-    "the code they are about changed in a rebuild. For each, " +
+    "the pull request has a new head, and a fix may be in another file than the finding. For each, " +
     'POST /api/replies {"replyTo":"<id>","state":"done","text":"how it was fixed"} when it no longer holds, ' +
     'or {"replyTo":"<id>","text":"why it still holds"} when it does.';
-  const items = findings.map(finding => clip(`${finding.id} ${about(finding)}\n${indent(finding.text)}`, NOTE_LIMIT));
-  return clip([intro, ...items].join("\n\n"), FRAME_LIMIT * 2);
+  return clip([intro, ...findings.map(findingItem)].join("\n\n"), FRAME_LIMIT * 2);
+}
+
+// The findings the user asked to have fixed in one go, answered one by one as a batch of notes is.
+export function fixFrame(findings: Message[], n: number, scope: string) {
+  const intro =
+    `[review page] fix ${findings.length} recommended ${findings.length === 1 ? "finding" : "findings"} of review ${n} on ${flat(scope)}. ` +
+    "Fix each in the working tree and leave it unstaged. " +
+    'For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
+    '{"replyTo":"<id>","state":"done"|"declined","text":"what you changed, or why not"}.';
+  return clip([intro, ...findings.map(findingItem)].join("\n\n"), FRAME_LIMIT * 2);
 }

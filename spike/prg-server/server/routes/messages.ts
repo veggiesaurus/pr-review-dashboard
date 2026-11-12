@@ -34,7 +34,8 @@ export function messagesRoutes(deps: AppDeps) {
   });
 
   app.post("/messages/:id/archive", only("page"), small, zValidator("json", archiveSchema), c => {
-    const thread = store.setArchived(c.req.param("id"), c.req.valid("json").archived);
+    const { archived, reason } = c.req.valid("json");
+    const thread = store.setArchived(c.req.param("id"), archived, reason);
     return thread ? c.json(thread) : c.json({ error: "no such thread" }, 404);
   });
 

@@ -31,9 +31,13 @@ async function fetchTicks() {
 // Ticks made here that the server hasn't answered for yet, so a box changes in the click itself and not a moment after.
 const usePending = create<Record<string, boolean>>(() => ({}));
 
+// Every tick the server holds for this review's pull requests, those of code that has since changed among them.
+export const useSavedTicks = (): ReadonlySet<string> =>
+  useQuery({ queryKey: KEY, queryFn: fetchTicks, select: (keys: string[]) => new Set(keys) }).data ?? NONE;
+
 // Whether a key is ticked. The server keeps the ticks, so they follow the review to another browser or device.
 export function useTicks() {
-  const saved = useQuery({ queryKey: KEY, queryFn: fetchTicks, select: (keys: string[]) => new Set(keys) }).data ?? NONE;
+  const saved = useSavedTicks();
   const pending = usePending();
   return (key: string) => pending[key] ?? saved.has(key);
 }

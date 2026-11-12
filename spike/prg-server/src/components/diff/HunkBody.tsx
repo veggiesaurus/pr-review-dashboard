@@ -86,15 +86,17 @@ function highlightHunk(highlight: typeof import("src/utils/highlight"), hunk: Hu
 type HunkBodyProps = {
   hunk: Hunk;
   dim: boolean;
+  // New since the card was ticked.
+  changed?: boolean;
   threads: Map<string, Thread[]>;
   composer: LineAnchor | null;
   selection: LineSelection | null;
 };
 
 // One hunk's rows in their own tbody, which the filter dims as one.
-export const HunkBody = memo(function HunkBody({ hunk, dim, threads, composer, selection }: HunkBodyProps) {
+export const HunkBody = memo(function HunkBody({ hunk, dim, changed, threads, composer, selection }: HunkBodyProps) {
   const { layer, file, split, formatting, language, local } = useDiff();
-  const fresh = Boolean(layer.meta.lastPass && hunk.fresh);
+  const fresh = Boolean(layer.meta.lastPass && hunk.fresh) || Boolean(changed);
   const [shownMoves, setShownMoves] = useState<ReadonlySet<number>>(() => new Set());
   const [whole, setWhole] = useState(false);
   const [ref, near] = useNear<HTMLTableSectionElement>();

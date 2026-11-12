@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronRight, ExternalLink, Pencil, Trash2 } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, Fragment, useEffect, useRef, useState } from "react";
 import type { GithubComment } from "shared/comments";
 import type { Anchor, Message, NoteState } from "shared/messages";
+import { DISMISS_REASONS, DISMISS_TEXT, standing } from "shared/reviews";
 
+import { IntentBadge } from "src/components/chat/Intent";
 import { oneLine, STATE_TEXT, STATE_TONE } from "src/components/chat/notes";
 import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
 import { type ClaudeThread, type GithubThreadView, type Thread, unseenReply } from "src/components/chat/useThreads";
@@ -12,6 +14,7 @@ import { Prose } from "src/components/links/Prose";
 import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
 import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "src/components/ui/dropdown-menu";
 import { errorText, useAddMessage, useArchiveThread, useDeleteDraft, useEditDraft, useMarkSeen } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useViewStore } from "src/store/view.store";
@@ -30,6 +33,35 @@ export function SeverityBadge({ message }: { message: Message }) {
 export function StateBadge({ state }: { state: NoteState }) {
   const text = STATE_TEXT[state];
   return text ? <Badge tone={STATE_TONE[state]}>{text}</Badge> : null;
+}
+
+// What else is known of a review finding: an earlier review read the same code, the user dismissed it, or its code is gone.
+export function FindingBadges({ message }: { message: Message }) {
+  const { missed, dismissed } = message.review ?? {};
+  return (
+    <>
+      {missed && <Badge tone="outline">Missed before</Badge>}
+      {dismissed && <Badge>Dismissed: {DISMISS_TEXT[dismissed].toLowerCase()}</Badge>}
+      {standing(message) === "outdated" && <Badge tone="outline">Outdated</Badge>}
+    </>
+  );
+}
+
+// The change Claude proposes for a finding, as the few lines of diff it sent.
+function Patch({ text }: { text: string }) {
+  return (
+    <figure className="grid gap-1">
+      <figcaption className="text-muted-foreground text-xs">Proposed patch</figcaption>
+      <pre className="overflow-x-auto rounded-md border bg-muted/60 py-1.5 font-mono text-[12.5px] leading-normal">
+        {text.split("\n").map((line, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a patch's lines have no id and keep their order
+          <span key={index} className={cn("block px-2.5", line.startsWith("+") ? "bg-diff-add" : line.startsWith("-") && "bg-diff-del")}>
+            {line || " "}
+          </span>
+        ))}
+      </pre>
+    </figure>
+  );
 }
 
 function Delivery({ message }: { message: Message }) {
@@ -135,6 +167,7 @@ export function DraftNote({ message }: { message: Message }) {
     <div id={`t-${message.id}`} className="grid gap-1.5 border-l-2 border-l-warning bg-card px-3 py-2.5 font-sans">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge tone="warning">Draft note</Badge>
+        <IntentBadge message={message} />
         <Posted message={message} />
         <span className="text-muted-foreground">kept until you send your notes</span>
         {!editing && (
@@ -214,13 +247,14 @@ export function ReplyBox({ replyTo, anchor, placeholder }: { replyTo?: string; a
 // A thread with Claude. A settled one folds to its last answer and opens again on a click.
 export function ClaudeThreadBlock({ thread, className, expanded }: { thread: ClaudeThread; className?: string; expanded?: boolean }) {
   const { root, replies } = thread;
-  const [open, setOpen] = useState(expanded ?? !root.resolved);
+  // A finding of a review the user asked for, which Claude wrote first, and whether its code has left the diff.
+  const finding = root.from === "claude" && root.review !== undefined;
+  const gone = finding && standing(root) === "outdated";
+  const [open, setOpen] = useState(expanded ?? !(root.resolved || gone));
   const [toggled, setToggled] = useState(false);
   const [wasResolved, setWasResolved] = useState(root.resolved);
   const add = useAddMessage();
   const archive = useArchiveThread();
-  // A finding of a review the user asked for, which Claude wrote first.
-  const finding = root.from === "claude" && root.review !== undefined;
   // An answer counts as seen once its thread has been on screen, open, wherever on the page that is.
   const box = useRef<HTMLDivElement>(null);
   const { mutate: markSeen } = useMarkSeen();
@@ -280,9 +314,11 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             ? `, lines ${root.anchor.line} to ${root.anchor.endLine}`
             : ""}
         </button>
+        <IntentBadge message={root} />
         <SeverityBadge message={root} />
-        {finding && root.review?.recommended && !root.resolved && <Badge tone="primary">Act on this</Badge>}
+        {finding && root.review?.recommended && !root.resolved && !gone && <Badge tone="primary">Act on this</Badge>}
         <StateBadge state={root.state} />
+        {finding && <FindingBadges message={root} />}
         <Delivery message={root} />
         <Posted message={root} />
         {replies.length > 0 && !open && (
@@ -302,7 +338,10 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             }
             const { message } = entry;
             return message === root ? (
-              <Bubble key={message.id} message={message} />
+              <Fragment key={message.id}>
+                <Bubble message={message} />
+                {finding && root.review?.patch && <Patch text={root.review.patch} />}
+              </Fragment>
             ) : (
               // The gap is padding inside the box that grows, so the space opens with the message.
               <div key={message.id} className={cn("-mt-2", arrived(message.at) && "motion-arrive")}>
@@ -316,19 +355,26 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             <Ask message={asking} pending={add.isPending} onAnswer={text => add.mutate({ kind: "chat", text, replyTo: root.id })} />
           )}
           {!(live && "steps" in (entries.at(-1) ?? {})) && <Working thread={root.id} waiting={awaited(root, replies)} />}
-          {finding && !root.resolved && replies.length === 0 && (
+          {finding && !root.resolved && !gone && replies.length === 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" disabled={add.isPending} onClick={() => add.mutate({ kind: "chat", text: "Fix this.", replyTo: root.id })}>
                 Fix this
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={archive.isPending}
-                onClick={() => archive.mutate({ id: root.id, archived: true })}
-              >
-                Dismiss
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="ghost" disabled={archive.isPending}>
+                    Dismiss
+                    <ChevronDown />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {DISMISS_REASONS.map(reason => (
+                    <DropdownMenuItem key={reason} onSelect={() => archive.mutate({ id: root.id, archived: true, reason })}>
+                      {DISMISS_TEXT[reason]}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
           <ReplyBox replyTo={root.id} placeholder={root.resolved ? "Reopen it with a follow-up" : "Follow up with Claude"} />

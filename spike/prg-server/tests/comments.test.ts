@@ -147,6 +147,15 @@ describe("posting notes as a review", () => {
     ]);
   });
 
+  test("a note marked as a nit or a question says so on GitHub, and one marked as a fix goes as written", async () => {
+    const { page, post } = await withNotes();
+    for (const intent of ["nit", "question", "fix"]) {
+      await page("/api/messages", post({ kind: "note", text: "rename this", anchor: addedLine, intent }));
+    }
+    const shown = (await (await preview(page, post, { ids: ["m5", "m6", "m7"], mode: "pending" })).json()) as PostPreview;
+    expect(shown.comments.map(comment => comment.body)).toEqual(["nit: rename this", "question: rename this", "rename this"]);
+  });
+
   test("posts exactly what was shown, as a pending review by default, and marks the notes", async () => {
     const { page, post, store, calls, posts } = await withNotes();
     const shown = (await (await preview(page, post, { ids: ["m1", "m2"], mode: "pending" })).json()) as PostPreview;

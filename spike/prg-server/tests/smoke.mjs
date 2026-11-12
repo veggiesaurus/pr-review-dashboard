@@ -134,6 +134,31 @@ try {
     text => text.includes("new since"),
   );
 
+  // Try by hand is a checklist the server keeps, and a step takes a note, here marked as a nit. Both are undone after.
+  const tryBlock = page.getByRole("region", { name: "Before you mark it ready" }).locator("details", { hasText: "Try by hand" });
+  const tried = () => tryBlock.locator("summary").textContent();
+  await tryBlock.getByRole("checkbox").check();
+  await page.reload();
+  await check("a ticked step to try stays ticked after a reload", tried, text => text === "Try by hand (1 of 1)");
+  await tryBlock.locator("button[data-ask]").click();
+  await page.getByRole("textbox", { name: /^Note or question about a thing to try by hand/ }).fill("The old link 404s.");
+  await page.getByRole("group", { name: "What the note asks for" }).getByRole("button", { name: "Nit" }).click();
+  await page.getByRole("button", { name: "Add note", exact: true }).click();
+  await page.getByRole("button", { name: /^Notes/ }).click();
+  // The notes are on Overview as well as in the drawer, which comes last and is the one in reach.
+  const labelled = page.locator("li", { hasText: "The old link 404s." }).last();
+  await check("a note on a step, marked as a nit, says so in the notes", () => labelled.getByText("Nit", { exact: true }).count());
+  await labelled.getByRole("button", { name: "Delete" }).click();
+  await check(
+    "and deleting it takes it out of the notes",
+    () => labelled.count(),
+    n => n === 0,
+  );
+  // A reload puts the drawer back on the review as a whole, where the checks below expect it.
+  await page.reload();
+  await tryBlock.getByRole("checkbox").uncheck();
+  await check("and the step unticks", tried, text => text === "Try by hand (0 of 1)");
+
   // The template is one page; here the sections are the Guide tab.
   await tab("Guide");
   await page.waitForSelector(SECTION);
@@ -273,6 +298,7 @@ try {
 
   // A review asked for from the page. The test plays the session: it hands back two findings and a recommendation.
   await tab("Overview");
+  await check("the review button waits, quietly, for the reader's own pass", () => page.getByText("Best after your own read").count());
   await page.getByRole("button", { name: "Review effort" }).click();
   const efforts = await page.getByRole("menuitem").allInnerTexts();
   await check(
@@ -296,6 +322,13 @@ try {
         recommended: true,
       },
       { file: "src/slug.ts", line: 2, summary: "An empty title gives an empty slug." },
+      {
+        file: "src/posts.ts",
+        line: 4,
+        summary: "The slug isn't escaped.",
+        recommended: true,
+        patch: "-  return prefix + slugify(title);\n+  return prefix + encodeURIComponent(slugify(title));",
+      },
     ],
   });
   const messages = await (await fetch(`${work.origin}/api/messages`, { headers: auth })).json();
@@ -303,7 +336,7 @@ try {
   await asSession("activity", { replyTo: asked.id, text: "Reading the diff" });
   await asSession("activity", { replyTo: asked.id, text: "Checking the callers" });
   await asSession("replies", { replyTo: asked.id, state: "answered", text: "Act on the first; the second is a nit." });
-  const found = page.locator("details", { hasText: "Claude's review (2)" });
+  const found = page.locator("details", { hasText: "Claude's review (3)" });
   await check(
     "the findings and Claude's recommendation show on the Overview",
     () => found.textContent(),
@@ -346,6 +379,34 @@ try {
   await found.getByRole("button", { name: "Open this finding's thread" }).first().click();
   await page.getByRole("button", { name: "Fix this", exact: true }).click();
   await check("Fix this sends a follow-up on the finding", () => page.getByText("Fix this.", { exact: true }).count());
+  // Where the findings stand: the recommended one not yet asked about goes in one press, and a dismissal says why.
+  await page.keyboard.press("Escape");
+  await check(
+    "the review counts its findings by where they stand",
+    () => found.textContent(),
+    text => text?.includes("3 open") && text.includes("Fix the recommended (1)"),
+  );
+  await found.getByRole("button", { name: "Fix the recommended (1)" }).click();
+  const finding = async summary =>
+    (await (await fetch(`${work.origin}/api/messages`, { headers: auth })).json()).find(m => m.text.startsWith(summary));
+  const unescaped = await finding("The slug isn't escaped.");
+  await check(
+    "Fix the recommended asks for each open recommended finding at once",
+    async () => (await (await fetch(`${work.origin}/api/messages`, { headers: auth })).json()).at(-1),
+    last => last?.text === "Fix this." && last.replyTo === unescaped.id,
+  );
+  await asSession("replies", { replyTo: unescaped.id, state: "done", text: "Escaped it." });
+  await found.getByRole("button", { name: "Open this finding's thread" }).last().click();
+  await check("a finding shows the patch Claude proposes", () => page.getByText("Proposed patch").count());
+  await page.keyboard.press("Escape");
+  await found.getByRole("button", { name: "Open this finding's thread" }).nth(1).click();
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await page.getByRole("menuitem", { name: "False positive" }).click();
+  await check(
+    "a dismissed finding stays in the review with its reason",
+    () => found.textContent(),
+    text => text?.includes("1 open, 1 fixed, 1 dismissed") && text.includes("Dismissed: false positive"),
+  );
   await page.getByRole("button", { name: `Archive every thread of review ${reviewNo}` }).click();
   await check(
     "archiving a review puts all of its threads away",
@@ -396,6 +457,23 @@ try {
     () => Promise.all([count("tr[data-local]"), reviewedLine4()]),
     ([local, reviewed]) => local === 0 && reviewed === 1,
   );
+  await page.getByRole("button", { name: "Preview the local code at line 4" }).click();
+  await page.getByRole("button", { name: "Revert this change in your checkout" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revert", exact: true }).click();
+  await check(
+    "reverting one place puts the reviewed code back in the checkout and leaves the other edit alone",
+    async () => ({
+      text: readFileSync(posts, "utf8"),
+      buttons: await page
+        .getByRole("button", { name: /^Preview the local code at line/ })
+        .evaluateAll(buttons => buttons.map(b => b.getAttribute("aria-label").split(" ").at(-1))),
+    }),
+    seen =>
+      seen.text.includes("/blog/") &&
+      !seen.text.includes("/journal/") &&
+      seen.text.includes("// fixed by the walk") &&
+      seen.buttons.join() === "5",
+  );
 
   await page.getByRole("button", { name: "Split", exact: true }).click();
   await check("split view draws every diff in two halves", unsplit, n => n === 0);
@@ -445,6 +523,18 @@ try {
       await page.evaluate(key => localStorage.getItem(key), kept),
     ],
     ([ticked, local]) => ticked && local === null,
+  );
+  // A tick whose code has since been rewritten: the card says so and marks the hunk that is new.
+  const reviewed = await fetch(`${work.origin}/api/review`, { headers: { Authorization: `Bearer ${work.token}` } });
+  const rewritten = (await reviewed.json()).layers[0].files.find(file => file.hunks.some(hunk => hunk.fresh));
+  const stale = `${kept.split(":").slice(0, 3).join(":")}:${rewritten.path}:a-signature-the-diff-no-longer-has`;
+  await page.evaluate(key => localStorage.setItem(key, "1"), stale);
+  await page.reload();
+  await page.waitForSelector(SECTION);
+  await check(
+    "a card ticked before its code changed says so",
+    () => page.locator(CARD, { hasText: "changed since you ticked" }).locator("header span.font-semibold").allInnerTexts(),
+    names => names.length > 0 && names.every(name => rewritten.path.endsWith(name)),
   );
   await page.close();
   console.log("page ok");

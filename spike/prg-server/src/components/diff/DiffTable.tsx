@@ -11,6 +11,7 @@ import type { LineSelection } from "src/components/diff/HunkBody";
 import { HunkBody } from "src/components/diff/HunkBody";
 import { useWide } from "src/components/diff/hooks";
 import { identifierAt, lineOf, rangeFromSelection } from "src/components/diff/pointer";
+import { RevertDialog } from "src/components/diff/RevertDialog";
 import { UsagesPopover, type UsageTarget } from "src/components/diff/UsagesPopover";
 import { useLocalChanges } from "src/queries/local.query";
 import { useViewStore } from "src/store/view.store";
@@ -43,7 +44,18 @@ const NO_EDITS: LocalEdit[] = [];
 const NO_PREVIEWS: ReadonlySet<number> = new Set();
 
 // One file's hunks as a table, with the gaps between them, in either layout.
-export function DiffTable({ layer, file, hunks, section }: { layer: Layer; file: ReviewFile; hunks: Hunk[]; section?: number }) {
+const NONE_CHANGED: ReadonlySet<string> = new Set();
+
+type DiffTableProps = {
+  layer: Layer;
+  file: ReviewFile;
+  hunks: Hunk[];
+  section?: number;
+  // Hunks new since the card was ticked: they are marked, and the ones already reviewed dimmed.
+  changed?: ReadonlySet<string>;
+};
+
+export function DiffTable({ layer, file, hunks, section, changed = NONE_CHANGED }: DiffTableProps) {
   const layout = useViewStore(state => state.layout);
   const formatting = useViewStore(state => state.formatting);
   const show = useViewStore(state => state.show);
@@ -54,6 +66,7 @@ export function DiffTable({ layer, file, hunks, section }: { layer: Layer; file:
   const edits = useLocalChanges(layer.id).data?.files[file.id];
   // The places being previewed, by the head line each edit comes after.
   const [previewing, setPreviewing] = useState<ReadonlySet<number>>(NO_PREVIEWS);
+  const [reverting, setReverting] = useState<LocalEdit | null>(null);
   const local = useMemo<DiffContextValue["local"]>(() => {
     const marks = new Map<number, LocalEdit>();
     const shown = new Map<string, LocalEdit[]>();
@@ -77,7 +90,7 @@ export function DiffTable({ layer, file, hunks, section }: { layer: Layer; file:
         }
         return next;
       });
-    return { marks, shown, hidden, toggle };
+    return { marks, shown, hidden, toggle, revert: setReverting };
   }, [edits, previewing]);
   // Edits on head lines no hunk shows are named above the table; opening the unchanged lines there shows their button.
   const elsewhere = useMemo(() => {
@@ -332,7 +345,8 @@ export function DiffTable({ layer, file, hunks, section }: { layer: Layer; file:
                 />
                 <HunkBody
                   hunk={hunk}
-                  dim={filtering && !showsHunk(show, hunk)}
+                  dim={(filtering && !showsHunk(show, hunk)) || (changed.size > 0 && !changed.has(hunk.id))}
+                  changed={changed.has(hunk.id)}
                   threads={byHunk.get(hunk.id) ?? NO_THREADS}
                   composer={mine?.hunk === hunk.id ? mine : null}
                   selection={selection(hunk.id)}
@@ -377,6 +391,7 @@ export function DiffTable({ layer, file, hunks, section }: { layer: Layer; file:
         )}
         {usage && <UsagesPopover layer={layer.id} target={usage} onClose={() => setUsage(null)} />}
       </div>
+      {reverting && <RevertDialog layer={layer.id} file={file.id} path={file.path} edit={reverting} onClose={() => setReverting(null)} />}
     </DiffContext.Provider>
   );
 }

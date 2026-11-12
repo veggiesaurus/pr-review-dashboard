@@ -59,6 +59,7 @@ export function anchorKey(anchor: Anchor): string {
       return `file:${anchor.layer}:${anchor.file}`;
     case "section":
     case "annotation":
+    case "try":
       return `${anchor.kind}:${anchor.layer}:${anchor.index}`;
     case "tell":
       return `tell:${anchor.layer}:${anchor.file}:${anchor.line}`;

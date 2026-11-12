@@ -69,6 +69,8 @@ m2 about #12 src/posts.ts:R4@63268a7 | return `/blog/${slugify(title)}`;
   Top layer: why /blog here?
 ```
 
+The user can mark a note as a fix, a question or a nit. The mark follows the note's id, as `m3 (question) about …`, and a batch that has any ends its first line by saying what each asks for: make the change for a fix, answer and change nothing for a question, and make the change for a nit only if it is trivial. An unmarked note is yours to judge, as before.
+
 What a thread can be about, and what the frame quotes:
 
 | About                 | Location and quote                                                       |
@@ -81,6 +83,7 @@ What a thread can be about, and what the frame quotes:
 | a CI annotation       | `src/a.ts:R4@sha, CI warning from lint`, the message and its link        |
 | a CI check            | `the CI check "lint"`, by name only, since checks are live               |
 | a description finding | which list it is in and its text, with the reason and the hunks          |
+| a thing to try        | `a thing to try by hand: "…"`, the step, and where its links point       |
 | a stack issue         | its kind and layers, the problem, the fix, and where each linked hunk is |
 | the review as a whole | `the review as a whole`                                                  |
 
@@ -105,6 +108,8 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "content-type: application/json
 
 The page's diff is the pull request as pushed, so a fix you leave in the working tree isn't in it. The page finds it by itself: within a few seconds the first line you changed gets a preview button in the Guide and Diff tabs, which shows the checkout's code there in place of what was reviewed. There is nothing to send for that, but say in your reply which file and roughly where, so the user knows where to look.
 
+A previewed change has a revert button. When the user presses it the server puts the reviewed code back at that place in the checkout and sends a frame starting `[review page] the user reverted a local change in`, with the file, the line it came after and the lines taken out. It needs no answer: don't put the change back unless asked, and if the thread it belonged to is settled as `done`, say on that thread that the fix was reverted.
+
 `done`, `answered` and `declined` settle a thread, and the page folds it away with the last answer showing. Text without a state leaves the state as it was. A state needs `replyTo`. The older `{"resolved": true}` still works and means `done`. Text gets 201 with the new message; a state alone gets 200 with the thread. An unknown id gets 404.
 
 Report in the session as the skill says, one line per note, as well as on the page.
@@ -118,26 +123,44 @@ The user can ask for a review of one PR, at medium effort from the button or at 
 about #12 as a whole
 Run the code-review skill at medium effort on https://github.com/o/r/pull/12, whose clone is /path/to/clone: /code-review medium https://github.com/o/r/pull/12
 Don't pass --comment or --fix: nothing goes to GitHub, and the user picks what to fix on the page.
-Then POST /api/reviews/3/findings {"findings":[{"file":"path from the repo's root","line":12,"summary":"…","failure_scenario":"…","severity":"high","recommended":true}]}
-with every finding, most severe first, "severity" high, medium or low, and "recommended" true on the ones worth acting on (an empty list when there are none),
+If the clone has a REVIEW.md at its root, read it first and apply it to what you report and how severe you call it.
+The user dismissed these findings in earlier reviews of this repo. Drop any finding that repeats one, and say in your reply how many you dropped:
+    - (false positive) src/slug.ts: An empty title gives an empty slug.
+These are still open from earlier reviews of this pull request, so don't report them again:
+    - src/posts.ts: The /blog prefix is hard-coded.
+Then POST /api/reviews/3/findings {"findings":[{"file":"path from the repo's root","line":12,"summary":"…","failure_scenario":"…","severity":"high","recommended":true,"patch":"-old line\n+new line"}]}
+with every finding, most severe first, "severity" high, medium or low, "recommended" true on the ones worth acting on, and "patch" (a few lines of unified diff) only when the fix is that small (an empty list when there are none),
 and POST /api/replies {"replyTo":"m31","state":"answered","text":"which findings to act on and why"}.
 ```
 
 Run the skill from the clone, so it can read the code around the diff. Its findings come back as `file`, `line`, `summary` and `failure_scenario`, most severe first; pass them on as they are and add `severity` and `recommended`. The skill ranks its findings but gives no severity, so judge each from its failure scenario: `high` for wrong behaviour users will meet, `medium` for a real bug on a narrower path, `low` for a cleanup or a nit. Each becomes a thread Claude starts: on its line when the diff can show it, else on its file, else on the PR. The reply to the request is the recommendation the page shows above the findings. Say what you're doing with `POST /api/activity` and `replyTo` the request while the review runs, since it can take minutes.
 
-When the user presses Fix this on a finding, a chat frame follows up on that finding's thread and quotes it as `the finding: …`. Fix it in the working tree, leave it unstaged, and answer with `{"replyTo":"<id>","state":"done","text":"what you changed"}`, or `declined` with the reason.
+The two lists only appear when there is something in them. The first is what the user dismissed as a false positive or as intended, in any review of the repo; the skill doesn't read it or `REVIEW.md`, so apply both yourself to what it reports, before you post. A `patch` shows under its finding as the change you propose; keep it to the few lines that change.
 
-After a rebuild, findings still open whose file changed go back to you in one frame:
+When the user presses Fix this on a finding, a chat frame follows up on that finding's thread and quotes it as `the finding: …`, with `its proposed patch:` when it has one. Fix it in the working tree, leave it unstaged, and answer with `{"replyTo":"<id>","state":"done","text":"what you changed"}`, or `declined` with the reason. Fix the recommended sends every recommended finding nothing has been asked of yet in one frame, to be answered one by one:
 
 ```
-[review page] re-check 2 review findings on o/r #11, #12, a stack: the code they are about changed in a rebuild. For each, POST /api/replies {"replyTo":"<id>","state":"done","text":"how it was fixed"} when it no longer holds, or {"replyTo":"<id>","text":"why it still holds"} when it does.
+[review page] fix 2 recommended findings of review 3 on o/r #11, #12, a stack. Fix each in the working tree and leave it unstaged. For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then {"replyTo":"<id>","state":"done"|"declined","text":"what you changed, or why not"}.
+
+m33 about #12 src/posts.ts:R4@63268a7 | return `/blog/${slugify(title)}`;
+    4 +   return `/blog/${slugify(title)}`;
+  The /blog prefix is hard-coded.
+    proposed patch:
+    -  return `/blog/${slugify(title)}`;
+    +  return `${prefix}/${slugify(title)}`;
+```
+
+After a rebuild at a new head, every finding still open goes back to you in one frame, whether or not its own file changed:
+
+```
+[review page] re-check 2 review findings on o/r #11, #12, a stack: the pull request has a new head, and a fix may be in another file than the finding. For each, POST /api/replies {"replyTo":"<id>","state":"done","text":"how it was fixed"} when it no longer holds, or {"replyTo":"<id>","text":"why it still holds"} when it does.
 
 m33 about #12 src/posts.ts:R4@63268a7 | return `/blog/${slugify(title)}`;
     4 +   return `/blog/${slugify(title)}`;
   The /blog prefix is hard-coded.
 ```
 
-Read the code as it is now before answering; a finding is only asked about once for each change to its file.
+Read the code as it is now before answering; a finding is asked about once for each head. One whose code is gone from the diff isn't sent: the page marks it outdated by itself.
 
 ## Asking the user something
 

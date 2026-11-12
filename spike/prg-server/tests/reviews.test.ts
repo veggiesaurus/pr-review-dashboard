@@ -22,6 +22,7 @@ const findings = {
       failure_scenario: "A title of '\\tx' loses its tab.",
       severity: "high",
       recommended: true,
+      patch: "-  return title.trim().toLowerCase();\n+  return title.replace(/^ +| +$/g, '').toLowerCase();",
     },
     { file: "./src/slug.ts", line: "3", summary: "the brace is fine" },
     { file: "src/slug.ts", line: 90, summary: "past the end of the file" },
@@ -98,5 +99,76 @@ describe("a review asked for from the page", () => {
     frames.length = 0;
     await review.reload();
     expect(frames).toEqual([]);
+  });
+
+  test("a new head re-checks open findings whose own code didn't change, and settles one whose code is gone", async () => {
+    // The same hunk signature at a new head, with the line the first finding is on rewritten.
+    const rewritten = withSig("trim-v1", "d");
+    const line = "  return title.replace(/^ +| +$/g, '').toLowerCase();";
+    Object.assign(rewritten.files[0] ?? {}, { newText: ["export function slug(title: string) {", line, "}", ""] });
+    rewritten.files[0]?.hunks[0]?.lines.splice(2, 1, ["+", null, 2, line]);
+    const made = setup({ raw: first, load: async () => loaded(rewritten) });
+    const frames: string[] = [];
+    made.store.addSessionSink(frame => frames.push(frame));
+    await made.page("/api/reviews", made.post({ layer: 12, effort: "low" }));
+    await made.session("/api/reviews/1/findings", made.post(findings));
+    frames.length = 0;
+    await made.review.reload();
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toStartWith("[review page] re-check 3 review findings on acme/shop#12 at ddddddd");
+    expect(frames[0]).toContain("m3 about src/slug.ts:R3@ddddddd");
+    expect(frames[0]).not.toContain("m2 about");
+    expect(made.store.find("m2")).toMatchObject({ state: "open", anchor: { outdated: true } });
+    expect(made.store.find("m2")?.events?.map(event => event.text)).toEqual(["Outdated: its code is gone from the diff"]);
+  });
+
+  test("a dismissal keeps its reason, and the next review is told what was dismissed and what is still open", async () => {
+    const { store, frames, page, post } = await reviewed();
+    const dismiss = (id: string, reason: string) => page(`/api/messages/${id}/archive`, post({ archived: true, reason }));
+    expect((await dismiss("m3", "bored")).status).toBe(400);
+    await dismiss("m3", "false-positive");
+    await dismiss("m4", "later");
+    expect(store.find("m3")).toMatchObject({ archived: true, review: { dismissed: "false-positive" } });
+    expect(store.find("m3")?.events?.map(event => event.text)).toEqual(["Dismissed: false positive"]);
+
+    await page("/api/reviews", post({ layer: 12, effort: "low" }));
+    const frame = frames.at(-1) ?? "";
+    expect(frame).toContain("REVIEW.md");
+    expect(frame).toContain("Drop any finding that repeats one");
+    expect(frame).toContain("    - (false positive) src/slug.ts: the brace is fine");
+    expect(frame).not.toContain("past the end of the file");
+    expect(frame).toContain("don't report them again:\n    - src/slug.ts: trim() drops a leading tab too");
+
+    await page("/api/messages", post({ kind: "chat", text: "Actually, look again.", replyTo: "m3" }));
+    expect(store.find("m3")?.review?.dismissed).toBeUndefined();
+    expect(store.find("m3")?.archived).toBeUndefined();
+  });
+
+  test("the recommended findings go to the session in one frame, each with its proposed patch", async () => {
+    const { store, threads, frames, page, session } = await reviewed();
+    expect(threads[0]?.review?.patch).toStartWith("-  return title.trim()");
+    expect(await (await page("/api/reviews/1/fix", { method: "POST" })).json()).toEqual({ sent: 1 });
+    expect(frames.at(-1)).toStartWith("[review page] fix 1 recommended finding of review 1 on acme/shop#12 at aaaaaaa.");
+    expect(frames.at(-1)).toContain("m2 about src/slug.ts:R2@aaaaaaa");
+    expect(frames.at(-1)).toContain("    proposed patch:\n    -  return title.trim().toLowerCase();");
+    expect(frames.at(-1)).not.toContain("m3 about");
+    expect(store.messages.at(-1)).toMatchObject({ from: "user", text: "Fix this.", replyTo: "m2", status: "delivered" });
+
+    expect(await (await page("/api/reviews/1/fix", { method: "POST" })).json()).toEqual({ sent: 0 });
+    expect((await page("/api/reviews/9/fix", { method: "POST" })).status).toBe(404);
+    expect((await session("/api/reviews/1/fix", { method: "POST" })).status).toBe(403);
+  });
+
+  test("a later review's finding on code an earlier review read is marked as missed before", async () => {
+    const { review, page, session, post } = await reviewed();
+    await review.reload();
+    await page("/api/reviews", post({ layer: 12, effort: "high" }));
+    const onNewCode = (await (await session("/api/reviews/2/findings", post(findings))).json()) as Message[];
+    expect(onNewCode.map(t => t.review?.missed ?? false)).toEqual([false, false, false, false]);
+
+    await page("/api/reviews", post({ layer: 12, effort: "xhigh" }));
+    const onSameCode = (await (await session("/api/reviews/3/findings", post(findings))).json()) as Message[];
+    expect(onSameCode.map(t => t.review?.missed ?? false)).toEqual([true, true, false, false]);
   });
 });

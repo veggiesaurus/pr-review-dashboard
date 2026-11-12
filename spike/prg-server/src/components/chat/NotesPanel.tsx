@@ -4,6 +4,7 @@ import type { GithubThread } from "shared/comments";
 import type { Message } from "shared/messages";
 
 import { useChatStore } from "src/components/chat/chat.store";
+import { IntentBadge } from "src/components/chat/Intent";
 import { copyText, jumpTo, onCode, oneLine, pageOrder, shortLabel } from "src/components/chat/notes";
 import { PostDialog } from "src/components/chat/PostDialog";
 import { ClaudeThreadBlock, DraftEditor, StateBadge } from "src/components/chat/ThreadBlock";
@@ -71,6 +72,7 @@ function DraftItem({ note, pick }: { note: Message; pick: boolean }) {
           />
         )}
         <Where note={note} />
+        <IntentBadge message={note} />
         {note.anchor.outdated && <Gone />}
         {copied && (
           <Badge tone="outline" className="motion-swap">
@@ -127,6 +129,7 @@ function SentItem({ thread, pick }: { thread: ClaudeThread; pick: boolean }) {
           />
         )}
         <Where note={root} />
+        <IntentBadge message={root} />
         {root.anchor.outdated && <Gone />}
         <StateBadge state={root.state} />
         {root.status === "sent" && <Badge tone="outline">Waiting for a session</Badge>}

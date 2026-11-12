@@ -24,6 +24,8 @@ export type DiffContextValue = {
     shown: Map<string, LocalEdit[]>;
     hidden: Set<number>;
     toggle: (edit: LocalEdit) => void;
+    // Asks to put the reviewed code back in the checkout at an edit.
+    revert: (edit: LocalEdit) => void;
   };
 };
 

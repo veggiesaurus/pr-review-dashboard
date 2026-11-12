@@ -1,12 +1,16 @@
+import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { z } from "zod";
 
 import type { ReviewResponse } from "../../shared/payload";
 import type { AppDeps } from "../app";
 import { run } from "../exec";
 import { type Env, findLayer, only } from "../guards";
-import { localChanges } from "../local";
+import { localChanges, revertEdit } from "../local";
 
 const MAX_LINES = 2000;
+const lines = z.array(z.string()).max(3000);
+const revertSchema = z.object({ file: z.string().max(40), edit: z.object({ after: z.number().int().min(0), gone: lines, add: lines }) });
 
 export function reviewRoutes(deps: AppDeps) {
   const { review } = deps;
@@ -31,6 +35,21 @@ export function reviewRoutes(deps: AppDeps) {
   app.get("/layers/:layer/local", async c => {
     const layer = findLayer(review, c.req.param("layer"));
     return layer ? c.json(await localChanges(deps.runner ?? run, deps.repo, layer)) : c.json({ error: "no such layer" }, 404);
+  });
+
+  // The user takes one local edit back out of the checkout; the session hears, so it doesn't put the edit back.
+  app.post("/layers/:layer/local/revert", only("page"), zValidator("json", revertSchema), async c => {
+    const layer = findLayer(review, c.req.param("layer"));
+    if (!layer) {
+      return c.json({ error: "no such layer" }, 404);
+    }
+    const { file, edit } = c.req.valid("json");
+    const result = await revertEdit(deps.runner ?? run, deps.repo, layer, file, edit);
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status);
+    }
+    deps.store.tell(result.frame);
+    return c.json({ ok: true });
   });
 
   // Lines of the new file the diff doesn't show, from to to inclusive, 1-based.

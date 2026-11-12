@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Plus } from "lucide-react";
+import { Eye, EyeOff, Plus, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { LocalEdit } from "shared/local";
 import type { LineAnchor } from "shared/messages";
@@ -11,6 +11,7 @@ import type { Thread } from "src/components/chat/useThreads";
 import { CodeText } from "src/components/diff/CodeText";
 import { useDiff } from "src/components/diff/context";
 import { Badge } from "src/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "src/components/ui/tooltip";
 import { lineElementId, lineKey } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
 import { hasNames, type Range, type Segment } from "src/utils/diff";
@@ -95,25 +96,15 @@ export function Half({ row, old, anchor, tone, segments, marks, fresh, selected,
             onClick={() => openComposer(anchor)}
             title="Add a note or ask Claude about this line"
             aria-label={`Note on line ${number}`}
-            className="absolute top-0.5 left-3 grid size-4 cursor-pointer place-items-center rounded-[4px] bg-primary text-primary-foreground opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100"
+            className={cn(
+              "absolute top-0.5 grid size-4 cursor-pointer place-items-center rounded-[4px] bg-primary text-primary-foreground opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100",
+              edit ? "left-[1.25rem]" : "left-3",
+            )}
           >
             <Plus className="size-3" strokeWidth={2.5} />
           </button>
         )}
-        {edit && (
-          <button
-            type="button"
-            onClick={event => {
-              event.stopPropagation();
-              local.toggle(edit);
-            }}
-            title="Your checkout's code differs here. Click to see it in place of what was reviewed."
-            aria-label={`Preview the local code at line ${number}`}
-            className="absolute top-0.5 left-0 grid size-4 cursor-pointer place-items-center rounded-[4px] text-primary hover:bg-primary hover:text-primary-foreground"
-          >
-            <Eye className="size-3" strokeWidth={2.25} />
-          </button>
-        )}
+        {edit && <PreviewButton edit={edit} label={`Preview the local code at line ${number}`} />}
         {number}
         {flags && at && (
           <button
@@ -157,6 +148,35 @@ export function Half({ row, old, anchor, tone, segments, marks, fresh, selected,
   );
 }
 
+// Swaps the checkout's code in for what was reviewed at one edit, or back again.
+function PreviewButton({ edit, label, previewing = false }: { edit: LocalEdit; label: string; previewing?: boolean }) {
+  const { local } = useDiff();
+  const Icon = previewing ? EyeOff : Eye;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={event => {
+            event.stopPropagation();
+            local.toggle(edit);
+          }}
+          aria-label={label}
+          className={cn(
+            "absolute top-0.5 left-0.5 grid size-4 cursor-pointer place-items-center rounded-[4px]",
+            previewing ? "bg-primary text-primary-foreground" : "text-primary hover:bg-primary/15",
+          )}
+        >
+          <Icon className="size-3" strokeWidth={2.25} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start">
+        {previewing ? "Show the reviewed code" : "Show your local code"}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 // What hangs under a line: its CI annotations, its threads and, while open, the composer.
 // A previewed edit: the checkout's lines as rows of the table, standing in for the reviewed lines above them, which
 // are hidden meanwhile. The first row's button puts the reviewed code back.
@@ -185,15 +205,24 @@ function LocalRows({ edits }: { edits: LocalEdit[] | undefined }) {
           )}
         >
           {i === 0 && (
-            <button
-              type="button"
-              onClick={() => local.toggle(edit)}
-              title="This is your checkout's code. Click for the code as reviewed."
-              aria-label="Show the code as reviewed"
-              className="absolute top-0.5 left-0 grid size-4 cursor-pointer place-items-center rounded-[4px] bg-primary text-primary-foreground"
-            >
-              <EyeOff className="size-3" strokeWidth={2.25} />
-            </button>
+            <>
+              <PreviewButton edit={edit} label="Show the code as reviewed" previewing />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => local.revert(edit)}
+                    aria-label="Revert this change in your checkout"
+                    className="absolute top-0.5 left-[1.25rem] grid size-4 cursor-pointer place-items-center rounded-[4px] text-danger hover:bg-danger/15"
+                  >
+                    <Undo2 className="size-3" strokeWidth={2.25} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start">
+                  Revert this change in your checkout
+                </TooltipContent>
+              </Tooltip>
+            </>
           )}
         </td>
         <td className={cn("w-[1.2rem] min-w-[1.2rem] select-none text-center align-top text-primary", fill)}>{text === null ? "" : "~"}</td>

@@ -31,7 +31,7 @@ Write `{WORKDIR}/guide.json`:
 Sections:
 
 - Group by purpose, not by file or directory. A section is one thing the change does that a reviewer can judge on its own: a new behaviour, a removal, a refactor that the behaviour depends on, a migration.
-- Order them so each section can be understood from the ones before it: the core change first, then what follows from it, then plumbing and removals, then supporting changes (config, dependencies, docs) last.
+- Order them so each section can be understood from the ones before it: the core change first, then what follows from it, then plumbing and removals, then supporting changes (config, dependencies, docs) last. When two orders read equally well, put a section with a `risk` note earlier, and never leave one last unless it can't be understood sooner: what is read last gets the least attention.
 - Size to the change. A small PR may need one or two sections; most need three to six; more than eight means the sections are too thin.
 - Tests go in the section whose behaviour they test, not in a tests section.
 

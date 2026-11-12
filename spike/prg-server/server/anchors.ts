@@ -265,6 +265,24 @@ export function resolveAnchor(review: Review, anchor: Anchor): ResolvedAnchor | 
       ].filter(Boolean);
       return found(`${at}${what}: "${oneLine(text, 200)}"`, { detail: detail.join("\n") || null, match: text });
     }
+    case "try": {
+      const step = layer.try[anchor.index];
+      if (!step) {
+        return null;
+      }
+      // The label reads as the page shows it, each link as its phrase; where the links point goes underneath.
+      const text = step.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+      const links = [...new Set([...step.matchAll(/\]\(((?:\d+:)?f\d+(?:h\d+)?)\)/g)].map(m => m[1] as string))];
+      const where = links.map(ref => {
+        const file = fileOf(ref);
+        return file ? `${at}${file.path}${sha}` : hunkLocations(review, layer, [ref])[0];
+      });
+      const detail = [text.length > 200 ? clip(text, 1200) : "", where.length ? `In ${where.join(", ")}` : ""];
+      return found(`${at}a thing to try by hand: "${oneLine(text, 200)}"`, {
+        detail: detail.filter(Boolean).join("\n") || null,
+        match: step,
+      });
+    }
   }
 }
 
@@ -385,6 +403,10 @@ function findAgain(review: Review, old: ResolvedAnchor): Anchor | null {
       const rows = layer.descriptionCheck?.[old.list] ?? [];
       const index = rows.findIndex(row => ("claim" in row ? row.claim : "what" in row ? row.what : row.ask) === old.match);
       return index >= 0 ? { kind: "claim", ...base, list: old.list, index } : null;
+    }
+    case "try": {
+      const index = layer.try.indexOf(old.match ?? "");
+      return index >= 0 ? { kind: "try", ...base, index } : null;
     }
   }
 }

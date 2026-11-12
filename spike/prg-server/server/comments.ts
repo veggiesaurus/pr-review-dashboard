@@ -232,7 +232,8 @@ function toComment(review: Review, layer: Layer, note: Message | undefined): Rev
     line: end,
     side,
     ...(end !== line.line && { startLine: line.line, startSide: side }),
-    body: note.text,
+    // A nit and a question say so, as reviewers write them; a fix is what a review comment asks for anyway.
+    body: note.intent && note.intent !== "fix" ? `${note.intent}: ${note.text}` : note.text,
   };
 }
 

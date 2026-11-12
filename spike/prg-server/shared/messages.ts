@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { REVIEW_EFFORTS, type ReviewEffort, SEVERITIES, type Severity } from "./reviews";
+import { NOTE_INTENTS, type NoteIntent } from "./intents";
+import { DISMISS_REASONS, type DismissReason, REVIEW_EFFORTS, type ReviewEffort, SEVERITIES, type Severity } from "./reviews";
 
 const layer = z.number().int().min(0).max(999_999_999);
 const fileId = z.string().regex(/^f\d{1,6}$/);
@@ -42,6 +43,8 @@ export const anchorSchema = z.discriminatedUnion("kind", [
   }),
   // One finding of the description check: list names the array in layer.descriptionCheck, index the row.
   z.object({ kind: z.literal("claim"), layer, list: z.enum(["checklist", "unsupported", "missing", "issue"]), index }),
+  // index into layer.try.
+  z.object({ kind: z.literal("try"), layer, index }),
   // index into stack.check.issues.
   z.object({ kind: z.literal("stackIssue"), index }),
   // Nothing in particular, optionally while looking at one layer.
@@ -103,9 +106,23 @@ export type Message = {
   events?: ThreadEvent[];
   // On a message from Claude: questions it wants answered before it goes on.
   ask?: Question[];
-  // On the threads of a review the user asked Claude for: its number on the request and on each finding, the effort
-  // on the request, and on a finding how bad it is, whether Claude says to act on it and the code it was last checked against.
-  review?: { n: number; effort?: ReviewEffort; severity?: Severity; recommended?: boolean; seen?: string };
+  // On the threads of a review the user asked Claude for: its number, on the request and on each finding.
+  review?: {
+    n: number;
+    // On the request: the effort, and every hunk's signature at the time.
+    effort?: ReviewEffort;
+    sigs?: string[];
+    // On a finding: what Claude says of it, and the change it proposes.
+    severity?: Severity;
+    recommended?: boolean;
+    patch?: string;
+    // The head it was last checked against, whether an earlier review read the same code, and why the user dismissed it.
+    seen?: string;
+    missed?: boolean;
+    dismissed?: DismissReason;
+  };
+  // On a note, when the user said what it asks for.
+  intent?: NoteIntent;
   // Which send took this note, from 1, and when.
   batch?: number;
   sentAt?: string;
@@ -121,10 +138,13 @@ export const newMessageSchema = z.object({
   // Left out means general; ignored on a follow-up, which takes its thread's.
   anchor: anchorSchema.optional(),
   replyTo: messageId.optional(),
+  // Kept on a note only.
+  intent: z.enum(NOTE_INTENTS).optional(),
 });
 
 export const editSchema = z.object({ text: z.string().trim().min(1).max(4000) });
-export const archiveSchema = z.object({ archived: z.boolean() });
+// reason says why a review finding is being put away.
+export const archiveSchema = z.object({ archived: z.boolean(), reason: z.enum(DISMISS_REASONS).optional() });
 export const reviewRequestSchema = z.object({ layer, effort: z.enum(REVIEW_EFFORTS) });
 // What the code-review skill reports for each finding, plus whether Claude says to act on it.
 export const findingsSchema = z.object({
@@ -137,6 +157,8 @@ export const findingsSchema = z.object({
         failure_scenario: z.string().trim().max(4000).nullish(),
         severity: z.enum(SEVERITIES).optional(),
         recommended: z.boolean().optional(),
+        // The change Claude proposes, as a few lines of unified diff.
+        patch: z.string().max(3000).nullish(),
       }),
     )
     .max(40),

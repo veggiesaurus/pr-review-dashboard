@@ -1,7 +1,9 @@
 import { useState } from "react";
+import type { NoteIntent } from "shared/intents";
 import type { Anchor } from "shared/messages";
 
 import { composerText, saveComposerText, useChatStore } from "src/components/chat/chat.store";
+import { IntentPicker } from "src/components/chat/Intent";
 import { describe } from "src/components/chat/notes";
 import { Button } from "src/components/ui/button";
 import { errorText, useAddMessage } from "src/queries/messages.mutation";
@@ -13,6 +15,7 @@ import { anchorKey } from "src/utils/anchors";
 // bare leaves out the line saying what it is about, for where the drawer already says so.
 export function Composer({ anchor, label, bare = false }: { anchor: Anchor; label?: string; bare?: boolean }) {
   const [text, setText] = useState(() => composerText(anchor));
+  const [intent, setIntent] = useState<NoteIntent>();
   const close = useChatStore(state => state.closeComposer);
   const review = useReview().data;
   const add = useAddMessage();
@@ -30,11 +33,12 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
   const submit = (kind: "note" | "chat") => {
     if (!empty) {
       add.mutate(
-        { kind, text, anchor },
+        { kind, text, anchor, ...(kind === "note" && intent && { intent }) },
         {
           onSuccess: () => {
             saveComposerText(anchor, "");
             setText("");
+            setIntent(undefined);
             if (anchor.kind === "line") {
               close();
             }
@@ -65,6 +69,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
         aria-label={`Note or question about ${where}`}
         className="block w-full resize-y rounded-md border border-input bg-background p-2 text-sm placeholder:text-muted-foreground"
       />
+      <IntentPicker value={intent} onChange={setIntent} />
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"

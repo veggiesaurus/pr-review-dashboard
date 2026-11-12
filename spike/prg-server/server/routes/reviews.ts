@@ -23,6 +23,12 @@ export function reviewsRoutes({ store }: AppDeps) {
     return threads ? c.json(threads, 201) : c.json({ error: "no review with that number" }, 404);
   });
 
+  // The user asks for every recommended finding still open to be fixed; they go to the session in one frame.
+  app.post("/reviews/:n/fix", only("page"), c => {
+    const sent = store.fixRecommended(number(c.req.param("n")));
+    return sent === null ? c.json({ error: "no review with that number" }, 404) : c.json({ sent });
+  });
+
   app.post("/reviews/:n/archive", only("page"), c => {
     const archived = store.archiveReview(number(c.req.param("n")));
     return archived ? c.json({ archived }) : c.json({ error: "no review with that number" }, 404);

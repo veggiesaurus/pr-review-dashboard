@@ -55,7 +55,7 @@ function write(key: string, value: string | null) {
 export const composerText = (anchor: Anchor) => read(TEXT_KEY + anchorKey(anchor)) ?? "";
 export const saveComposerText = (anchor: Anchor, text: string) => write(TEXT_KEY + anchorKey(anchor), text.trim() ? text : null);
 
-const KINDS: AnchorKind[] = ["line", "hunk", "file", "section", "tell", "annotation", "check", "claim", "stackIssue", "general"];
+const KINDS: AnchorKind[] = ["line", "hunk", "file", "section", "tell", "annotation", "check", "claim", "try", "stackIssue", "general"];
 
 // The composer that was open with something typed in it, reopened after a reload. The server checks the anchor
 // again when the note is added, so a plain look at its shape is enough here.

@@ -7,7 +7,7 @@ import { ReviewedTick } from "src/components/guide/ReviewedTick";
 import { formattingOnly } from "src/components/guide/visible";
 import { Button } from "src/components/ui/button";
 import { useLayer } from "src/queries/review.query";
-import { useCardDone } from "src/store/ticks.store";
+import { useCardDone, useChangedSinceTick } from "src/store/ticks.store";
 import { useViewStore } from "src/store/view.store";
 import { cardDataAttribute, cardElementId } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
@@ -52,6 +52,7 @@ export function FileCard({
   const show = useViewStore(state => state.show);
   const file = layer ? indexLayer(layer).files.get(fileId) : undefined;
   const ticked = useCardDone(layerId, fileId, hunkIds);
+  const changed = useChangedSinceTick(layerId, fileId, hunkIds);
   const kind = section === undefined ? undefined : layer?.sections[section]?.kind;
   // Lock, generated and formatting-only cards don't fold when ticked on load, as in the template.
   const quiet = Boolean(file?.noise) || kind === "formatting";
@@ -124,7 +125,7 @@ export function FileCard({
   } else if (hunks.length === 0) {
     body = <Note>{FORMATTING_HIDDEN}</Note>;
   } else {
-    body = <DiffTable layer={layer} file={file} hunks={hunks} section={section} />;
+    body = <DiffTable layer={layer} file={file} hunks={hunks} section={section} changed={changed} />;
   }
 
   return (
@@ -173,6 +174,14 @@ export function FileCard({
             className="border-primary text-primary"
           >
             new
+          </Tag>
+        )}
+        {changed.size > 0 && (
+          <Tag
+            title="You ticked this before the code changed. The changed hunks are marked and the rest dimmed."
+            className="border-warning text-foreground"
+          >
+            changed since you ticked
           </Tag>
         )}
         <span className="whitespace-nowrap font-mono text-xs">

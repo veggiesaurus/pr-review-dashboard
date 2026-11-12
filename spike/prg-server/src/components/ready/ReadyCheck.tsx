@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import type { Anchor } from "shared/messages";
 import type { Annotation, Tell } from "shared/payload";
+import { prKey, TICK_PREFIX } from "shared/ticks";
 
 import { AskClaude } from "src/components/chat/AskClaude";
 import { ReviewBlock, ReviewButton } from "src/components/chat/Review";
 import { Prose } from "src/components/links/Prose";
 import { BLOCK, BLOCK_LIST, BLOCK_TITLE, Block, Summary } from "src/components/ui/disclosure";
 import { useLayer } from "src/queries/review.query";
+import { useSetTicks, useTicks } from "src/queries/ticks.query";
 import { useViewStore } from "src/store/view.store";
 import { formatHash } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
@@ -52,9 +54,13 @@ function More({ count }: { count: number }) {
 export function ReadyCheck({ layer }: { layer: number }) {
   const shown = useLayer(layer);
   const goTo = useViewStore(state => state.goTo);
+  const ticked = useTicks();
+  const setTicks = useSetTicks();
   if (!shown) {
     return null;
   }
+  // By the step's own words, so it stays ticked across rebuilds for as long as the guide says the same thing.
+  const tryKey = (step: string) => `${TICK_PREFIX}${prKey(shown.meta)}:try:${step.slice(0, 300)}`;
   const { tells, annotations, descriptionCheck: desc, sections, split } = shown;
   const { files, hunks: hunkIndex, owner } = indexLayer(shown);
   const path = (id: string) => files.get(id)?.path ?? id;
@@ -218,10 +224,21 @@ export function ReadyCheck({ layer }: { layer: number }) {
   }
   if (shown.try.length) {
     blocks.push(
-      <Block key="try" title="Try by hand">
-        {shown.try.map(step => (
-          <li key={step}>
-            <Prose text={step} layer={layer} />
+      <Block key="try" title={`Try by hand (${shown.try.filter(step => ticked(tryKey(step))).length} of ${shown.try.length})`}>
+        {shown.try.map((step, index) => (
+          <li key={step} className="-ml-5 flex list-none items-start gap-2">
+            <input
+              type="checkbox"
+              data-tick="try"
+              checked={ticked(tryKey(step))}
+              onChange={event => setTicks([tryKey(step)], event.target.checked)}
+              aria-label={`Tried step ${index + 1}`}
+              className="motion-tick mt-1 accent-primary"
+            />
+            <span className={cn(ticked(tryKey(step)) && "text-muted-foreground")}>
+              <Prose text={step} layer={layer} />
+              <AskClaude anchor={{ kind: "try", layer, index }} className="ml-1 align-middle" />
+            </span>
           </li>
         ))}
       </Block>,
