@@ -6,6 +6,8 @@ Built with Bun, Hono, zod, React, Vite, Tailwind 4, TanStack Query, ky, zustand 
 
 ## Running it
 
+The skill does this for you. By hand:
+
 ```
 bun install
 bun run build
@@ -78,7 +80,6 @@ bun tests/shot.mjs STATE OUT_DIR [light|dark] [WIDTH] [HASH]
 
 ## Not done, or not tried
 
-- The skill doesn't use it yet, so the session has to start the server, read the state file and arm Monitor by hand.
 - Posting to GitHub has only run against a stand-in for `gh`, never against GitHub, so GitHub's own answers to it (a review with no summary, a line it refuses) are untested.
 - Only Chromium has been tried. Not WebKit or Firefox, not a touch device, and not the desktop app's browser pane.
 - Not tried with a real Monitor on the socket, with the session idle when a message arrives, or across Monitor's 30-minute expiry.

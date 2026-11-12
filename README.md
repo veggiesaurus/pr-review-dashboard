@@ -1,10 +1,10 @@
 # pr-review-dashboard
 
-A Claude Code skill that turns a pull request into a page for reviewing your own work before anyone else does. The diff is split into logical sections, each with why it exists and how it works, formatting and generated files are kept out of the way, and the notes you leave on lines come back to your Claude session to act on.
+A Claude Code plugin that turns a pull request into a dashboard for reviewing your own work before anyone else does. The diff is split into logical sections, each with why it exists and how it works, and formatting and generated files are kept out of the way. The dashboard runs on your machine beside your Claude session: notes and questions you leave on lines reach the session as you send them, its answers show in the thread, and the PR's checks and Linear issues stay live.
 
-It's much like Linear's [Guide](https://linear.app/docs/diffs#guides) tab, but the page is built locally from the diff, so it works the same whether your team tracks work in Linear, Jira or GitHub issues. It also opens with what to settle before marking the PR ready: size, CI, missing tests, lines that look like an agent's leftovers, the description and linked issue checked claim by claim against the diff, a few things to try by hand, and whether the PR should be split. Stacks of PRs get one page for every layer.
+It's much like Linear's [Guide](https://linear.app/docs/diffs#guides) tab, but it's built locally from the diff, so it works the same whether your team tracks work in Linear, Jira or GitHub issues. It also opens with what to settle before marking the PR ready: size, CI, missing tests, lines that look like an agent's leftovers, the description and linked issue checked claim by claim against the diff, a few things to try by hand, and whether the PR should be split. Stacks of PRs get one page for every layer.
 
-Once Claude has worked through your notes, rebuild it and the page shows what's new since the last build, keeping your ticks on the files that didn't change. Code that only moved shows as a move, CI's lint and type errors sit under their lines, and you can read the diff side by side or one commit at a time.
+Once Claude has worked through your notes, rebuild it and the dashboard shows what's new since the last build, keeping your threads and your ticks on the files that didn't change. Code that only moved shows as a move, CI's lint and type errors sit under their lines, and you can read the diff side by side or one commit at a time.
 
 ## Install
 
@@ -14,11 +14,13 @@ Once Claude has worked through your notes, rebuild it and the page shows what's 
 
 On a Claude Code older than 2.1.275, add the marketplace first with `/plugin marketplace add veggiesaurus/pr-review-dashboard`, then `/plugin install pr-review-dashboard@pr-review-dashboard`. To use it without the plugin system, copy `skills/pr-review-dashboard` into `~/.claude/skills/`; the dashboard needs the whole plugin.
 
-Then ask Claude for a review guide of a PR ("build a review guide for #123") or of the current branch.
+Then ask Claude for a review of a PR ("build a review dashboard for #123") or of the current branch. The first run installs the dashboard's packages and builds it.
 
-## Dashboard
+## The dashboard
 
-With [Bun](https://bun.sh) installed, the page is served by a small local server in `dashboard/` instead of being published. Notes and chat reach your Claude session as you send them and its answers show in the thread, review findings can be fixed or dismissed from the page, and the PR's checks and Linear issues stay live. Threads and reviewed ticks are kept between builds. `dashboard/README.md` has the details. Without Bun, the skill publishes the page as a static artifact.
+A small local server in `dashboard/` serves the page and passes messages between it and the session that started it. Besides notes and chat, you can ask Claude for a code review from the page, then fix or dismiss each finding there; findings are checked again after a rebuild. Where your checkout differs from what was pushed, you can preview your local code in place and revert a change. Threads and reviewed ticks are kept in a SQLite file between builds and across restarts. `dashboard/README.md` has the details.
+
+Without [Bun](https://bun.sh), the skill falls back to a static page published as an artifact, where notes go back as one comment.
 
 ## Stacks
 
@@ -28,8 +30,8 @@ Ask for a guide of any PR in a stack and you get one page for every layer. It sa
 
 - A local clone of the repo and `git`.
 - [`gh`](https://cli.github.com) logged in, to build a guide for a PR by number, show its CI and the annotations it left on lines, and fetch its linked GitHub issues, and for any stack of PRs (below). Without it, the guide works for any branch on any host, compared against `--base` or the remote's default branch.
-- The Artifact tool in Claude Code to publish the page, and its `comments` capability to send notes back to the session. Without it, Claude opens the page from disk instead: notes work the same, and Copy notes takes them back to the session.
 - Python 3.9 or later, standard library only.
-- [Bun](https://bun.sh) 1.4 or later for the dashboard. It is optional.
+- [Bun](https://bun.sh) 1.4 or later, for the dashboard. `LINEAR_API_KEY` in the environment, read-only is enough, if you want Linear issues shown.
+- Without Bun: the Artifact tool and its `comments` capability, to publish the static page and send notes back. Without that either, Claude opens the page from disk and Copy notes takes them back.
 
-`SKILL.md` has the details: which models do what, what counts as formatting noise, what gets flagged and how notes come back.
+`skills/pr-review-dashboard/SKILL.md` has the details: which models do what, what counts as formatting noise and what gets flagged. `dashboard/SESSION.md` is what the session does with the dashboard.
