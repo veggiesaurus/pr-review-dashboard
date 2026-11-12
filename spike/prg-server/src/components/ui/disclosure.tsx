@@ -22,9 +22,9 @@ export const BLOCK_LIST = "mt-1.5 mb-0.5 grid list-disc gap-1.5 pl-5 text-[13.5p
 
 // A titled card that folds, holding a list of findings. Each item reads the same way: a bold label and a colon,
 // the text, anything secondary muted, then its Ask Claude button.
-export function Block({ title, note, children }: { title: string; note?: ReactNode; children: ReactNode }) {
+export function Block({ title, note, open = true, children }: { title: string; note?: ReactNode; open?: boolean; children: ReactNode }) {
   return (
-    <details open className={BLOCK}>
+    <details open={open} className={BLOCK}>
       <Summary className={BLOCK_TITLE}>{title}</Summary>
       {note}
       <ul className={BLOCK_LIST}>{children}</ul>

@@ -47,11 +47,17 @@ function ShowMenu({ layer }: { layer: number }) {
       return [];
     }
     const details = new Map(data?.commits.map(commit => [commit.sha, commit]));
-    return shown.meta.commits.map((message, index) => {
+    // Only commits that own a hunk: a merge from the base branch usually owns none.
+    const owning = new Set(shown.files.flatMap(file => file.hunks.flatMap(hunk => hunk.commits ?? [])));
+    return shown.meta.commits.flatMap((message, index) => {
+      if (!owning.has(index)) {
+        return [];
+      }
       const [first = "", ...rest] = message.split("\n");
       const sha = shown.meta.shas[index] ?? "";
       const files = shownFiles(shown, { kind: "commit", index }, formatting);
-      return {
+      const commit = {
+        index,
         value: `c${index}`,
         sha: sha.slice(0, 7) || first.split(" ")[0] || "",
         subject: first.replace(/^[0-9a-f]{7,} /, ""),
@@ -60,13 +66,14 @@ function ShowMenu({ layer }: { layer: number }) {
         hunks: files.reduce((n, file) => n + file.hit.length, 0),
         files: files.length,
       };
+      return [commit];
     });
   }, [shown, mapped, data, formatting]);
   if (!meta || !(meta.lastPass || mapped)) {
     return null;
   }
   const last = meta.lastPass;
-  const picked = show.kind === "commit" ? commits[show.index] : null;
+  const picked = show.kind === "commit" ? commits.find(commit => commit.index === show.index) : null;
   return (
     <Select value={showValue(show)} onValueChange={value => setShow(parseShow(value))}>
       <SelectTrigger aria-label="Which part of the change to show" className="max-w-[22rem]">

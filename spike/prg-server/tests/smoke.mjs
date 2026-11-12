@@ -118,9 +118,16 @@ try {
   await open(work.link);
   // The ready check's lists are on Overview and its chips in the header on every tab, where the template has both under the header.
   const ready = await page.getByRole("region", { name: "Before you mark it ready" }).textContent();
-  for (const want of ["Try by hand", "In the diff:", "Not in the diff:", "CI annotations", "1 on lines this PR doesn't change"]) {
+  for (const want of [
+    "Try by hand",
+    "What the diff carries out (1)",
+    "Not in the diff:",
+    "CI annotations",
+    "1 on lines this PR doesn't change",
+  ]) {
     await check(`ready check has "${want}"`, async () => ready.includes(want));
   }
+  await check("the description and issue sections list only where they and the diff disagree", async () => !ready.includes("In the diff:"));
   await check(
     'the header chips have "new since"',
     () => page.locator("header").first().textContent(),
@@ -176,7 +183,7 @@ try {
   const options = await page.getByRole("option").allInnerTexts();
   await page.keyboard.press("Escape");
   await check(
-    "the filter lists the last pass and four commits",
+    "the filter lists the last pass and the four commits that own hunks",
     async () => options,
     list => list.length === 6 && list[1].startsWith("New since"),
   );

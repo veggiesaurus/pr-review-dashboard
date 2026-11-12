@@ -81,17 +81,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
 
   const placed = annotations.flatMap((note, index) => (note.row && note.file ? [{ ...note, index }] : []));
   const elsewhere = annotations.flatMap((note, index) => (note.row ? [] : [{ ...note, index }]));
-  const checklist = (desc?.checklist ?? []).map((row, index) => ({ ...row, index }));
-  const done = (from: "description" | "issue") =>
-    checklist
-      .filter(row => row.from === from)
-      .map(row => (
-        <li key={`c${row.index}`}>
-          <b className="font-semibold">In the diff:</b> <q className="italic">{row.claim}</q> {hunkLinks(row.hunks)}
-          <StackNote note={row.stack} />
-          <AskClaude anchor={claim("checklist", row.index)} className="ml-1 align-middle" />
-        </li>
-      ));
+  const carried = desc?.checklist ?? [];
   const unsupported = desc?.unsupported ?? [];
   const missing = desc?.missing ?? [];
   const issueAsks = desc?.issue ?? [];
@@ -177,8 +167,8 @@ export function ReadyCheck({ layer }: { layer: number }) {
       </details>,
     );
   }
-  // Claim by claim: what the description and the linked issue say, against the hunks that do it or why they don't.
-  if (desc && (done("description").length || unsupported.length || missing.length)) {
+  // Only where the description or the linked issue and the diff disagree; what the diff does carry out comes last, folded.
+  if (unsupported.length || missing.length) {
     blocks.push(
       <Block key="description" title="Description vs diff">
         {unsupported.map((row, index) => (
@@ -197,11 +187,10 @@ export function ReadyCheck({ layer }: { layer: number }) {
             <AskClaude anchor={claim("missing", index)} className="ml-1 align-middle" />
           </li>
         ))}
-        {done("description")}
       </Block>,
     );
   }
-  if (desc && (done("issue").length || issueAsks.length)) {
+  if (issueAsks.length) {
     blocks.push(
       <Block key="issue" title="Linked issue vs diff">
         {issueAsks.map((row, index) => (
@@ -212,7 +201,6 @@ export function ReadyCheck({ layer }: { layer: number }) {
             <AskClaude anchor={claim("issue", index)} className="ml-1 align-middle" />
           </li>
         ))}
-        {done("issue")}
       </Block>,
     );
   }
@@ -256,6 +244,21 @@ export function ReadyCheck({ layer }: { layer: number }) {
                 {sectionLink(n)}
               </span>
             ))}
+          </li>
+        ))}
+      </Block>,
+    );
+  }
+  if (carried.length) {
+    blocks.push(
+      <Block key="carried" title={`What the diff carries out (${carried.length})`} open={false}>
+        {carried.map((row, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: findings have no id and keep their order
+          <li key={index}>
+            {row.from === "issue" && <b className="font-semibold">Issue: </b>}
+            <q className="italic">{row.claim}</q> {hunkLinks(row.hunks)}
+            <StackNote note={row.stack} />
+            <AskClaude anchor={claim("checklist", index)} className="ml-1 align-middle" />
           </li>
         ))}
       </Block>,
