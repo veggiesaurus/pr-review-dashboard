@@ -34,4 +34,4 @@ Ask for a guide of any PR in a stack and you get one page for every layer. It sa
 - [Bun](https://bun.sh) 1.4 or later, for the dashboard. `LINEAR_API_KEY` in the environment, read-only is enough, if you want Linear issues shown.
 - Without Bun: the Artifact tool and its `comments` capability, to publish the static page and send notes back. Without that either, Claude opens the page from disk and Copy notes takes them back.
 
-`skills/pr-review-dashboard/SKILL.md` has the details: which models do what, what counts as formatting noise and what gets flagged. `dashboard/SESSION.md` is what the session does with the dashboard.
+`skills/pr-review-dashboard/SKILL.md` has how it runs and how notes come back; `reference/page.md`, `reference/collect.md` and `reference/design-notes.md` beside it have what the page shows, what counts as noise, what gets flagged, and why the models and steps are what they are. `dashboard/SESSION.md` is what the session does with the dashboard.
