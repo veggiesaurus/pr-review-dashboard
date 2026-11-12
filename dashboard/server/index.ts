@@ -42,7 +42,7 @@ if (host !== undefined && !/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
 const statePath = resolve(values.state);
 const portPath = statePath.replace(/(\.json)?$/, ".port");
 const dataDir = resolve(values.data);
-const scriptsDir = resolve(values.scripts ?? resolve(import.meta.dirname, "../../../skills/pr-review-guide/scripts"));
+const scriptsDir = resolve(values.scripts ?? resolve(import.meta.dirname, "../../skills/pr-review-dashboard/scripts"));
 const staticDir = resolve(values.static ?? resolve(import.meta.dirname, "../build"));
 const idleMs = Number(values["idle-minutes"]) * 60_000;
 const load = () => loadReview(dataDir, scriptsDir);
@@ -51,7 +51,7 @@ let review: Review;
 try {
   review = new Review(await load(), load);
 } catch (error) {
-  console.error(`prg-server can't load ${dataDir}: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`pr-review-dashboard can't load ${dataDir}: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 if (review.response.renderError) {
@@ -82,7 +82,7 @@ const linkCode = secret();
 let lastActivity = Date.now();
 
 function shutdown(reason: string) {
-  console.log(`prg-server stopping: ${reason}`);
+  console.log(`pr-review-dashboard stopping: ${reason}`);
   rmSync(statePath, { force: true });
   process.exit(0);
 }
@@ -150,7 +150,7 @@ writeFileSync(
 );
 chmodSync(statePath, 0o600);
 // The secrets stay out of stdout, which ends up in the session's transcript.
-console.log(`prg-server listening on ${origin}${host ? ` and http://${host}:${server.port}` : ""}, state in ${statePath}`);
+console.log(`pr-review-dashboard listening on ${origin}${host ? ` and http://${host}:${server.port}` : ""}, state in ${statePath}`);
 
 setInterval(() => {
   if (!store.connected && Date.now() - lastActivity > idleMs) {

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "prg-server",
+      "name": "pr-review-dashboard",
       "dependencies": {
         "@hono/zod-validator": "^0.9.1",
         "@shadcn/react": "0.3.1",

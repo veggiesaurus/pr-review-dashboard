@@ -101,7 +101,7 @@ export function scopeOf(review: ReviewResponse) {
 export function copyText(review: ReviewResponse, notes: Message[]) {
   const many = notes.length !== 1;
   const intro =
-    `pr-review-guide: please work through ${many ? `these ${notes.length} review notes` : "this review note"} on ${scopeOf(review)}. ` +
+    `pr-review-dashboard: please work through ${many ? `these ${notes.length} review notes` : "this review note"} on ${scopeOf(review)}. ` +
     `${many ? "Each starts" : "It starts"} with its location. Fix what they ask in the working tree, leave it unstaged, and report back with one line per note.`;
   const where = (note: Message) =>
     `${note.anchor.loc ?? note.anchor.label ?? "The review as a whole"}${note.intent ? ` (${note.intent})` : ""}`;

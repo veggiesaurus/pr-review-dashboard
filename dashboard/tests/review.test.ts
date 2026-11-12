@@ -7,7 +7,7 @@ import type { Push } from "../shared/messages";
 import type { ReviewResponse } from "../shared/payload";
 import { loaded, rawReview, setup } from "./helpers";
 
-const SCRIPTS = resolve(import.meta.dirname, "../../../skills/pr-review-guide/scripts");
+const SCRIPTS = resolve(import.meta.dirname, "../../skills/pr-review-dashboard/scripts");
 
 describe("the review", () => {
   test("the session reloads the review from disk, the page hears of it, and the whole file stays on the server", async () => {

@@ -1,14 +1,14 @@
 {
-  "name": "pr-review-guide",
-  "description": "The pr-review-guide skill for Claude Code",
+  "name": "pr-review-dashboard",
+  "description": "The pr-review-dashboard skill for Claude Code",
   "owner": {
     "name": "Angus Comrie"
   },
   "plugins": [
     {
-      "name": "pr-review-guide",
+      "name": "pr-review-dashboard",
       "source": "./",
-      "description": "Builds a section-by-section self-review page for a pull request or a stack of them, and acts on the notes you leave on it",
+      "description": "Builds a section-by-section self-review dashboard for a pull request or a stack of them, and acts on the notes you leave on it",
       "version": "0.1.0"
     }
   ]

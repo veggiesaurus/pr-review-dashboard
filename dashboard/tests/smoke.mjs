@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 
 const here = resolve(import.meta.dirname, "..");
-const root = resolve(here, "../..");
+const root = resolve(here, "..");
 const built = resolve(process.argv[2] ?? join(here, "build"));
 const tmp = mkdtempSync(join(tmpdir(), "prg-smoke-"));
 const fx = join(tmp, "fx");

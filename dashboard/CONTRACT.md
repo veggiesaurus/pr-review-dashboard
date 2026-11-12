@@ -5,7 +5,7 @@ What the server, the payload and the page agree on: the routes, the messages, th
 ## Building and running
 
 ```
-cd spike/prg-server
+cd dashboard
 bun install
 bunx vite build --outDir OUT --emptyOutDir
 bun run server/index.ts --state STATE.json --data DIR --repo CLONE --static OUT [--github-comments] [--idle-minutes N] [--scripts DIR]

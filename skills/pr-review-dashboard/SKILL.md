@@ -1,9 +1,9 @@
 ---
-name: pr-review-guide
-description: Use when the user wants to self-review a PR or branch section by section rather than file by file, asks for a review guide, guided review, "Linear-style guide", or a page that splits a diff into logical sections with explanations, line-count breakdown and notes on lines, including one page for a whole stack of PRs. Also use when the user says to work through, address or act on the notes or comments they left on a review guide page, or when a review guide page sends its notes to Claude.
+name: pr-review-dashboard
+description: Use when the user wants to self-review a PR or branch section by section rather than file by file, asks for a review guide, review dashboard, guided review, "Linear-style guide", or a page that splits a diff into logical sections with explanations, line-count breakdown and notes on lines, including one page for a whole stack of PRs. Also use when the user says to work through, address or act on the notes or comments they left on a review guide page, or when a review guide page sends its notes to Claude.
 ---
 
-# PR review guide
+# PR review dashboard
 
 A page that does what Linear's Guide tab does for a PR, built locally: the diff split into logical sections, each with why it exists and how it works, formatting-only changes and lock or generated files kept out of the way, a line-count breakdown, and notes on lines that come back to this session in one comment. It is for reviewing your own work before someone else does, and it opens with what to settle before marking the PR ready: size, CI and the lines it flagged, missing tests, lines that look like an agent's leftovers, the description and linked issue checked claim by claim against the diff, which sections need a careful read, a few things to try by hand, and whether the PR should be several. Rebuilt after a round of fixes, it shows what changed since the last build and keeps the reviewed ticks on everything else.
 
@@ -16,11 +16,12 @@ The scripts do everything mechanical. The models only do the reading: Haiku dige
 - A local clone of the repo and `git`. No issue tracker access (Linear, Jira or GitHub issues), no checkout of the PR branch (the PR's commits are fetched by ref).
 - [`gh`](https://cli.github.com) logged in, for a PR by number, its CI and CI annotations, and its linked GitHub issues, and for a stack of PRs. Without it, a branch compared with `--base` or against the remote's default branch needs only `git`, so it works on any host.
 - `python3`, standard library only.
+- [`bun`](https://bun.sh), for the dashboard: the same page served live from this machine, where notes and chat reach this session as they are sent. Without it the page is rendered once and published, as steps 7 and 8 say.
 - The Artifact tool and its `comments` capability, to publish the page and have notes sent back. If you run more than one Claude account, publish from the one your team can see: an artifact belongs to the account that published it. Without the Artifact tool, open the rendered file in a browser instead: notes and Copy notes work there, Send to Claude doesn't, and the page can't be shared.
 
 ## Building a guide
 
-Work in a fresh directory under the scratchpad, `WORK` below. `SCRIPTS` is this skill's `scripts/`.
+Work in a fresh directory under the scratchpad, `WORK` below. `SCRIPTS` is this skill's `scripts/`. With `bun` installed, The dashboard below takes the place of steps 7 and 8.
 
 1. Collect. For a PR: `python3 SCRIPTS/collect.py --pr N --repo PATH --out WORK`. For a branch that has no PR yet, give `--head BRANCH` (default `HEAD`) and optionally `--base REF`; without one it takes the branch's PR base, then the remote's default branch (`origin/HEAD`), then `origin/main`. It prints the line breakdown, the reviewable lines and how that size reads (with the guide, up to 800 lines fits one sitting and over 2,000 is too many; the bands are `SIZE_BANDS` in `collect.py`), lines that only moved, what is new since the last build, CI status and the annotations its check runs left on lines, whether tests changed, and any flagged lines. It keeps the last few builds' heads and hunk signatures in the clone's git directory (`.git/pr-review-guide/`), which is how the next build knows what is new. It writes the PR description and commit messages to `WORK/description.md`, separate from the diff, and the GitHub issues the PR links to (closing references, `Fixes #12`, issue links) to `WORK/issue.md`, fetching only those under the repo's own owner, since the PR's author writes the links and your `gh` login may read more than they can. It reads links the way GitHub and Linear do: closing words (`Fixes`, `Closes`, `Resolves`, and Linear's `Completes` and `Implements`), linking words that don't close (`Part of`, `Refs`, `Related to`, `Contributes to`), `skip` or `ignore` to leave one out, and a key in the title or branch name, which closes it as Linear does. It also lists Jira or Linear keys as not fetched, each marked as closed by this PR or related: fetch each one's title and description with whichever tracker tool this session has (a Linear or Jira MCP server or CLI) and add it to `WORK/issue.md` as `## KEY: title`, a line saying "This PR closes it." or "Linked from this PR, which doesn't close it.", then the text. Skip any you can't reach; the description check then works from the PR description alone. At 0, the change is all formatting, lock and generated files: write `{"sections": []}` to `WORK/guide.json` and go straight to step 7. That doesn't hold if it also lists files with no line changes (binary files, renames, mode changes), since those still need a section, so then carry on as usual.
 
@@ -42,6 +43,17 @@ Work in a fresh directory under the scratchpad, `WORK` below. `SCRIPTS` is this 
    - There, from an earlier session: read the artifact with `action: "read"`, then publish the new file with `url` set to it. Without `url` the publish makes a second page, and the review threads stay behind on the first.
 
 Hand over the link with the section titles, the line breakdown, one line per dispute you settled and which way, and the ready check in a sentence or two: flagged lines, description mismatches, risky sections and any suggested split. Those are what the author fixes before marking the PR ready; fix none of them yourself unless asked.
+
+## The dashboard
+
+`DASHBOARD` is the plugin's `dashboard/` folder, two levels above this skill's folder. When it is there and `bun` is installed, serve the review from it instead of rendering and publishing. Threads, chat and reviewed ticks are then kept between builds, the user's notes and questions arrive here as they send them, and your answers show in their threads. Read `DASHBOARD/SESSION.md` before starting and follow it; in short:
+
+1. The first time, run `bun install` then `bun run build` in `DASHBOARD`.
+2. Start it in the background from `DASHBOARD`, after `mkdir -m 700 -p ~/.cache/prg`: `bun run server/index.ts --state ~/.cache/prg/<repo>-<n>.json --data WORK --repo PATH`. It runs `render.py` itself, so `WORK` needs only its `guide.json`. For a stack, give it `STACK` once the stack check is done, in place of that section's steps 4 and 5.
+3. Give the user `link` from the state file, whole. Never print `token`.
+4. Arm Monitor on `bun scripts/listen.mjs` with the state file, and arm it again each time it expires. What arrives and how to answer it are in `SESSION.md`, not in Working through the notes below.
+
+Hand over as step 8 says.
 
 ## A stack of PRs
 

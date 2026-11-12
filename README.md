@@ -1,4 +1,4 @@
-# pr-review-guide
+# pr-review-dashboard
 
 A Claude Code skill that turns a pull request into a page for reviewing your own work before anyone else does. The diff is split into logical sections, each with why it exists and how it works, formatting and generated files are kept out of the way, and the notes you leave on lines come back to your Claude session to act on.
 
@@ -9,12 +9,16 @@ Once Claude has worked through your notes, rebuild it and the page shows what's 
 ## Install
 
 ```
-/plugin install pr-review-guide --marketplace veggiesaurus/pr-review-guide
+/plugin install pr-review-dashboard --marketplace veggiesaurus/pr-review-dashboard
 ```
 
-On a Claude Code older than 2.1.275, add the marketplace first with `/plugin marketplace add veggiesaurus/pr-review-guide`, then `/plugin install pr-review-guide@pr-review-guide`. To use it without the plugin system, copy `skills/pr-review-guide` into `~/.claude/skills/`.
+On a Claude Code older than 2.1.275, add the marketplace first with `/plugin marketplace add veggiesaurus/pr-review-dashboard`, then `/plugin install pr-review-dashboard@pr-review-dashboard`. To use it without the plugin system, copy `skills/pr-review-dashboard` into `~/.claude/skills/`; the dashboard needs the whole plugin.
 
 Then ask Claude for a review guide of a PR ("build a review guide for #123") or of the current branch.
+
+## Dashboard
+
+With [Bun](https://bun.sh) installed, the page is served by a small local server in `dashboard/` instead of being published. Notes and chat reach your Claude session as you send them and its answers show in the thread, review findings can be fixed or dismissed from the page, and the PR's checks and Linear issues stay live. Threads and reviewed ticks are kept between builds. `dashboard/README.md` has the details. Without Bun, the skill publishes the page as a static artifact.
 
 ## Stacks
 
@@ -26,5 +30,6 @@ Ask for a guide of any PR in a stack and you get one page for every layer. It sa
 - [`gh`](https://cli.github.com) logged in, to build a guide for a PR by number, show its CI and the annotations it left on lines, and fetch its linked GitHub issues, and for any stack of PRs (below). Without it, the guide works for any branch on any host, compared against `--base` or the remote's default branch.
 - The Artifact tool in Claude Code to publish the page, and its `comments` capability to send notes back to the session. Without it, Claude opens the page from disk instead: notes work the same, and Copy notes takes them back to the session.
 - Python 3.9 or later, standard library only.
+- [Bun](https://bun.sh) 1.4 or later for the dashboard. It is optional.
 
 `SKILL.md` has the details: which models do what, what counts as formatting noise, what gets flagged and how notes come back.

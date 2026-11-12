@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS = os.path.join(HERE, "..", "skills", "pr-review-guide", "scripts")
+SCRIPTS = os.path.join(HERE, "..", "skills", "pr-review-dashboard", "scripts")
 
 UTIL = '''export function slugify(text: string): string {
   return text

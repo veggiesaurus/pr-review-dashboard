@@ -8,7 +8,7 @@ import { applyPalette, currentPalette, type Palette } from "src/utils/palette";
 
 const KEY = "prg:theme";
 
-// The icons and the system, light, dark cycle are the pr-review-guide page template's.
+// The icons and the system, light, dark cycle are the skill's page template's.
 const THEMES: { value: string; name: string; icon: ReactNode }[] = [
   {
     value: "",

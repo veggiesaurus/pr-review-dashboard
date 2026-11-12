@@ -1377,7 +1377,7 @@ tr.xref code { color: var(--foreground); }
     const scope = STACK ? `${STACK.repo} ${LAYERS.map(D => "#" + D.meta.number).join(", ")}, a stack`
       : D0.number ? `${D0.repo}#${D0.number} at ${D0.headSha.slice(0, 7)}` : `${D0.repo} ${D0.head} at ${D0.headSha.slice(0, 7)}`;
     const bytes = t => new TextEncoder().encode(t).length;
-    const request = (list, how) => `pr-review-guide: please work through ${list.length === 1 ? "this review note" : `these ${list.length} review notes`} on ${scope}. `
+    const request = (list, how) => `pr-review-dashboard: please work through ${list.length === 1 ? "this review note" : `these ${list.length} review notes`} on ${scope}. `
       + `${list.length === 1 ? "It starts" : "Each starts"} with its location. Fix what they ask in the working tree, leave it unstaged, ${how}`;
     const noteText = ([loc, text]) => `${loc}\n${text.trim()}`;
 
