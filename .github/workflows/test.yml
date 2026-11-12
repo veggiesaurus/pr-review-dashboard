@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Self-tests
-        run: for s in collect render stack; do python skills/pr-review-guide/scripts/$s.py --self-test; done
+        run: for s in collect render stack; do python skills/pr-review-dashboard/scripts/$s.py --self-test; done
 
   page:
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
           node-version: 22
       - name: Page script parses
         run: |
-          awk '/^<script>$/{f=1;next} /^<\/script>/{f=0} f' skills/pr-review-guide/reference/page-template.html > page.js
+          awk '/^<script>$/{f=1;next} /^<\/script>/{f=0} f' skills/pr-review-dashboard/reference/page-template.html > page.js
           node --check page.js
       - name: Fixture pages
         run: python3 tests/fixture.py "$RUNNER_TEMP/fx"
@@ -37,3 +37,25 @@ jobs:
           npm install --no-save --no-audit --no-fund playwright@1.64.1
           npx playwright install --with-deps chromium
           node smoke.mjs "$RUNNER_TEMP/fx/work/page.html" "$RUNNER_TEMP/fx/stack/page.html"
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Lint
+        run: bunx biome check .
+      - name: Types and build
+        run: bun run build
+      - name: Unit tests
+        run: bun test
+      - name: Browser walk
+        run: |
+          bunx playwright install --with-deps chromium
+          bun tests/smoke.mjs

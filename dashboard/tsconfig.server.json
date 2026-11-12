@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.server.tsbuildinfo",
+    "lib": ["es2023"],
+    "types": ["bun"]
+  },
+  "include": ["server", "shared", "tests", "src/**/*.test.ts", "src/utils/inline.ts", "vite.config.ts"]
+}

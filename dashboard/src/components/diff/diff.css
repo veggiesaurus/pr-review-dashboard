@@ -1,0 +1,80 @@
+:root {
+  --syn-keyword: oklch(0.5 0.15 330);
+  --syn-string: oklch(0.5 0.11 150);
+  --syn-number: oklch(0.54 0.13 55);
+  --syn-title: oklch(0.5 0.13 262);
+  --syn-type: oklch(0.51 0.09 205);
+  --syn-attr: oklch(0.53 0.13 35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --syn-keyword: oklch(0.78 0.12 330);
+    --syn-string: oklch(0.8 0.11 150);
+    --syn-number: oklch(0.8 0.11 65);
+    --syn-title: oklch(0.79 0.1 262);
+    --syn-type: oklch(0.8 0.08 205);
+    --syn-attr: oklch(0.79 0.1 40);
+  }
+}
+
+:root[data-theme="dark"] {
+  --syn-keyword: oklch(0.78 0.12 330);
+  --syn-string: oklch(0.8 0.11 150);
+  --syn-number: oklch(0.8 0.11 65);
+  --syn-title: oklch(0.79 0.1 262);
+  --syn-type: oklch(0.8 0.08 205);
+  --syn-attr: oklch(0.79 0.1 40);
+}
+
+.hljs-keyword,
+.hljs-built_in,
+.hljs-literal,
+.hljs-meta .hljs-keyword {
+  color: var(--syn-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-template-tag {
+  color: var(--syn-string);
+}
+.hljs-number {
+  color: var(--syn-number);
+}
+.hljs-comment {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-function .hljs-title {
+  color: var(--syn-title);
+}
+.hljs-type,
+.hljs-title.class_,
+.hljs-name,
+.hljs-template-variable {
+  color: var(--syn-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable.language_ {
+  color: var(--syn-attr);
+}
+
+::highlight(prg-ident) {
+  text-decoration: underline;
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+/* a jump to a line lands on its number cell, but the whole row should flash */
+.prg-diff td[data-flash] {
+  outline: none;
+}
+.prg-diff tr:has(> td[data-flash]) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
