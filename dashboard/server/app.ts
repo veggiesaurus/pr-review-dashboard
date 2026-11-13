@@ -6,6 +6,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { IMAGE_ID } from "../shared/messages";
 import type { Runner } from "./comments";
 import type { Env } from "./guards";
+import type { People } from "./people";
 import type { Review } from "./review";
 import { attachmentsRoutes } from "./routes/attachments";
 import { commentsRoutes } from "./routes/comments";
@@ -27,6 +28,9 @@ export type AppDeps = {
   token: string;
   linkCode: string;
   cookieSecret: string;
+  people: People;
+  // The code in the share link guests send as their key; null while not sharing, which shuts every guest out.
+  guestCode: () => string | null;
   port: () => number;
   // Started with --host: an address of this machine the page may also be reached on, such as its Wi-Fi address for a phone.
   host?: string;
@@ -96,9 +100,14 @@ export function createApp(deps: AppDeps) {
     const bearer = c.req.header("authorization")?.replace(/^Bearer /, "") ?? (path === "/api/session/ws" ? code : null);
     const key = c.req.header("x-prg-key") ?? (path === "/api/ws" ? url.searchParams.get("k") : null);
     const cookie = getCookie(c, cookieName);
+    const owner = opening || Boolean(cookie && safeEqual(cookie, deps.cookieSecret));
+    const guestCode = deps.guestCode();
+    const guestSession = getCookie(c, `prg_guest_${port}`);
+    const guest = guestCode !== null && guestSession ? deps.people.find(guestSession) : null;
     if (bearer && safeEqual(bearer, deps.token)) {
       c.set("who", "session");
-    } else if (opening || (cookie && safeEqual(cookie, deps.cookieSecret))) {
+      c.set("author", null);
+    } else if (owner || guest) {
       // Browsers send Origin on every write and every socket, so a cookie request without one isn't from the page.
       const needsOrigin = !["GET", "HEAD"].includes(c.req.method) || path === "/api/ws";
       if (needsOrigin && !origin) {
@@ -107,10 +116,16 @@ export function createApp(deps: AppDeps) {
       // A cookie goes to every port on this host, so another local server can end up holding it. The key lives in
       // the page's own storage, which is per port, and the API wants both.
       const open = c.req.method === "GET" && (!path.startsWith("/api/") || PICTURE.test(path));
-      if (!open && !(key && safeEqual(key, deps.linkCode))) {
+      const keyIs = (expected: string) => open || Boolean(key && safeEqual(key, expected));
+      if (owner && keyIs(deps.linkCode)) {
+        c.set("who", "owner");
+        c.set("author", deps.people.owner && { ...deps.people.owner, role: "owner" });
+      } else if (guest && guestCode !== null && keyIs(guestCode)) {
+        c.set("who", "guest");
+        c.set("author", { ...guest, role: "guest" });
+      } else {
         return c.text("unauthorised: open the link your Claude session gave you\n", 401);
       }
-      c.set("who", "page");
     } else {
       return c.text("unauthorised: open the link your Claude session gave you\n", 401);
     }

@@ -91,7 +91,7 @@ export function commentsRoutes(deps: AppDeps) {
     return typeof built === "string" ? { status: 409 as const, error: built } : { status: 200 as const, preview: built };
   };
 
-  app.post("/layers/:layer/comments/preview", only("page"), small, zValidator("json", previewSchema), async c => {
+  app.post("/layers/:layer/comments/preview", only("owner"), small, zValidator("json", previewSchema), async c => {
     if (!deps.githubComments) {
       return c.json({ error: OFF }, 403);
     }
@@ -99,7 +99,7 @@ export function commentsRoutes(deps: AppDeps) {
     return result.status === 200 ? c.json(result.preview) : c.json({ error: result.error }, result.status);
   });
 
-  app.post("/layers/:layer/comments/post", only("page"), small, zValidator("json", postSchema), async c => {
+  app.post("/layers/:layer/comments/post", only("owner"), small, zValidator("json", postSchema), async c => {
     if (!deps.githubComments) {
       return c.json({ error: OFF }, 403);
     }

@@ -201,6 +201,13 @@ export type Activity = { text: string; thread: string | null; at: string };
 export type Attention = { text: string; at: string };
 export type SessionInfo = { listening: boolean; activity: Activity | null; attention: Attention | null };
 
+// A GitHub user: the owner, read with gh at start, or a guest who signed in.
+export type Person = { id: number; login: string; name: string | null; avatar: string };
+export type Role = "owner" | "guest";
+export type Author = Person & { role: Role };
+// sharing: whether the share link works right now.
+export type Me = { role: Role; person: Person | null; sharing: boolean };
+
 export type NewMessage = z.infer<typeof newMessageSchema>;
 export type Reply = z.infer<typeof replySchema>;
 

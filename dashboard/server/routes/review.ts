@@ -2,6 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 
+import type { Me } from "../../shared/messages";
 import type { ReviewResponse } from "../../shared/payload";
 import type { AppDeps } from "../app";
 import { run } from "../exec";
@@ -31,8 +32,19 @@ export function reviewRoutes(deps: AppDeps) {
     return c.json({ ok: true, layers: layers.length, files: layers.reduce((n, layer) => n + layer.files.length, 0), renderError });
   });
 
+  app.get("/me", only("owner", "guest"), c => {
+    const author = c.get("author");
+    const sharing = deps.guestCode() !== null;
+    if (!author) {
+      return c.json<Me>({ role: "owner", person: null, sharing });
+    }
+    const { role, ...person } = author;
+    return c.json<Me>({ role, person, sharing });
+  });
+
   // What the checkout of this layer's branch has that the reviewed head doesn't, for the page to draw in place.
-  app.get("/layers/:layer/local", async c => {
+  // Guests never see unpushed code; the session, on this machine already, keeps it.
+  app.get("/layers/:layer/local", only("owner", "session"), async c => {
     const layer = findLayer(review, c.req.param("layer"));
     return layer
       ? c.json(await localChanges(deps.runner ?? run, deps.repo, layer, review.response.layers))
@@ -40,7 +52,7 @@ export function reviewRoutes(deps: AppDeps) {
   });
 
   // The user takes one local edit back out of the checkout; the session hears, so it doesn't put the edit back.
-  app.post("/layers/:layer/local/revert", only("page"), zValidator("json", revertSchema), async c => {
+  app.post("/layers/:layer/local/revert", only("owner"), zValidator("json", revertSchema), async c => {
     const layer = findLayer(review, c.req.param("layer"));
     if (!layer) {
       return c.json({ error: "no such layer" }, 404);

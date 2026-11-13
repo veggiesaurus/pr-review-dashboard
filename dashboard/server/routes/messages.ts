@@ -30,7 +30,7 @@ export function messagesRoutes(deps: AppDeps) {
 
   app.get("/messages", c => c.json(store.messages));
 
-  app.post("/messages", only("page"), small, zValidator("json", newMessageSchema), c => {
+  app.post("/messages", only("owner", "guest"), small, zValidator("json", newMessageSchema), c => {
     const input = c.req.valid("json");
     if (input.images?.some(id => !hasAttachment(deps.attachments, id))) {
       return c.json({ error: "an attached screenshot isn't on the server; attach it again" }, 400);
@@ -39,25 +39,25 @@ export function messagesRoutes(deps: AppDeps) {
     return message ? c.json(message, 201) : c.json({ error: "that anchor or message isn't in this review" }, 400);
   });
 
-  app.post("/messages/send", only("page"), c => c.json({ sent: store.sendDrafts(), listening: store.listening }));
+  app.post("/messages/send", only("owner", "guest"), c => c.json({ sent: store.sendDrafts(), listening: store.listening }));
 
-  app.patch("/messages/:id", only("page"), small, zValidator("json", editSchema), c => {
+  app.patch("/messages/:id", only("owner", "guest"), small, zValidator("json", editSchema), c => {
     const draft = store.editDraft(c.req.param("id"), c.req.valid("json").text);
     return draft ? c.json(draft) : c.json({ error: "no such draft" }, 404);
   });
 
-  app.post("/messages/:id/archive", only("page"), small, zValidator("json", archiveSchema), c => {
+  app.post("/messages/:id/archive", only("owner"), small, zValidator("json", archiveSchema), c => {
     const { archived, reason } = c.req.valid("json");
     const thread = store.setArchived(c.req.param("id"), archived, reason);
     return thread ? c.json(thread) : c.json({ error: "no such thread" }, 404);
   });
 
-  app.post("/messages/:id/seen", only("page"), c => {
+  app.post("/messages/:id/seen", only("owner", "guest"), c => {
     const thread = store.markSeen(c.req.param("id"));
     return thread ? c.json(thread) : c.json({ error: "no such thread" }, 404);
   });
 
-  app.delete("/messages/:id", only("page"), c =>
+  app.delete("/messages/:id", only("owner", "guest"), c =>
     store.deleteDraft(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "no such draft" }, 404),
   );
 
@@ -96,7 +96,7 @@ export function messagesRoutes(deps: AppDeps) {
 
   app.get(
     "/ws",
-    only("page"),
+    only("owner", "guest"),
     upgradeWebSocket(() => {
       let remove = () => {};
       return {

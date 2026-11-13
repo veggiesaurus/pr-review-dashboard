@@ -1,15 +1,17 @@
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 
+import type { Author } from "../shared/messages";
 import type { Review } from "./review";
 
-export type Who = "page" | "session";
-export type Env = { Variables: { who: Who } };
+export type Who = "owner" | "guest" | "session";
+export type Env = { Variables: { who: Who; author: Author | null } };
 
-export const only = (who: Who) =>
+// The error names the first role allowed, so a guest refused an owner route reads "only the owner may do this".
+export const only = (...allowed: Who[]) =>
   createMiddleware<Env>(async (c, next) => {
-    if (c.get("who") !== who) {
-      return c.json({ error: `only the ${who} may call this` }, 403);
+    if (!allowed.includes(c.get("who"))) {
+      return c.json({ error: `only the ${allowed[0]} may do this` }, 403);
     }
     await next();
   });

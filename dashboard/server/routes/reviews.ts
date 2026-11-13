@@ -11,7 +11,7 @@ export function reviewsRoutes({ store }: AppDeps) {
   const app = new Hono<Env>();
 
   // The user asks Claude to review one PR; the request is a thread, and the session is told how to answer.
-  app.post("/reviews", only("page"), small, zValidator("json", reviewRequestSchema), c => {
+  app.post("/reviews", only("owner"), small, zValidator("json", reviewRequestSchema), c => {
     const { layer, effort } = c.req.valid("json");
     const request = store.requestReview(layer, effort);
     return request ? c.json(request, 201) : c.json({ error: "that pull request isn't in this review" }, 400);
@@ -25,12 +25,12 @@ export function reviewsRoutes({ store }: AppDeps) {
   });
 
   // The user asks for every recommended finding still open to be fixed; they go to the session in one frame.
-  app.post("/reviews/:n/fix", only("page"), c => {
+  app.post("/reviews/:n/fix", only("owner"), c => {
     const sent = store.fixRecommended(number(c.req.param("n")));
     return sent === null ? c.json({ error: "no review with that number" }, 404) : c.json({ sent });
   });
 
-  app.post("/reviews/:n/archive", only("page"), c => {
+  app.post("/reviews/:n/archive", only("owner"), c => {
     const archived = store.archiveReview(number(c.req.param("n")));
     return archived ? c.json({ archived }) : c.json({ error: "no review with that number" }, 404);
   });

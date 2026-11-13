@@ -75,7 +75,7 @@ export function githubRoutes(deps: AppDeps) {
 
   app.get("/github/notify", c => c.json(notify));
 
-  app.put("/github/notify", only("page"), small, zValidator("json", z.object({ on: z.boolean() })), c => {
+  app.put("/github/notify", only("owner"), small, zValidator("json", z.object({ on: z.boolean() })), c => {
     notify.on = c.req.valid("json").on;
     deps.store.notify("github");
     return c.json(notify);

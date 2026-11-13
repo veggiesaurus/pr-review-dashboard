@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { createApp } from "../server/app";
 import type { Runner } from "../server/comments";
 import { type Loaded, toLoaded } from "../server/load";
+import { People } from "../server/people";
 import { Review } from "../server/review";
 import { Store } from "../server/store";
+import type { Person } from "../shared/messages";
 
 export const PORT = 4321;
 export const HOST = `127.0.0.1:${PORT}`;
@@ -14,7 +16,10 @@ export const ORIGIN = `http://${HOST}`;
 export const TOKEN = "t".repeat(48);
 export const LINK = "l".repeat(48);
 export const COOKIE = "c".repeat(48);
+export const GUEST_CODE = "g".repeat(48);
 export const LINEAR_KEY = "lin_api_test";
+export const OWNER: Person = { id: 1, login: "olive", name: "Olive Owner", avatar: "https://avatars.githubusercontent.com/u/1" };
+export const GUEST: Person = { id: 2, login: "gus", name: null, avatar: "https://avatars.githubusercontent.com/u/2" };
 
 export const staticDir = mkdtempSync(join(tmpdir(), "prg-static-"));
 writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>page</title>");
@@ -58,11 +63,15 @@ export function setup(
     onActivity?: () => void;
     host?: string;
     repo?: string;
+    guestCode?: () => string | null;
   } = {},
 ) {
   const review = new Review(loaded(options.raw), options.load ?? (async () => loaded(options.raw)));
   const attachments = mkdtempSync(join(tmpdir(), "prg-attachments-"));
   const store = new Store(review, { attachments });
+  const people = new People();
+  people.owner = OWNER;
+  const guestSession = people.issue(GUEST);
   const app = createApp({
     store,
     review,
@@ -79,6 +88,8 @@ export function setup(
     githubComments: options.githubComments,
     onActivity: options.onActivity,
     host: options.host,
+    people,
+    guestCode: options.guestCode ?? (() => null),
   });
   const session = (path: string, init: RequestInit = {}) =>
     app.request(path, { ...init, headers: { host: HOST, authorization: `Bearer ${TOKEN}`, ...init.headers } });
@@ -87,12 +98,17 @@ export function setup(
       ...init,
       headers: { host: HOST, origin: ORIGIN, cookie: `prg_${PORT}=${COOKIE}`, "x-prg-key": LINK, ...init.headers },
     });
+  const guest = (path: string, init: RequestInit = {}) =>
+    app.request(path, {
+      ...init,
+      headers: { host: HOST, origin: ORIGIN, cookie: `prg_guest_${PORT}=${guestSession}`, "x-prg-key": GUEST_CODE, ...init.headers },
+    });
   const post = (body: unknown): RequestInit => ({
     method: "POST",
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
-  return { app, store, review, session, page, post, attachments };
+  return { app, store, review, session, page, guest, post, attachments, people };
 }
 
 export const addedLine = { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 };

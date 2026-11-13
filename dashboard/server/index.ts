@@ -4,11 +4,12 @@ import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { websocket } from "hono/bun";
-
+import type { Person } from "../shared/messages";
 import { createApp } from "./app";
 import { openDb } from "./db";
-import { run } from "./exec";
+import { parseJson, run } from "./exec";
 import { loadReview } from "./load";
+import { People } from "./people";
 import { Review } from "./review";
 import { Store } from "./store";
 
@@ -78,6 +79,11 @@ const store = new Store(review, {
   stack: await stackNumber(),
   repo: resolve(values.repo),
 });
+// The owner's GitHub user, so their messages carry their name and avatar; without gh they go unnamed.
+const people = new People();
+const me = await run(["gh", "api", "user", "--jq", "{id,login,name,avatar:.avatar_url}"], resolve(values.repo)).catch(() => null);
+people.owner = me?.code === 0 ? (parseJson(me.stdout) as Person | null) : null;
+
 const secret = () => randomBytes(24).toString("hex");
 const token = secret();
 const linkCode = secret();
@@ -95,6 +101,8 @@ const app = createApp({
   token,
   linkCode,
   cookieSecret: secret(),
+  people,
+  guestCode: () => null,
   attachments,
   port: () => server.port ?? 0,
   host,
