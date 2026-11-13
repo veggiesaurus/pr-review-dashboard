@@ -16,6 +16,17 @@ On a Claude Code older than 2.1.275, add the marketplace first with `/plugin mar
 
 Then ask Claude for a review of a PR ("build a review dashboard for #123") or of the current branch. The first run installs the dashboard's packages and builds it.
 
+## Update
+
+Refresh the marketplace, then the plugin, and restart Claude Code:
+
+```
+claude plugin marketplace update pr-review-dashboard
+claude plugin update pr-review-dashboard@pr-review-dashboard
+```
+
+Each version installs into its own folder, so the first review after an update installs the dashboard's packages and builds it again. A dashboard that's already running stays on the old version until it's started again.
+
 ## The dashboard
 
 A small local server in `dashboard/` serves the page and passes messages between it and the session that started it. Besides notes and chat, you can ask Claude for a code review from the page, then fix or dismiss each finding there; findings are checked again after a rebuild. Where your checkout differs from what was pushed, you can preview your local code in place and revert a change. Threads and reviewed ticks are kept in a SQLite file between builds and across restarts. `dashboard/README.md` has the details.
