@@ -323,6 +323,20 @@ try {
 
   const line = page.locator("td[data-ln][id$='-R5']").first();
   await line.hover();
+  await line.getByRole("button", { name: "Note on line 5" }).hover();
+  await page.mouse.down();
+  // posts.ts ends at line 5, so the drag runs up.
+  await page.locator(`[id='${(await line.getAttribute("id")).replace(/R5$/, "R3")}']`).hover();
+  await page.mouse.up();
+  await check(
+    "a drag from a line's + across two more lines opens a note on all three",
+    () =>
+      composerBox()
+        .getAttribute("aria-label", { timeout: 500 })
+        .catch(() => null),
+    label => label?.endsWith(":R3-R5"),
+  );
+  await line.hover();
   await line.getByRole("button", { name: "Note on line 5" }).click();
   await page.getByRole("textbox", { name: /^Note or question about/ }).fill("Why /blog and not /posts?");
   await page.getByRole("button", { name: "Add note", exact: true }).click();

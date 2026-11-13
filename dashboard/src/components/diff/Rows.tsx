@@ -93,6 +93,7 @@ export function Half({ row, old, anchor, tone, segments, marks, fresh, selected,
         {anchor && (
           <button
             type="button"
+            data-note=""
             onClick={() => openComposer(anchor)}
             title="Add a note or ask Claude about this line"
             aria-label={`Note on line ${number}`}

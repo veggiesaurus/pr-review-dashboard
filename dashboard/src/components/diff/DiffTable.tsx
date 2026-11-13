@@ -183,7 +183,7 @@ export function DiffTable({ layer, file, hunks, section, changed = NONE_CHANGED 
     return { threads: byLine, spans };
   }, [threads, mine]);
 
-  // A press on a line number starts a range; letting go anywhere opens the composer on it.
+  // A press on a line number or its + starts a range; letting go anywhere opens the composer on it.
   useEffect(() => {
     if (!drag) {
       return;
@@ -214,7 +214,7 @@ export function DiffTable({ layer, file, hunks, section, changed = NONE_CHANGED 
 
   const onMouseDown = (event: MouseEvent) => {
     const target = event.target as HTMLElement;
-    if (event.button !== 0 || target.closest("button, a, input, textarea")) {
+    if (event.button !== 0 || target.closest("button:not([data-note]), a, input, textarea")) {
       return;
     }
     const cell = target.closest<HTMLElement>("td[data-ln][data-line]");
