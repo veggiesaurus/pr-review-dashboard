@@ -64,7 +64,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
         onFiles={shots.take}
         sendKey="mod-enter"
         label={`Note or question about ${where}`}
-        placeholder="A note for the batch, or a question for Claude now. Drop or paste a screenshot to attach it."
+        placeholder="A note, or a question for Claude"
         className="[&_.ProseMirror]:min-h-16"
       />
       <Screenshots ids={shots.images} onRemove={shots.remove} />

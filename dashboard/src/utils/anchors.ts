@@ -95,12 +95,43 @@ export function findTarget(layer: number, target: Target, section?: number): HTM
 
 let flashTimer: ReturnType<typeof setTimeout> | undefined;
 
-// Marks the element a jump landed on for a moment. Any earlier mark goes first: React may since have reused that
-// element for another row.
-export function flash(element: HTMLElement, ms = 1600) {
+// What lights up when a jump lands on an element: rows, as Linear marks a section's lines, rather than a box. A file
+// card's hunks, a hunk's rows, a line's row; anything else, itself.
+function flashed(element: HTMLElement): HTMLElement[] {
+  if (element.matches("article[data-card]")) {
+    const hunks = [...element.querySelectorAll<HTMLElement>("tbody[data-hunk]")];
+    return hunks.length > 0 ? hunks : [element];
+  }
+  if (element.matches("tr[id]")) {
+    return [element.closest<HTMLElement>("tbody[data-hunk]") ?? element];
+  }
+  return [element.matches("td[data-ln]") && element.parentElement ? element.parentElement : element];
+}
+
+// Marks what a jump landed on, held at full strength until the returned release starts it fading, and gone once the
+// fade has run (ms matches --motion-linger). Any earlier mark goes first: React may since have reused that element.
+function mark(element: HTMLElement) {
   clearFlash();
-  element.dataset.flash = "";
-  flashTimer = setTimeout(() => delete element.dataset.flash, ms);
+  const marked = flashed(element);
+  for (const each of marked) {
+    each.dataset.flash = "hold";
+  }
+  return (ms = 2000) => {
+    for (const each of marked) {
+      if (each.dataset.flash !== undefined) {
+        each.dataset.flash = "";
+      }
+    }
+    flashTimer = setTimeout(() => {
+      for (const each of marked) {
+        delete each.dataset.flash;
+      }
+    }, ms);
+  };
+}
+
+export function flash(element: HTMLElement, ms?: number) {
+  mark(element)(ms);
 }
 
 export function clearFlash() {
@@ -118,7 +149,34 @@ export function reveal(element: HTMLElement) {
   settleLayout();
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   element.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
-  flash(element);
+  flashWhenStill(element);
+}
+
+// Lights the element up at once, but starts its fade only once the scroll to it has finished, so it isn't half spent
+// by the time it is in view. A smooth scroll can take a few frames to start, so no scroll within 100ms means there was
+// none to wait for; a browser without scrollend gets a timeout.
+function flashWhenStill(element: HTMLElement) {
+  const release = mark(element);
+  let moved = false;
+  let done = false;
+  const onScroll = () => {
+    moved = true;
+  };
+  const go = () => {
+    if (!done) {
+      done = true;
+      document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("scrollend", go, true);
+      clearTimeout(quiet);
+      clearTimeout(timer);
+      release();
+    }
+  };
+  // Capture hears scrolling in the window and in any panel, such as the drawer.
+  document.addEventListener("scroll", onScroll, true);
+  document.addEventListener("scrollend", go, true);
+  const quiet = setTimeout(() => !moved && go(), 100);
+  const timer = setTimeout(go, 2000);
 }
 
 // After a switch of layer or tab the element isn't drawn yet, so this looks for it each frame for a while.

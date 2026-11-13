@@ -206,7 +206,7 @@ The page's Rebuild button sends a chat that starts `Rebuild the guide`. Answer i
 2. Collect again into `DATA`, as the skill's step 1 did (`collect.py --pr N --out DATA`, or `stack.py --pr N --out DATA` for a stack).
 3. `python3 SCRIPTS/carry.py DATA.prev DATA`. It writes each layer's `guide.json` (and `description.json` and `stack-guide.json`) with the last build's sections moved to the new hunk ids, and prints per layer what no section holds yet and which sections' code changed.
 4. For each layer with anything listed, spawn a worker with the skill's `reference/update-prompt.md`, all in one message. A layer that carries over unchanged needs nothing; a layer new to the stack gets the skill's steps 2 to 6.
-5. Run the description check again for a layer whose `description.md` differs from the copy in `DATA.prev`, and on a stack where any layer changed, the stack check.
+5. Run the description check again for a layer whose `description.md` differs from the copy in `DATA.prev` in more than its commit hashes, which a rebase changes, and on a stack where any layer changed, the stack check.
 6. `python3 SCRIPTS/render.py DATA --check` until it passes, then `POST /api/reload` and answer the thread `done` with one line per layer: unchanged, or the sections added and changed.
 
 The second reader (the skill's step 4) isn't run for an update; say so if a layer changed a lot. From scratch means the skill's steps 2 to 6 for every layer, with no carry.

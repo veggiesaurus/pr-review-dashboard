@@ -120,7 +120,10 @@ export function MarkdownEditor({ value, onChange, onSend, onEscape, onFiles, sen
   return (
     <EditorContent
       editor={editor}
-      className={cn("min-w-0 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring/40", className)}
+      className={cn(
+        "min-w-0 rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring/40 focus-within:ring-inset",
+        className,
+      )}
     />
   );
 }

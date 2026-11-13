@@ -5,7 +5,7 @@
   --motion-quick: 150ms;
   --motion-base: 200ms;
   --motion-slow: 260ms;
-  --motion-linger: 1600ms;
+  --motion-linger: 2000ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -50,6 +50,11 @@
   inherits: false;
   initial-value: transparent;
 }
+@property --motion-bar {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
 
 @keyframes motion-in {
   from {
@@ -89,13 +94,15 @@
 
 @keyframes motion-flash {
   0%,
-  40% {
+  45% {
     outline-color: var(--ring);
     --motion-tint: color-mix(in oklch, var(--ring) 16%, transparent);
+    --motion-bar: var(--ring);
   }
   to {
     outline-color: transparent;
     --motion-tint: transparent;
+    --motion-bar: transparent;
   }
 }
 
@@ -314,9 +321,17 @@
     animation: motion-breathe 1.6s ease-in-out infinite;
   }
 
-  [data-flash] {
+  [data-flash],
+  :is(tbody[data-flash] > tr, tr[data-flash]) > td {
     background-image: linear-gradient(var(--motion-tint), var(--motion-tint));
-    animation: motion-flash var(--motion-linger) var(--motion-ease-exit) both;
+    /* Easing out, so the highlight fades slowly to nothing rather than dropping away at the end. */
+    animation: motion-flash var(--motion-linger) ease-out both;
+  }
+
+  /* Held at full strength while the page scrolls to it; the fade starts when the scroll settles. */
+  [data-flash="hold"],
+  :is(tbody[data-flash="hold"] > tr, tr[data-flash="hold"]) > td {
+    animation-play-state: paused;
   }
 
   /* The 150ms delay here and on .motion-loading keeps a fast answer from flashing them. */
@@ -385,9 +400,11 @@
     transition: none;
   }
   /* The jump highlight carries information, so it stays, unanimated, while data-flash is set. */
-  [data-flash] {
+  [data-flash],
+  :is(tbody[data-flash] > tr, tr[data-flash]) > td {
     animation: none;
     --motion-tint: color-mix(in oklch, var(--ring) 16%, transparent);
+    --motion-bar: var(--ring);
   }
   .motion-skeleton {
     background-image: none;

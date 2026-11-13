@@ -28,7 +28,7 @@ import { cn } from "src/utils/cn";
 import { arrived } from "src/utils/motion";
 
 // Each part of the drawer that scrolls: capped to the window, and never sideways.
-const DRAWER_SCROLL = "-mx-1 mt-1 max-h-[min(60vh,36rem)] overflow-y-auto overflow-x-hidden overscroll-contain p-1";
+const DRAWER_SCROLL = "-mx-1 mt-1 max-h-[min(60dvh,36rem)] overflow-y-auto overflow-x-hidden overscroll-contain p-1";
 
 function ThreadItem({ thread, active }: { thread: ClaudeThread; active: boolean }) {
   const openThread = useChatStore(state => state.openThread);

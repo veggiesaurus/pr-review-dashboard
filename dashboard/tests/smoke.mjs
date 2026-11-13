@@ -213,6 +213,13 @@ try {
   // The template is one page; here the sections are the Guide tab.
   await tab("Guide");
   await page.waitForSelector(SECTION);
+  // A jump lights up the rows it lands on, with a bar down their edge, rather than outlining the file's card.
+  await page.locator(`${SECTION} a[href^='#f']`).first().click();
+  await check(
+    "a link in a section lights up rows, not the card",
+    () => page.locator("[data-flash]").evaluateAll(marked => marked.map(element => element.tagName).join()),
+    tags => tags !== "" && tags.split(",").every(tag => tag === "TBODY" || tag === "TR"),
+  );
   await check(
     "two sections, with the formatting one hidden",
     () => count(SECTION),
@@ -363,7 +370,11 @@ try {
 
   // A review asked for from the page. The test plays the session: it hands back two findings and a recommendation.
   await tab("Overview");
-  await check("the review button waits, quietly, for the reader's own pass", () => page.getByText("Best after your own read").count());
+  await check(
+    "the review button stays an outline until the reader's own pass",
+    () => page.getByRole("button", { name: "Ask Claude for a review" }).getAttribute("class"),
+    classes => !classes.includes("bg-primary "),
+  );
   await page.getByRole("button", { name: "Review effort" }).click();
   const efforts = await page.getByRole("menuitem").allInnerTexts();
   await check(

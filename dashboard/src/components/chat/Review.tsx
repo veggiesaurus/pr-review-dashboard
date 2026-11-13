@@ -46,11 +46,6 @@ export function ReviewButton({ layer }: { layer: number }) {
   return (
     <span className="flex flex-wrap items-center justify-end gap-2">
       {ask.isError && <span className="text-danger text-sm">{errorText(ask.error, "That didn't send.")}</span>}
-      {!read && running === undefined && (
-        <span className="text-muted-foreground text-xs" title="A review read first narrows where you look.">
-          Best after your own read
-        </span>
-      )}
       <ButtonGroup>
         <Button
           size="sm"

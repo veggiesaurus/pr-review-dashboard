@@ -51,6 +51,6 @@ export function land(element: HTMLElement, marked = true) {
   settleLayout();
   window.scrollTo({ top: window.scrollY + top(element) - LANDING, behavior: "auto" });
   if (marked) {
-    flash(element, 1200);
+    flash(element);
   }
 }
