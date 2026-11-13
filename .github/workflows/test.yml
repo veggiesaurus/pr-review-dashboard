@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Self-tests
-        run: for s in collect render stack; do python skills/pr-review-dashboard/scripts/$s.py --self-test; done
+        run: for s in collect render stack carry; do python skills/pr-review-dashboard/scripts/$s.py --self-test; done
 
   page:
     runs-on: ubuntu-latest

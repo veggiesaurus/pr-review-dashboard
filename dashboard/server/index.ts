@@ -71,8 +71,10 @@ async function stackNumber() {
 }
 
 // Messages and ticks outlive a restart in one database beside the state file, shared by every review kept there.
+const attachments = resolve(dirname(statePath), "attachments");
 const store = new Store(review, {
   db: openDb(resolve(dirname(statePath), "prg.db")),
+  attachments,
   stack: await stackNumber(),
   repo: resolve(values.repo),
 });
@@ -93,6 +95,7 @@ const app = createApp({
   token,
   linkCode,
   cookieSecret: secret(),
+  attachments,
   port: () => server.port ?? 0,
   host,
   repo: resolve(values.repo),
@@ -143,7 +146,16 @@ const origin = `http://127.0.0.1:${server.port}`;
 const lanLink = host ? `http://${host}:${server.port}/?t=${linkCode}` : undefined;
 writeFileSync(
   statePath,
-  JSON.stringify({ port: server.port, token, origin, link: `${origin}/?t=${linkCode}`, lanLink, pid: process.pid }),
+  // session: the Claude Code session that started this, so its hooks can find it.
+  JSON.stringify({
+    port: server.port,
+    token,
+    origin,
+    link: `${origin}/?t=${linkCode}`,
+    lanLink,
+    pid: process.pid,
+    session: process.env.CLAUDE_CODE_SESSION_ID,
+  }),
   {
     mode: 0o600,
   },

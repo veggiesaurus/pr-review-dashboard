@@ -9,11 +9,25 @@ import type { Message, SessionInfo } from "../shared/messages";
 import { addedLine, loaded, rawReview, setup } from "./helpers";
 
 describe("notes and chat", () => {
+  test("a permission prompt in the terminal shows on the page while the session listens, until it acts again", async () => {
+    const { session, page, post } = setup();
+    const attention = async () => ((await (await page("/api/session")).json()) as SessionInfo).attention;
+    expect((await page("/api/attention", post({ text: "Claude needs your permission to use Bash" }))).status).toBe(403);
+    await session("/api/attention", post({ text: "Claude needs your permission to use Bash" }));
+    // Only a session that is still listening is waiting on anyone.
+    expect(await attention()).toBeNull();
+    void session("/api/session/wait");
+    await Bun.sleep(5);
+    expect(await attention()).toMatchObject({ text: "Claude needs your permission to use Bash" });
+    await session("/api/activity", post({ text: "Running the tests" }));
+    expect(await attention()).toBeNull();
+  });
+
   test("the session says what it's doing, for a thread or in general, until it answers, stops or goes quiet", async () => {
     const { session, page, post } = setup();
     await page("/api/messages", post({ kind: "chat", text: "why trim here?", anchor: addedLine }));
     const said = (await (await page("/api/session")).json()) as SessionInfo;
-    expect(said).toEqual({ listening: false, activity: null });
+    expect(said).toEqual({ listening: false, activity: null, attention: null });
     expect((await page("/api/activity", post({ text: "pretending to be Claude" }))).status).toBe(403);
 
     // The first poll takes the chat message; the second is the session listening while it works.
@@ -52,7 +66,7 @@ describe("notes and chat", () => {
 
     const waiting = session("/api/session/wait");
     await Bun.sleep(5);
-    expect(await (await page("/api/session")).json()).toEqual({ listening: true, activity: null });
+    expect(await (await page("/api/session")).json()).toEqual({ listening: true, activity: null, attention: null });
     expect(((await (await page("/api/messages")).json()) as Message[]).map(m => m.status)).toEqual(["draft", "draft"]);
 
     expect(await (await page("/api/messages/send", { method: "POST" })).json()).toEqual({ sent: 2, listening: false });

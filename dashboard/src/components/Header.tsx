@@ -49,7 +49,7 @@ function Crumbs({ layer }: { layer: Layer }) {
   // GitHub's, so a branch with no PR yet has nothing to show here.
   const opened = useGithub(layer.id, layer.capabilities.github).data?.pr?.openedAt;
   return (
-    <p className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 pr-20 text-[13px] text-muted-foreground max-sm:-order-2">
+    <p className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 pr-24 text-[13px] sm:pr-40 text-muted-foreground max-sm:-order-2">
       {https(meta.url) ? (
         <a href={meta.url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
           {ref}

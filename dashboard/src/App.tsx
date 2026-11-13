@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ChatDock } from "src/components/chat/ChatDock";
+import { RebuildButton } from "src/components/chat/RebuildButton";
 import { DiffTab } from "src/components/guide/DiffTab";
 import { Guide } from "src/components/guide/Guide";
 import { JumpTo } from "src/components/guide/JumpTo";
@@ -50,6 +51,7 @@ export function App() {
       {/* On the column's right edge, level with the header's first line. */}
       <div className={cn("pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-end", PAGE_COLUMN)}>
         <div className="pointer-events-auto flex items-center gap-1">
+          <RebuildButton />
           <KeysHelp />
           <ThemeButton />
         </div>

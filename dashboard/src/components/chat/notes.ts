@@ -1,6 +1,7 @@
 import type { Anchor, AnchorKind, Message, NoteState, ResolvedAnchor } from "shared/messages";
 import { noteOrder } from "shared/order";
 import type { ReviewResponse } from "shared/payload";
+import { typedText } from "shared/typed";
 
 import { plain } from "src/components/guide/visible";
 import type { Tone } from "src/components/ui/badge";
@@ -105,7 +106,7 @@ export function copyText(review: ReviewResponse, notes: Message[]) {
     `${many ? "Each starts" : "It starts"} with its location. Fix what they ask in the working tree, leave it unstaged, and report back with one line per note.`;
   const where = (note: Message) =>
     `${note.anchor.loc ?? note.anchor.label ?? "The review as a whole"}${note.intent ? ` (${note.intent})` : ""}`;
-  return [intro, ...notes.map(note => `${where(note)}\n${note.text.trim()}`)].join("\n\n");
+  return [intro, ...notes.map(note => `${where(note)}\n${typedText(note.text).trim()}`)].join("\n\n");
 }
 
 // Notes in page order, the same as the session gets them in a batch.

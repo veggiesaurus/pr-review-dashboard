@@ -34,7 +34,9 @@ export function reviewRoutes(deps: AppDeps) {
   // What the checkout of this layer's branch has that the reviewed head doesn't, for the page to draw in place.
   app.get("/layers/:layer/local", async c => {
     const layer = findLayer(review, c.req.param("layer"));
-    return layer ? c.json(await localChanges(deps.runner ?? run, deps.repo, layer)) : c.json({ error: "no such layer" }, 404);
+    return layer
+      ? c.json(await localChanges(deps.runner ?? run, deps.repo, layer, review.response.layers))
+      : c.json({ error: "no such layer" }, 404);
   });
 
   // The user takes one local edit back out of the checkout; the session hears, so it doesn't put the edit back.
@@ -44,7 +46,7 @@ export function reviewRoutes(deps: AppDeps) {
       return c.json({ error: "no such layer" }, 404);
     }
     const { file, edit } = c.req.valid("json");
-    const result = await revertEdit(deps.runner ?? run, deps.repo, layer, file, edit);
+    const result = await revertEdit(deps.runner ?? run, deps.repo, layer, file, edit, review.response.layers);
     if (!result.ok) {
       return c.json({ error: result.error }, result.status);
     }

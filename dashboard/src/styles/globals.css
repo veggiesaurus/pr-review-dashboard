@@ -61,11 +61,16 @@
     outline-offset: 2px;
   }
 
-  /* set for a moment on whatever a link jumps to */
-  [data-flash] {
+  /* set for a moment on whatever a link jumps to: a box outlined, rows tinted with a bar down their left edge */
+  [data-flash]:not(tbody, tr) {
     outline: 2px solid var(--ring);
     outline-offset: -2px;
   }
+}
+
+/* Outside the layers, so it wins over a line number's own edge (new, threaded), which it stands in for while it shows. */
+:is(tbody[data-flash] > tr, tr[data-flash]) > td:first-child {
+  box-shadow: inset 3px 0 0 var(--motion-bar);
 }
 
 /* Takes the hue of --tint and keeps its lightness inside the theme's range. */

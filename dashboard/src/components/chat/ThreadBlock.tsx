@@ -6,12 +6,13 @@ import { DISMISS_REASONS, DISMISS_TEXT, fixable, standing } from "shared/reviews
 
 import { draftText, replyKey, saveDraftText } from "src/components/chat/chat.store";
 import { IntentBadge } from "src/components/chat/Intent";
+import { MarkdownEditor } from "src/components/chat/MarkdownEditor";
 import { oneLine, STATE_TEXT, STATE_TONE } from "src/components/chat/notes";
+import { Screenshots, useScreenshots } from "src/components/chat/Screenshots";
 import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
 import { type ClaudeThread, type GithubThreadView, type Thread, unseenReply } from "src/components/chat/useThreads";
 import { awaited, verbFor } from "src/components/chat/verbs";
-import { Markdown } from "src/components/links/Markdown";
-import { Prose } from "src/components/links/Prose";
+import { Markdown, MessageText } from "src/components/links/Markdown";
 import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
 import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
@@ -131,22 +132,16 @@ export function DraftEditor({ message, onDone }: { message: Message; onDone: () 
   };
   return (
     <div className="grid gap-2">
-      <textarea
-        // biome-ignore lint/a11y/noAutofocus: the box opens because Edit was clicked
+      <MarkdownEditor
         autoFocus
         value={text}
-        onChange={event => setText(event.target.value)}
-        onKeyDown={event => {
-          if (event.key === "Escape") {
-            onDone();
-          } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-            save();
-          }
-        }}
-        rows={3}
-        maxLength={4000}
-        aria-label="Edit note"
-        className="block w-full resize-y rounded-md border border-input bg-background p-2 text-sm"
+        onChange={setText}
+        onSend={save}
+        onEscape={onDone}
+        sendKey="mod-enter"
+        label="Edit note"
+        placeholder=""
+        className="[&_.ProseMirror]:min-h-16"
       />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={save} disabled={!text.trim() || edit.isPending}>
@@ -161,8 +156,13 @@ export function DraftEditor({ message, onDone }: { message: Message; onDone: () 
   );
 }
 
+// The PR a message's links resolve in: its own, else the one on screen.
+export const layerOf = (message: Message, shown: number | null) =>
+  "layer" in message.anchor && message.anchor.layer !== undefined ? message.anchor.layer : (shown ?? 0);
+
 // A note not sent yet, under its line as the skill's page shows one: the text, then Edit and Delete.
 export function DraftNote({ message }: { message: Message }) {
+  const shown = useViewStore(state => state.layer);
   const [editing, setEditing] = useState(false);
   const remove = useDeleteDraft();
   return (
@@ -188,15 +188,16 @@ export function DraftNote({ message }: { message: Message }) {
       {editing ? (
         <DraftEditor message={message} onDone={() => setEditing(false)} />
       ) : (
-        <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{message.text}</p>
+        <MessageText text={message.text} layer={layerOf(message, shown)} />
       )}
+      <Screenshots ids={message.images} />
     </div>
   );
 }
 
 export function Bubble({ message }: { message: Message }) {
   const shown = useViewStore(state => state.layer);
-  const layer = "layer" in message.anchor && message.anchor.layer !== undefined ? message.anchor.layer : (shown ?? 0);
+  const layer = layerOf(message, shown);
   const mine = message.from === "user";
   return (
     <div className={cn("rounded-md border px-2.5 py-2", mine ? "bg-background" : "border-primary/25 bg-primary/6")}>
@@ -207,9 +208,12 @@ export function Bubble({ message }: { message: Message }) {
         </time>
         {mine && message.replyTo && <Delivery message={message} />}
       </div>
-      <p className="mt-1 whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">
-        <Prose text={message.text} layer={layer} />
-      </p>
+      <MessageText text={message.text} layer={layer} className="mt-1" />
+      {message.images && (
+        <div className="mt-1.5">
+          <Screenshots ids={message.images} />
+        </div>
+      )}
     </div>
   );
 }
@@ -220,33 +224,46 @@ export function ReplyBox({ replyTo, anchor, placeholder }: { replyTo?: string; a
   const key = replyTo ? replyKey(replyTo) : anchor ? anchorKey(anchor) : "";
   const [text, setText] = useState(() => draftText(key));
   const add = useAddMessage();
+  const shots = useScreenshots();
 
   const update = (value: string) => {
     setText(value);
     saveDraftText(key, value);
   };
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (text.trim()) {
-      add.mutate({ kind: "chat", text, replyTo, anchor }, { onSuccess: () => update("") });
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
+    if (text.trim() && !add.isPending && !shots.uploading) {
+      add.mutate(
+        { kind: "chat", text, replyTo, anchor, ...(shots.images.length && { images: shots.images }) },
+        {
+          onSuccess: () => {
+            update("");
+            shots.clear();
+          },
+        },
+      );
     }
   };
 
   return (
-    <form onSubmit={submit} className="grid grid-cols-[minmax(0,1fr)] gap-1">
+    <form onSubmit={submit} className="grid grid-cols-[minmax(0,1fr)] gap-1" {...shots.handlers}>
+      <Screenshots ids={shots.images} onRemove={shots.remove} />
       <div className="flex gap-2">
-        <input
+        <MarkdownEditor
           value={text}
-          onChange={event => update(event.target.value)}
+          onChange={update}
+          onSend={() => submit()}
+          onFiles={shots.take}
+          sendKey="enter"
+          label={placeholder}
           placeholder={placeholder}
-          aria-label={placeholder}
-          maxLength={4000}
-          className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground"
+          className="flex-1"
         />
-        <Button type="submit" size="sm" variant="outline" disabled={!text.trim() || add.isPending}>
+        <Button type="submit" size="sm" variant="outline" disabled={!text.trim() || add.isPending || shots.uploading}>
           Send
         </Button>
       </div>
+      {shots.error && <span className="text-danger text-sm">{shots.error}</span>}
       {add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't send.")}</span>}
     </form>
   );

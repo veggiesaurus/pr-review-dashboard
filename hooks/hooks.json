@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" set" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" clear" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" clear" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" clear" }] }
+    ]
+  }
+}

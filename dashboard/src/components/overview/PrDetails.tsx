@@ -57,8 +57,21 @@ function Commits({ layer }: { layer: Layer }) {
     <details className="motion-expand">
       <Summary className="text-foreground">
         {meta.commits.length} {meta.commits.length === 1 ? "commit" : "commits"}
-        <span className="ml-2 font-mono text-[13px] text-muted-foreground">
-          {meta.mergeBase.slice(0, 7)}…{meta.headSha.slice(0, 7)}
+        {/* Where the branch leaves its base; the head is the last commit listed. */}
+        <span className="ml-2 text-[13px] text-muted-foreground">
+          on {meta.base.replace(/^origin\//, "")} at{" "}
+          {meta.repo ? (
+            <a
+              href={`https://github.com/${meta.repo}/commit/${meta.mergeBase}`}
+              target="_blank"
+              rel="noreferrer"
+              className={`font-mono ${LINK}`}
+            >
+              {meta.mergeBase.slice(0, 7)}
+            </a>
+          ) : (
+            <span className="font-mono">{meta.mergeBase.slice(0, 7)}</span>
+          )}
         </span>
       </Summary>
       <ol className="mt-2 grid gap-2">
