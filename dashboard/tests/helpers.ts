@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createApp } from "../server/app";
-import type { Runner } from "../server/comments";
+import { type Runner, reviewedRepo } from "../server/comments";
+import { run } from "../server/exec";
 import { type Loaded, toLoaded } from "../server/load";
 import { People } from "../server/people";
 import { Review } from "../server/review";
 import { Share, type Spawn } from "../server/share";
+import { SignIn } from "../server/signin";
 import { Store } from "../server/store";
 import type { Person } from "../shared/messages";
 
@@ -105,6 +107,7 @@ export function setup(
     host?: string;
     repo?: string;
     guestCode?: () => string | null;
+    clientId?: string;
   } = {},
 ) {
   const review = new Review(loaded(options.raw), options.load ?? (async () => loaded(options.raw)));
@@ -115,6 +118,13 @@ export function setup(
   const guestSession = people.issue(GUEST);
   const cloudflared = fakeCloudflared();
   const share = new Share({ port: () => PORT, spawn: cloudflared.spawn, onChange: () => store.notify("session") });
+  const signIn = new SignIn({
+    clientId: options.clientId ?? "client-1",
+    fetcher: options.fetcher ?? fetch,
+    runner: options.runner ?? run,
+    repo: () => reviewedRepo(review) ?? "",
+    sleep: async () => {},
+  });
   const app = createApp({
     store,
     review,
@@ -133,6 +143,7 @@ export function setup(
     host: options.host,
     people,
     share,
+    signIn,
     guestCode: options.guestCode ?? (() => share.guestCode),
   });
   const session = (path: string, init: RequestInit = {}) =>
@@ -152,7 +163,7 @@ export function setup(
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
-  return { app, store, review, session, page, guest, post, attachments, people, share, cloudflared };
+  return { app, store, review, session, page, guest, post, attachments, people, share, signIn, cloudflared };
 }
 
 export const addedLine = { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 };

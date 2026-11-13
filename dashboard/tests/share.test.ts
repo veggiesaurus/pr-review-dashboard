@@ -131,6 +131,17 @@ describe("the share routes", () => {
     expect(cloudflared.commands).toEqual([]);
   });
 
+  test("POST /api/share refuses until a GitHub app is set up for guests to sign in with", async () => {
+    const { calls, runner } = gh(0);
+    const { page, cloudflared, share } = setup({ runner, clientId: "" });
+    const refused = await page("/api/share", { method: "POST" });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ error: expect.stringContaining("PRG_GITHUB_CLIENT_ID") });
+    expect(calls).toEqual([]);
+    expect(cloudflared.commands).toEqual([]);
+    expect(share.link).toBeNull();
+  });
+
   test("the owner shares and stops, and stopping signs every guest out", async () => {
     const { calls, runner } = gh(0);
     const { page, session, people, store } = setup({ runner });

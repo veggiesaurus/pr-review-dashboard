@@ -2,12 +2,12 @@ import { Hono } from "hono";
 
 import type { ShareInfo } from "../../shared/messages";
 import type { AppDeps } from "../app";
-import { REPO } from "../comments";
+import { reviewedRepo } from "../comments";
 import { run } from "../exec";
 import { type Env, only } from "../guards";
 
 export function shareRoutes(deps: AppDeps) {
-  const { share, people, review } = deps;
+  const { share, people, review, signIn } = deps;
   const app = new Hono<Env>();
 
   const info = (): ShareInfo => ({
@@ -19,8 +19,10 @@ export function shareRoutes(deps: AppDeps) {
 
   // Only collaborators on the reviewed repo may sign in, which only someone with push access to it can check.
   async function cannotCheck() {
-    const { stack, layers } = review.response;
-    const repo = [layers[0]?.meta.repo, stack?.repo].find(name => name && REPO.test(name));
+    if (!signIn.clientId) {
+      return "sharing needs a GitHub OAuth app for guests to sign in with, and none is set up: set PRG_GITHUB_CLIENT_ID to its client id";
+    }
+    const repo = reviewedRepo(review);
     if (!people.owner) {
       return "sharing needs your GitHub login to check who may sign in, and gh api user failed when the dashboard started: check gh auth status, then start it again";
     }

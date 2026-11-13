@@ -84,6 +84,12 @@ export function repoOf(layer: Layer) {
   return REPO.test(repo) ? repo : null;
 }
 
+// The repo under review, from its first PR or its stack: guests must be collaborators on it.
+export function reviewedRepo(review: Review) {
+  const { stack, layers } = review.response;
+  return [layers[0]?.meta.repo, stack?.repo].find(name => name && REPO.test(name)) ?? null;
+}
+
 // The line of this layer's diff a thread is on. GitHub numbers LEFT in the base and RIGHT in the head; a comment on
 // the left half of an unchanged line shows on the page's one copy of it, numbered in the head.
 export function placeThread(

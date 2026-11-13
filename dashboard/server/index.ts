@@ -6,12 +6,14 @@ import { parseArgs } from "node:util";
 import { websocket } from "hono/bun";
 import type { Person } from "../shared/messages";
 import { createApp } from "./app";
+import { reviewedRepo } from "./comments";
 import { openDb } from "./db";
 import { parseJson, run } from "./exec";
 import { loadReview } from "./load";
 import { People } from "./people";
 import { Review } from "./review";
 import { Share } from "./share";
+import { DEFAULT_GITHUB_CLIENT_ID, SignIn } from "./signin";
 import { Store } from "./store";
 
 const { values } = parseArgs({
@@ -115,6 +117,13 @@ const share = new Share({
   },
 });
 
+const signIn = new SignIn({
+  clientId: process.env.PRG_GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID,
+  fetcher: fetch,
+  runner: run,
+  repo: () => reviewedRepo(review) ?? "",
+});
+
 function shutdown(reason: string) {
   console.log(`pr-review-dashboard stopping: ${reason}`);
   share.stop();
@@ -130,6 +139,7 @@ const app = createApp({
   cookieSecret: secret(),
   people,
   share,
+  signIn,
   guestCode: () => share.guestCode,
   attachments,
   port: () => server.port ?? 0,

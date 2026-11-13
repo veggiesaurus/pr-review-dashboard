@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { resolve, sep } from "node:path";
 
 import { Hono } from "hono";
@@ -17,9 +17,11 @@ import { messagesRoutes } from "./routes/messages";
 import { reviewRoutes } from "./routes/review";
 import { reviewsRoutes } from "./routes/reviews";
 import { shareRoutes } from "./routes/share";
+import { signinRoutes } from "./routes/signin";
 import { ticksRoutes } from "./routes/ticks";
 import { usagesRoutes } from "./routes/usages";
 import type { Share } from "./share";
+import type { SignIn } from "./signin";
 import type { Store } from "./store";
 
 export type AppDeps = {
@@ -32,6 +34,7 @@ export type AppDeps = {
   cookieSecret: string;
   people: People;
   share: Share;
+  signIn: SignIn;
   // The code in the share link guests send as their key; null while not sharing, which shuts every guest out.
   guestCode: () => string | null;
   port: () => number;
@@ -56,6 +59,22 @@ export type AppDeps = {
 const PICTURE = new RegExp(
   `^/api/(?:(?:github|linear/[^/]+|layers/\\d+/comments)/avatar/[^/]+|fonts/file/[\\w/.-]+|attachments/${IMAGE_ID.source.slice(1, -1)})$`,
 );
+
+// What a share link's holder may reach before signing in, besides the page's files.
+const SIGN_IN = /^\/api\/signin(?:\/[^/]+)?$/;
+
+const EXPIRED = `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Link expired</title>
+<body style="font-family: system-ui, sans-serif; line-height: 1.5; max-width: 32rem; margin: 4rem auto; padding: 0 1rem">
+<h1 style="font-size: 1.25rem">This link has expired or is wrong</h1>
+<p>Please ask whoever shared it with you for a new one.</p>
+</body>
+</html>
+`;
 
 function safeEqual(a: string, b: string) {
   const left = Buffer.from(a);
@@ -104,19 +123,34 @@ export function createApp(deps: AppDeps) {
       setCookie(c, cookieName, deps.cookieSecret, { httpOnly: true, sameSite: "Strict", path: "/", secure: onTunnel });
     }
 
+    // The share link works on the tunnel alone, so it can't skip Cloudflare or travel in clear. Its cookie holds a
+    // hash of its code, so it ends with the code and never gives the key away.
+    const guestCode = deps.guestCode();
+    const linkName = `prg_link_${port}`;
+    const linkSecret = (code: string) => createHash("sha256").update(code).digest("hex");
+    const shared = url.searchParams.get("g");
+    const welcoming = c.req.method === "GET" && path === "/" && shared !== null;
+    if (welcoming) {
+      if (!onTunnel || guestCode === null || !safeEqual(shared, guestCode)) {
+        return c.html(EXPIRED, 401);
+      }
+      setCookie(c, linkName, linkSecret(guestCode), { httpOnly: true, sameSite: "Strict", path: "/", secure: true });
+    }
+
     // Monitor's ws source and the browser's WebSocket can't set a header, so those two sockets alone carry theirs in the query.
     const bearer = c.req.header("authorization")?.replace(/^Bearer /, "") ?? (path === "/api/session/ws" ? code : null);
     const key = c.req.header("x-prg-key") ?? (path === "/api/ws" ? url.searchParams.get("k") : null);
     const cookie = getCookie(c, cookieName);
     const owner = opening || Boolean(cookie && safeEqual(cookie, deps.cookieSecret));
-    const guestCode = deps.guestCode();
     const guestSession = getCookie(c, `prg_guest_${port}`);
     const guest = guestCode !== null && guestSession ? deps.people.find(guestSession) : null;
+    const linkCookie = getCookie(c, linkName);
+    const linked = welcoming || Boolean(onTunnel && guestCode !== null && linkCookie && safeEqual(linkCookie, linkSecret(guestCode)));
     // The session is on this machine, so its token is no use from the tunnel.
     if (bearer && !onTunnel && safeEqual(bearer, deps.token)) {
       c.set("who", "session");
       c.set("author", null);
-    } else if (owner || guest) {
+    } else if (owner || guest || linked) {
       // Browsers send Origin on every write and every socket, so a cookie request without one isn't from the page.
       const needsOrigin = !["GET", "HEAD"].includes(c.req.method) || path === "/api/ws";
       if (needsOrigin && !origin) {
@@ -132,6 +166,11 @@ export function createApp(deps: AppDeps) {
       } else if (guest && guestCode !== null && keyIs(guestCode)) {
         c.set("who", "guest");
         c.set("author", { ...guest, role: "guest" });
+      } else if (linked && guestCode !== null && keyIs(guestCode)) {
+        // Not signed in, or signed out by a restart: no role, and the page hears it should sign in.
+        if (path.startsWith("/api/") && !SIGN_IN.test(path)) {
+          return c.json({ error: "sign in" }, 401);
+        }
       } else {
         return c.text("unauthorised: open the link your Claude session gave you\n", 401);
       }
@@ -154,6 +193,7 @@ export function createApp(deps: AppDeps) {
   app.route("/api", fontsRoutes(deps));
   app.route("/api", attachmentsRoutes(deps));
   app.route("/api", shareRoutes(deps));
+  app.route("/api", signinRoutes(deps));
   deps.review.onChange(() => deps.store.notify("review"));
 
   app.all("/api/*", c => c.json({ error: "not found" }, 404));
