@@ -1,7 +1,7 @@
 export type RunResult = { code: number; stdout: string; stderr: string };
 
 // The Linear key never reaches a child process, and neither tool is allowed to stop and ask a question.
-function childEnv() {
+export function childEnv() {
   const { LINEAR_API_KEY: _dropped, ...rest } = process.env;
   return { ...rest, GH_PROMPT_DISABLED: "1", GIT_TERMINAL_PROMPT: "0", NO_COLOR: "1" };
 }

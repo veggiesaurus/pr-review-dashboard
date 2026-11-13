@@ -16,8 +16,10 @@ import { linearRoutes } from "./routes/linear";
 import { messagesRoutes } from "./routes/messages";
 import { reviewRoutes } from "./routes/review";
 import { reviewsRoutes } from "./routes/reviews";
+import { shareRoutes } from "./routes/share";
 import { ticksRoutes } from "./routes/ticks";
 import { usagesRoutes } from "./routes/usages";
+import type { Share } from "./share";
 import type { Store } from "./store";
 
 export type AppDeps = {
@@ -29,6 +31,7 @@ export type AppDeps = {
   linkCode: string;
   cookieSecret: string;
   people: People;
+  share: Share;
   // The code in the share link guests send as their key; null while not sharing, which shuts every guest out.
   guestCode: () => string | null;
   port: () => number;
@@ -65,21 +68,26 @@ export function createApp(deps: AppDeps) {
 
   app.use("*", async (c, next) => {
     const port = deps.port();
-    const hosts = [`127.0.0.1:${port}`, `localhost:${port}`, ...(deps.host ? [`${deps.host}:${port}`] : [])];
+    // The tunnel's host, while sharing, is the only one reached over https, and has no port.
+    const tunnel = deps.share.host;
+    const hosts = [`127.0.0.1:${port}`, `localhost:${port}`, ...(deps.host ? [`${deps.host}:${port}`] : []), ...(tunnel ? [tunnel] : [])];
+    const origins = hosts.map(h => (h === tunnel ? `https://${h}` : `http://${h}`));
     c.header("Cache-Control", "no-store");
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "no-referrer");
     c.header(
       "Content-Security-Policy",
-      `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${hosts.map(h => `ws://${h}`).join(" ")}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ${origins.map(o => o.replace("http", "ws")).join(" ")}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     );
 
     // A page on another site can reach a loopback port, so the name it used and the page it came from are both checked.
-    if (!hosts.includes(c.req.header("host") ?? "")) {
+    const host = c.req.header("host") ?? "";
+    if (!hosts.includes(host)) {
       return c.text("forbidden\n", 403);
     }
+    const onTunnel = host === tunnel;
     const origin = c.req.header("origin");
-    if (origin && !hosts.some(h => origin === `http://${h}`)) {
+    if (origin && !origins.includes(origin)) {
       return c.text("forbidden\n", 403);
     }
 
@@ -93,7 +101,7 @@ export function createApp(deps: AppDeps) {
       if (!safeEqual(code, deps.linkCode)) {
         return c.text("unauthorised\n", 401);
       }
-      setCookie(c, cookieName, deps.cookieSecret, { httpOnly: true, sameSite: "Strict", path: "/" });
+      setCookie(c, cookieName, deps.cookieSecret, { httpOnly: true, sameSite: "Strict", path: "/", secure: onTunnel });
     }
 
     // Monitor's ws source and the browser's WebSocket can't set a header, so those two sockets alone carry theirs in the query.
@@ -104,7 +112,8 @@ export function createApp(deps: AppDeps) {
     const guestCode = deps.guestCode();
     const guestSession = getCookie(c, `prg_guest_${port}`);
     const guest = guestCode !== null && guestSession ? deps.people.find(guestSession) : null;
-    if (bearer && safeEqual(bearer, deps.token)) {
+    // The session is on this machine, so its token is no use from the tunnel.
+    if (bearer && !onTunnel && safeEqual(bearer, deps.token)) {
       c.set("who", "session");
       c.set("author", null);
     } else if (owner || guest) {
@@ -144,6 +153,7 @@ export function createApp(deps: AppDeps) {
   app.route("/api", commentsRoutes(deps));
   app.route("/api", fontsRoutes(deps));
   app.route("/api", attachmentsRoutes(deps));
+  app.route("/api", shareRoutes(deps));
   deps.review.onChange(() => deps.store.notify("review"));
 
   app.all("/api/*", c => c.json({ error: "not found" }, 404));

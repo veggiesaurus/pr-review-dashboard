@@ -11,7 +11,7 @@ import type { Review } from "./review";
 
 export type Runner = (cmd: string[], cwd: string, timeoutMs?: number, input?: string) => Promise<RunResult>;
 
-const REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
+export const REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
 const SHA = /^[0-9a-f]{40}$/;
 
 const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {

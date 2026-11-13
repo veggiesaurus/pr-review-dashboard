@@ -11,6 +11,7 @@ import { parseJson, run } from "./exec";
 import { loadReview } from "./load";
 import { People } from "./people";
 import { Review } from "./review";
+import { Share } from "./share";
 import { Store } from "./store";
 
 const { values } = parseArgs({
@@ -71,26 +72,52 @@ async function stackNumber() {
   return result.code === 0 && Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
+// The owner's GitHub user, so their messages carry their name and avatar. Without it they go unnamed and sharing is refused.
+async function readOwner() {
+  const me = await run(["gh", "api", "user", "--jq", "{id,login,name,avatar:.avatar_url}"], resolve(values.repo)).catch(() => null);
+  const owner = me?.code === 0 ? (parseJson(me.stdout) as Person | null) : null;
+  if (!owner) {
+    const why = me?.stderr.trim().split("\n")[0];
+    console.warn(
+      `couldn't read your GitHub user with gh api user${why ? ` (${why})` : ""}, so your messages go unnamed and sharing is off`,
+    );
+  }
+  return owner;
+}
+
+const [stack, owner] = await Promise.all([stackNumber(), readOwner()]);
 // Messages and ticks outlive a restart in one database beside the state file, shared by every review kept there.
 const attachments = resolve(dirname(statePath), "attachments");
 const store = new Store(review, {
   db: openDb(resolve(dirname(statePath), "prg.db")),
   attachments,
-  stack: await stackNumber(),
+  stack,
   repo: resolve(values.repo),
 });
-// The owner's GitHub user, so their messages carry their name and avatar; without gh they go unnamed.
 const people = new People();
-const me = await run(["gh", "api", "user", "--jq", "{id,login,name,avatar:.avatar_url}"], resolve(values.repo)).catch(() => null);
-people.owner = me?.code === 0 ? (parseJson(me.stdout) as Person | null) : null;
+people.owner = owner;
 
 const secret = () => randomBytes(24).toString("hex");
 const token = secret();
 const linkCode = secret();
 let lastActivity = Date.now();
 
+// Comma-separated, as --allowed-mail takes it: "a@acme.com,*@acme.com".
+const allowedMail = process.env.PRG_ALLOWED_MAIL?.split(",")
+  .map(mail => mail.trim())
+  .filter(Boolean);
+const share = new Share({
+  port: () => server.port ?? 0,
+  allowedMail,
+  onChange: () => {
+    store.notify("session");
+    writeState();
+  },
+});
+
 function shutdown(reason: string) {
   console.log(`pr-review-dashboard stopping: ${reason}`);
+  share.stop();
   rmSync(statePath, { force: true });
   process.exit(0);
 }
@@ -102,7 +129,8 @@ const app = createApp({
   linkCode,
   cookieSecret: secret(),
   people,
-  guestCode: () => null,
+  share,
+  guestCode: () => share.guestCode,
   attachments,
   port: () => server.port ?? 0,
   host,
@@ -152,23 +180,27 @@ if (host) {
 
 const origin = `http://127.0.0.1:${server.port}`;
 const lanLink = host ? `http://${host}:${server.port}/?t=${linkCode}` : undefined;
-writeFileSync(
-  statePath,
-  // session: the Claude Code session that started this, so its hooks can find it.
-  JSON.stringify({
-    port: server.port,
-    token,
-    origin,
-    link: `${origin}/?t=${linkCode}`,
-    lanLink,
-    pid: process.pid,
-    session: process.env.CLAUDE_CODE_SESSION_ID,
-  }),
-  {
-    mode: 0o600,
-  },
-);
-chmodSync(statePath, 0o600);
+function writeState() {
+  writeFileSync(
+    statePath,
+    // session: the Claude Code session that started this, so its hooks can find it.
+    JSON.stringify({
+      port: server.port,
+      token,
+      origin,
+      link: `${origin}/?t=${linkCode}`,
+      lanLink,
+      shareLink: share.link ?? undefined,
+      pid: process.pid,
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+    }),
+    {
+      mode: 0o600,
+    },
+  );
+  chmodSync(statePath, 0o600);
+}
+writeState();
 // The secrets stay out of stdout, which ends up in the session's transcript.
 console.log(`pr-review-dashboard listening on ${origin}${host ? ` and http://${host}:${server.port}` : ""}, state in ${statePath}`);
 
@@ -178,5 +210,7 @@ setInterval(() => {
   }
 }, 30_000);
 
+// However the server ends, cloudflared ends with it.
+process.on("exit", () => share.stop());
 process.on("SIGINT", () => shutdown("interrupted"));
 process.on("SIGTERM", () => shutdown("terminated"));

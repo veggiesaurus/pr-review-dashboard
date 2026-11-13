@@ -14,6 +14,9 @@ const OWNER_ONLY = [
   ["POST", "/api/layers/12/comments/preview"],
   ["POST", "/api/layers/12/comments/post"],
   ["PUT", "/api/github/notify"],
+  ["GET", "/api/share"],
+  ["POST", "/api/share"],
+  ["DELETE", "/api/share"],
 ] as const;
 
 describe("roles", () => {

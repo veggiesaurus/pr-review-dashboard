@@ -7,6 +7,7 @@ import type { Runner } from "../server/comments";
 import { type Loaded, toLoaded } from "../server/load";
 import { People } from "../server/people";
 import { Review } from "../server/review";
+import { Share, type Spawn } from "../server/share";
 import { Store } from "../server/store";
 import type { Person } from "../shared/messages";
 
@@ -20,6 +21,46 @@ export const GUEST_CODE = "g".repeat(48);
 export const LINEAR_KEY = "lin_api_test";
 export const OWNER: Person = { id: 1, login: "olive", name: "Olive Owner", avatar: "https://avatars.githubusercontent.com/u/1" };
 export const GUEST: Person = { id: 2, login: "gus", name: null, avatar: "https://avatars.githubusercontent.com/u/2" };
+export const TUNNEL = "quiet-river-1234.trycloudflare.com";
+
+// A cloudflared that prints these lines to stderr and runs until it is killed or told to exit.
+export function fakeCloudflared(lines = ["INF Requesting new quick Tunnel on trycloudflare.com...", `INF |  https://${TUNNEL}  |`]) {
+  const commands: string[][] = [];
+  const killed: string[][] = [];
+  const exits: ((code: number) => void)[] = [];
+  const spawn: Spawn = cmd => {
+    commands.push(cmd);
+    const { promise: exited, resolve } = Promise.withResolvers<number>();
+    let close = () => {};
+    const stderr = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const line of lines) {
+          controller.enqueue(new TextEncoder().encode(`${line}\n`));
+        }
+        close = () => controller.close();
+      },
+    });
+    let running = true;
+    const exit = (code: number) => {
+      if (running) {
+        running = false;
+        close();
+        resolve(code);
+      }
+    };
+    exits.push(exit);
+    return {
+      stderr,
+      exited,
+      kill: () => {
+        killed.push(cmd);
+        exit(143);
+      },
+    };
+  };
+  // exit: the last one started stops by itself.
+  return { spawn, commands, killed, exit: (code = 0) => exits.at(-1)?.(code) };
+}
 
 export const staticDir = mkdtempSync(join(tmpdir(), "prg-static-"));
 writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>page</title>");
@@ -72,6 +113,8 @@ export function setup(
   const people = new People();
   people.owner = OWNER;
   const guestSession = people.issue(GUEST);
+  const cloudflared = fakeCloudflared();
+  const share = new Share({ port: () => PORT, spawn: cloudflared.spawn, onChange: () => store.notify("session") });
   const app = createApp({
     store,
     review,
@@ -89,7 +132,8 @@ export function setup(
     onActivity: options.onActivity,
     host: options.host,
     people,
-    guestCode: options.guestCode ?? (() => null),
+    share,
+    guestCode: options.guestCode ?? (() => share.guestCode),
   });
   const session = (path: string, init: RequestInit = {}) =>
     app.request(path, { ...init, headers: { host: HOST, authorization: `Bearer ${TOKEN}`, ...init.headers } });
@@ -108,7 +152,7 @@ export function setup(
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
-  return { app, store, review, session, page, guest, post, attachments, people };
+  return { app, store, review, session, page, guest, post, attachments, people, share, cloudflared };
 }
 
 export const addedLine = { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 };
