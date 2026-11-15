@@ -238,7 +238,8 @@ export function ChatDock({ connected }: { connected: boolean }) {
   // With nothing said, a thread that waits on an answer still shows Claude at work.
   const waiting = threads.flatMap(t => awaited(t.root, t.replies) ?? []).at(-1);
   const busy = listening && (activity !== null || waiting !== undefined);
-  const attention = connected ? (session?.attention ?? null) : null;
+  // The prompt is in the owner's terminal, so only the owner can act on it.
+  const attention = connected && owner ? (session?.attention ?? null) : null;
   const status = !connected
     ? "Lost the server"
     : attention

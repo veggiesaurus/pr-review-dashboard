@@ -9,6 +9,7 @@ import type { Message, SessionInfo } from "../shared/messages";
 import { addedLine, GUEST, GUEST_CODE, loaded, OWNER, rawReview, setup } from "./helpers";
 
 const sharing = () => setup({ guestCode: () => GUEST_CODE });
+const GUEST_RULE = "a guest's request: read-only unless the owner approves (SESSION.md, Sharing)";
 
 describe("notes and chat", () => {
   test("a permission prompt in the terminal shows on the page while the session listens, until it acts again", async () => {
@@ -111,6 +112,15 @@ describe("notes and chat", () => {
     expect(frames[1]).toStartWith(`[review page] batch 1, part 2 of ${frames.length}`);
     expect(frames.every(frame => frame.length <= 6100)).toBe(true);
     expect(frames.join("").match(/^m\d+ about/gm)?.length).toBe(6);
+
+    const guest = { ...GUEST, role: "guest" as const };
+    for (let i = 0; i < 6; i++) {
+      store.addUserMessage({ kind: "note", text: "x".repeat(3000), anchor: { ...addedLine, kind: "line", side: "R" } }, guest);
+    }
+    frames.length = 0;
+    store.sendDrafts(guest);
+    expect(frames.length).toBeGreaterThan(1);
+    expect(frames.every(frame => frame.split("\n")[1] === GUEST_RULE)).toBe(true);
   });
 
   test("chat goes at once, and waits for a session when none is listening", async () => {
@@ -371,15 +381,26 @@ describe("notes and chat", () => {
     await guest("/api/messages", post({ kind: "chat", text: "why trim?" }));
     await page("/api/messages", post({ kind: "chat", text: "and why here?" }));
     store.addUserMessage({ kind: "chat", text: "from before there were authors" }, null);
-    await guest("/api/messages", post({ kind: "note", text: "a note", anchor: addedLine }));
+    await guest("/api/messages", post({ kind: "note", text: "a note", anchor: addedLine, intent: "fix" }));
     await guest("/api/messages/send", { method: "POST" });
+    await page("/api/messages", post({ kind: "note", text: "an owner's note", anchor: addedLine, intent: "fix" }));
+    await page("/api/messages/send", { method: "POST" });
     expect(frames.map(frame => frame.split("\n")[0])).toEqual([
       "[review page] chat m1 from @gus (guest) on acme/shop#12 at aaaaaaa",
       "[review page] chat m2 from @olive (owner) on acme/shop#12 at aaaaaaa",
       "[review page] chat m3 from the owner on acme/shop#12 at aaaaaaa",
       expect.any(String),
+      expect.any(String),
     ]);
     expect(frames[3]).toStartWith("[review page] batch 1: 1 note from @gus (guest) on acme/shop#12 at aaaaaaa.");
+
+    // A guest's frames carry the read-only rule on a line of its own, and their notes never ask for a change.
+    expect(frames.map(frame => frame.split("\n")[1] === GUEST_RULE)).toEqual([true, false, false, true, false]);
+    expect(frames[3]).toContain("ask the owner with an owner-only ask");
+    expect(frames[3]).not.toContain("Fix what they ask");
+    expect(frames[3]).not.toContain("wants the change made");
+    expect(frames[4]).toContain("Fix what they ask in the working tree");
+    expect(frames[4]).toContain("A note marked (fix) wants the change made");
   });
 
   test("a line the review doesn't have is refused, and the quoted code never comes from the page", async () => {

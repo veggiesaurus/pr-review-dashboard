@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import type { Runner } from "./comments";
 import { childEnv, run } from "./exec";
+import type { People } from "./people";
 
 export type Spawn = (cmd: string[]) => { stderr: ReadableStream<Uint8Array>; exited: Promise<number>; kill(): void };
 type Tunnel = ReturnType<Spawn>;
@@ -48,6 +49,7 @@ export class Share {
       port: () => number;
       spawn?: Spawn;
       allowedMail?: string[];
+      people: People;
       onChange: () => void;
       runner?: Runner;
       timeoutMs?: number;
@@ -77,6 +79,8 @@ export class Share {
     this.host = null;
     this.guestCode = null;
     tunnel.kill();
+    // However the share ends, its guests go with it: a new share's host never gets the old cookies anyway.
+    this.opts.people.revokeAll();
     this.opts.onChange();
   }
 

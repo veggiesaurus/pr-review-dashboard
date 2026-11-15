@@ -117,7 +117,7 @@ export function setup(
   people.owner = OWNER;
   const guestSession = people.issue(GUEST);
   const cloudflared = fakeCloudflared();
-  const share = new Share({ port: () => PORT, spawn: cloudflared.spawn, onChange: () => store.notify("session") });
+  const share = new Share({ port: () => PORT, spawn: cloudflared.spawn, people, onChange: () => store.notify("session") });
   const signIn = new SignIn({
     clientId: options.clientId ?? "client-1",
     fetcher: options.fetcher ?? fetch,

@@ -111,6 +111,7 @@ const allowedMail = process.env.PRG_ALLOWED_MAIL?.split(",")
 const share = new Share({
   port: () => server.port ?? 0,
   allowedMail,
+  people,
   onChange: () => {
     store.notify("session");
     writeState();

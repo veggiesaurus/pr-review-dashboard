@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { Runner } from "../server/comments";
+import { People } from "../server/people";
 import { Share, type Spawn } from "../server/share";
 import type { Push } from "../shared/messages";
 import { fakeCloudflared, GUEST, OWNER, PORT, rawReview, setup, TUNNEL } from "./helpers";
@@ -13,8 +14,9 @@ const cloudflaredVersion =
 
 function tunnel(cloudflared = fakeCloudflared(), more: Partial<ConstructorParameters<typeof Share>[0]> = {}) {
   let changes = 0;
-  const share = new Share({ port: () => PORT, spawn: cloudflared.spawn, onChange: () => changes++, ...more });
-  return { share, cloudflared, changes: () => changes };
+  const people = new People();
+  const share = new Share({ port: () => PORT, spawn: cloudflared.spawn, people, onChange: () => changes++, ...more });
+  return { share, cloudflared, people, changes: () => changes };
 }
 
 describe("the share", () => {
@@ -56,12 +58,14 @@ describe("the share", () => {
     expect(share.guestCode).not.toBe(first);
   });
 
-  test("cloudflared exiting on its own clears the share", async () => {
-    const { share, cloudflared, changes } = tunnel();
+  test("cloudflared exiting on its own clears the share and signs every guest out", async () => {
+    const { share, cloudflared, people, changes } = tunnel();
     await share.start();
+    people.issue(GUEST);
     cloudflared.exit(1);
     await Bun.sleep(0);
     expect([share.host, share.guestCode, share.link]).toEqual([null, null, null]);
+    expect(people.signedIn()).toEqual([]);
     expect(changes()).toBe(2);
   });
 
@@ -91,14 +95,14 @@ describe("the share", () => {
     const spawn: Spawn = () => {
       throw enoent();
     };
-    const missing = new Share({ port: () => PORT, spawn, onChange: () => {} });
+    const missing = new Share({ port: () => PORT, spawn, people: new People(), onChange: () => {} });
     expect(await missing.start()).toEqual({ error: expect.stringContaining("install cloudflared") });
     expect(missing.link).toBeNull();
 
     const runner: Runner = async () => {
       throw enoent();
     };
-    const gated = new Share({ port: () => PORT, spawn, allowedMail: ["*@acme.com"], runner, onChange: () => {} });
+    const gated = new Share({ port: () => PORT, spawn, allowedMail: ["*@acme.com"], runner, people: new People(), onChange: () => {} });
     expect(await gated.start()).toEqual({ error: expect.stringContaining("install cloudflared") });
   });
 });

@@ -15,6 +15,11 @@ export function ShareButton() {
   const [copied, setCopied] = useState(false);
   const sharing = data?.sharing ?? false;
   const link = data?.link ?? "";
+  const unpushed = data?.unpushed && (
+    <p className="rounded-md border border-warning/50 bg-warning/15 px-2 py-1.5 text-xs">
+      Some of this review's code isn't on GitHub yet, so guests will be reading code that is only on this machine.
+    </p>
+  );
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -49,11 +54,7 @@ export function ShareButton() {
               </Button>
             </div>
             <p className="text-muted-foreground text-xs">Guests will see every thread on this review.</p>
-            {data?.unpushed && (
-              <p className="rounded-md border border-warning/50 bg-warning/15 px-2 py-1.5 text-xs">
-                Some of this review's code isn't on GitHub yet, so guests will be reading code that is only on this machine.
-              </p>
-            )}
+            {unpushed}
             <div className="grid gap-1.5">
               <h3 className="font-medium text-xs">Signed in</h3>
               {data?.signedIn.length ? (
@@ -84,6 +85,7 @@ export function ShareButton() {
               Share this review with teammates over a Cloudflare tunnel. They sign in with GitHub, and only collaborators on the repo get
               in. Guests will see every thread on this review.
             </p>
+            {unpushed}
             <Button size="sm" className="w-fit" disabled={start.isPending} onClick={() => start.mutate()}>
               {start.isPending ? "Starting…" : "Start sharing"}
             </Button>

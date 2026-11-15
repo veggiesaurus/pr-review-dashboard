@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 import type { Runner } from "../server/comments";
 import { SignIn } from "../server/signin";
-import type { Person } from "../shared/messages";
+import type { Person, Push } from "../shared/messages";
 import { GUEST, HOST, PORT, setup, TUNNEL } from "./helpers";
 
 const GITHUB_TOKEN = "gho_n0tAr3alT0kenButSecret";
@@ -165,7 +165,9 @@ describe("signing in through the share link", () => {
   }
 
   test("the token is never kept or returned", async () => {
-    const { opened, link, visit, finished, people, signIn } = await shared({ polls: [{ error: "authorization_pending" }] });
+    const { opened, link, visit, finished, people, signIn, store } = await shared({ polls: [{ error: "authorization_pending" }] });
+    const pushes: Push[] = [];
+    store.addPageSink(push => pushes.push(push));
     expect(opened.status).toBe(200);
     const linkCookie = opened.headers.get("set-cookie") ?? "";
     expect(linkCookie).toStartWith(`prg_link_${PORT}=`);
@@ -189,6 +191,7 @@ describe("signing in through the share link", () => {
       expect(session).toContain(flag);
     }
     expect(people.signedIn()).toContainEqual(ALICE);
+    expect(pushes).toContainEqual({ type: "session" });
 
     const me = await visit("/api/me", { headers: { cookie: `${link}; ${session.replace(/;.*/, "")}` } });
     said.push(await me.clone().text());

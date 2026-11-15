@@ -38,6 +38,10 @@ const shots = (message: Message, dir?: string) =>
 // A message without an author is the owner's, as every message was before guests.
 const from = (author?: Author) => (author ? `from @${flat(author.login)} (${author.role})` : "from the owner");
 
+// A line of its own in every frame a guest's message makes, so the rule is there whichever part arrives.
+const GUEST_RULE = "a guest's request: read-only unless the owner approves (SESSION.md, Sharing)";
+const byGuest = (author?: Author) => author?.role === "guest";
+
 // One frame is one notification in the session, so each carries the ids Claude needs to answer.
 // finding is the review finding a follow-up answers, quoted so the session needn't remember what it wrote.
 export function chatFrame(message: Message, scope: string, reopened = false, finding?: Message, dir?: string) {
@@ -45,6 +49,7 @@ export function chatFrame(message: Message, scope: string, reopened = false, fin
   const answer = message.answer ? ", the owner answering your question" : "";
   const lines = [
     `[review page] chat ${message.id} ${from(message.author)} on ${flat(scope)}${follow}${answer}`,
+    ...(byGuest(message.author) ? [GUEST_RULE] : []),
     about(message),
     ...(finding ? [indent(`the finding: ${clip(finding.text, 1200)}`, "    "), ...patchOf(finding, "its proposed patch")] : []),
     ...shots(message, dir),
@@ -75,13 +80,17 @@ function inParts(intro: string, items: string[], name: string) {
   );
 }
 
+// A batch is one author's drafts, so its first note says whose it is.
 export function notesFrames(notes: Message[], batch: number, scope: string, dir?: string) {
+  const guest = byGuest(notes[0]?.author);
   const intro =
     `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} ${from(notes[0]?.author)} on ${flat(scope)}. ` +
-    "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. " +
+    (guest
+      ? 'Answer them in the reply. Before changing anything for one, ask the owner with an owner-only ask ("owner": true) on that note\'s thread, and act only once a frame says the owner answered. '
+      : "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. ") +
     'For each note, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
     '{"replyTo":"<id>","state":"done"|"answered"|"declined","text":"what you did, the answer, or why not"}.' +
-    (notes.some(note => note.intent)
+    (!guest && notes.some(note => note.intent)
       ? " A note marked (fix) wants the change made, (question) an answer and no change, (nit) the change only if it is trivial."
       : "");
   const items = notes.map(note =>
@@ -90,7 +99,8 @@ export function notesFrames(notes: Message[], batch: number, scope: string, dir?
       NOTE_LIMIT,
     ),
   );
-  return inParts(intro, items, `batch ${batch}`);
+  const frames = inParts(intro, items, `batch ${batch}`);
+  return guest ? frames.map(frame => frame.replace("\n", `\n${GUEST_RULE}\n`)) : frames;
 }
 
 const patchOf = (finding: Message, name: string) =>

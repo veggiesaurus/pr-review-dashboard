@@ -50,10 +50,8 @@ export function shareRoutes(deps: AppDeps) {
     return "error" in started ? c.json(started, 400) : c.json(info());
   });
 
-  // A new share has a new tunnel host, which the old one's cookies never reach, so its guests sign in again anyway.
   app.delete("/share", only("owner", "session"), c => {
     share.stop();
-    people.revokeAll();
     return c.json(info());
   });
 
