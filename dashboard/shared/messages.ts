@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { NOTE_INTENTS, type NoteIntent } from "./intents";
 import { DISMISS_REASONS, type DismissReason, REVIEW_EFFORTS, type ReviewEffort, SEVERITIES, type Severity } from "./reviews";
+import { TABS, type Tab } from "./tabs";
 
 const layer = z.number().int().min(0).max(999_999_999);
 const fileId = z.string().regex(/^f\d{1,6}$/);
@@ -224,4 +225,16 @@ export type NewMessage = z.infer<typeof newMessageSchema>;
 export type Reply = z.infer<typeof replySchema>;
 
 // What the page's socket says changed; the page refetches it.
-export type Push = { type: "review" | "messages" | "session" | "github" | "ticks"; layer?: number };
+export type Push = { type: "review" | "messages" | "session" | "github" | "ticks" | "presence"; layer?: number };
+
+// Where a page says its reader is. section is the data-section index on the Guide tab, else null.
+export const whereSchema = z.object({
+  type: z.literal("where"),
+  layer: z.number().int(),
+  tab: z.enum(TABS),
+  section: z.number().int().nullable(),
+  hidden: z.boolean(),
+});
+export type Where = z.infer<typeof whereSchema>;
+// since: when hidden last changed, so the page can dim someone who has been away a while.
+export type PresenceEntry = { person: Person; role: Role; layer: number; tab: Tab; section: number | null; hidden: boolean; since: string };

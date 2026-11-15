@@ -6,9 +6,11 @@ import { SectionIndex } from "src/components/guide/SectionIndex";
 import { FilterNote, ViewMenu } from "src/components/guide/ViewMenu";
 import { IssueRef } from "src/components/links/Issue";
 import { Prose } from "src/components/links/Prose";
+import { Avatars } from "src/components/presence/Avatars";
 import { ReadyChips } from "src/components/ready/ReadyChips";
 import { LayerNav } from "src/components/stack/LayerNav";
 import { useGithub } from "src/queries/live.query";
+import { usePresenceList } from "src/queries/presence.query";
 import { useLayer, useReview } from "src/queries/review.query";
 import { progressKeys, useTickedCount } from "src/store/ticks.store";
 import { useViewStore } from "src/store/view.store";
@@ -143,6 +145,7 @@ export function Header({ layer }: { layer: number }) {
   const stacked = Boolean(useReview().data?.stack);
   const tab = useViewStore(state => state.tab);
   const setTab = useViewStore(state => state.setTab);
+  const others = usePresenceList();
   if (!shown) {
     return null;
   }
@@ -159,6 +162,7 @@ export function Header({ layer }: { layer: number }) {
         {meta.author && <span className="text-foreground/80">{meta.author}</span>}
         <LineCount layer={layer} />
         <Progress layer={shown} />
+        <Avatars people={others} size="md" />
         {chips.map(key => (
           <IssueRef key={key} issueKey={key} chip />
         ))}

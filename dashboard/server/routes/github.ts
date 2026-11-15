@@ -121,7 +121,7 @@ export function githubRoutes(deps: AppDeps) {
   // A GitHub user's picture, by login, for logins the server has seen in an answer it gave.
   app.get("/github/avatar/:login", async c => {
     const login = c.req.param("login");
-    const url = LOGIN.test(login) ? avatars.get(login.toLowerCase()) : undefined;
+    const url = LOGIN.test(login) ? (avatars.get(login.toLowerCase()) ?? deps.store.presence.avatarOf(login)) : undefined;
     if (!url) {
       return c.json({ error: "no picture" }, 404);
     }

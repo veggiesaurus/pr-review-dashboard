@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ChatDock } from "src/components/chat/ChatDock";
 import { RebuildButton } from "src/components/chat/RebuildButton";
@@ -8,11 +8,14 @@ import { JumpTo } from "src/components/guide/JumpTo";
 import { KeysHelp, useKeyboard } from "src/components/guide/Keyboard";
 import { RenderError } from "src/components/guide/RenderError";
 import { SectionRail } from "src/components/guide/SectionRail";
+import { shownSections } from "src/components/guide/visible";
 import { Header } from "src/components/Header";
 import { Overview } from "src/components/overview/Overview";
 import { ThemeButton } from "src/components/ThemeButton";
+import { useCurrentSection } from "src/hooks/useCurrentSection";
 import { useHashSync } from "src/hooks/useHashSync";
 import { useLiveSocket } from "src/hooks/useLiveSocket";
+import { usePresence } from "src/hooks/usePresence";
 import { useLayer, useReview } from "src/queries/review.query";
 import { PAGE_COLUMN, useViewStore } from "src/store/view.store";
 import { cn } from "src/utils/cn";
@@ -39,6 +42,10 @@ export function App() {
   const tab = useViewStore(state => state.tab);
   const shown = useLayer(layer);
   const swapped = useLayerSwapped(layer, tab);
+  const show = useViewStore(state => state.show);
+  const formatting = useViewStore(state => state.formatting);
+  const sections = useMemo(() => (shown ? shownSections(shown, show, formatting) : []), [shown, show, formatting]);
+  usePresence(connected, layer, tab, useCurrentSection(sections));
 
   useEffect(() => {
     if (data && shown) {

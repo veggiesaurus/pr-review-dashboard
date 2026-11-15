@@ -739,6 +739,52 @@ try {
   await page.close();
   console.log("page ok");
 
+  // The same person on a second page is not shown to themselves. A guest can't reach a tunnel host from here, so one
+  // is faked at the presence endpoint and the walk checks how the page draws and uses it.
+  await open(work.link);
+  await tab("Guide");
+  await page.waitForSelector(SECTION);
+  const second = await browser.newPage();
+  await second.goto(work.link);
+  await second.waitForSelector("[role=tablist]");
+  await page.waitForTimeout(1200);
+  await check(
+    "the same person on two pages shows no avatar",
+    () => count("[data-presence]"),
+    n => n === 0,
+  );
+  await second.close();
+  const { layers } = await (await fetch(`${work.origin}/api/review`, { headers: { Authorization: `Bearer ${work.token}` } })).json();
+  const guest = { id: 2, login: "gus", name: null, avatar: "https://avatars.githubusercontent.com/u/2" };
+  const entry = {
+    person: guest,
+    role: "guest",
+    layer: layers[0].id,
+    tab: "guide",
+    section: 1,
+    hidden: false,
+    since: new Date().toISOString(),
+  };
+  const dot = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHuJ5PwAAAABJRU5ErkJggg==", "base64");
+  await page.route("**/api/github/avatar/gus", route => route.fulfill({ body: dot, contentType: "image/png" }));
+  await page.route("**/api/presence", route => route.fulfill({ json: [entry] }));
+  await page.reload();
+  await page.waitForSelector(SECTION);
+  const rail = page.getByRole("navigation", { name: "Sections" });
+  await check(
+    "the rail shows the guest beside their section",
+    () => rail.locator("div:has(> button[aria-label^='02']) [data-presence=gus]").count(),
+    n => n === 1,
+  );
+  await page.evaluate(() => window.scrollTo({ top: 0 }));
+  await rail.locator("[data-presence=gus]").click();
+  await check(
+    "clicking the guest lands on their section",
+    () => page.evaluate(() => window.scrollY),
+    y => y > 0,
+  );
+  await page.close();
+
   // The same page at a phone's width. Its socket goes through the walk, which can then drop it.
   await open(work.link, "", { width: 390, height: 844 });
   const sockets = new Set();

@@ -1,9 +1,9 @@
 import type { Anchor, LineAnchor } from "shared/messages";
 
+import { TABS, type Tab } from "shared/tabs";
 import { settleLayout } from "src/utils/motion";
 
-export const TABS = ["overview", "guide", "diff"] as const;
-export type Tab = (typeof TABS)[number];
+export { TABS, type Tab };
 
 // A jump target as guide prose, the ready check and links write it: s2 (a section, from 1), f3 (a file), f3h2 (a
 // hunk), f3:R12 or f3:L4 (a line), each optionally behind the layer, as 1013:f42h1.

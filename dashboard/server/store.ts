@@ -20,6 +20,7 @@ import { prKey, TICK_PREFIX } from "../shared/ticks";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
 import { chatFrame, fixFrames, notesFrames, recheckFrames, reviewFrame } from "./format";
+import { Presence } from "./presence";
 import type { Review } from "./review";
 
 // A frame for the session and the messages it carries; n is its row, kept until the session is heard from.
@@ -60,6 +61,7 @@ export type StoreOptions = {
 
 export class Store {
   messages: Message[] = [];
+  readonly presence = new Presence();
 
   private pending: Pending[] = [];
   // Written to a session that hasn't been heard from since: they go again if it leaves without a word.

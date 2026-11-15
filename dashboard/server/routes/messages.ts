@@ -5,6 +5,7 @@ import { upgradeWebSocket } from "hono/bun";
 import { activitySchema, archiveSchema, attentionSchema, editSchema, newMessageSchema, replySchema } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { type Env, only, small } from "../guards";
+import { parseWhere } from "../presence";
 import { hasAttachment } from "./attachments";
 
 export function messagesRoutes(deps: AppDeps) {
@@ -101,18 +102,37 @@ export function messagesRoutes(deps: AppDeps) {
   app.get(
     "/ws",
     only("owner", "guest"),
-    upgradeWebSocket(() => {
+    upgradeWebSocket(c => {
+      // An owner whose GitHub details couldn't be read has no one to show, so isn't listed.
+      const author = c.get("author");
       let remove = () => {};
+      const socket = crypto.randomUUID();
       return {
         onOpen(_event, ws) {
           remove = store.addPageSink(push => ws.send(JSON.stringify(push)));
+          if (author) {
+            store.presence.join(socket, author);
+          }
+        },
+        onMessage(event) {
+          const where = typeof event.data === "string" ? parseWhere(event.data) : null;
+          if (where && author) {
+            store.presence.move(socket, where);
+            store.notify("presence");
+          }
         },
         onClose() {
           remove();
+          if (author) {
+            store.presence.leave(socket);
+            store.notify("presence");
+          }
         },
       };
     }),
   );
+
+  app.get("/presence", only("owner", "guest"), c => c.json(store.presence.list()));
 
   return app;
 }
