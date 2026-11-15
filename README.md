@@ -31,6 +31,18 @@ Each version installs into its own folder, so the first review after an update i
 
 A small local server in `dashboard/` serves the page and passes messages between it and the session that started it. Notes and chat take markdown and pasted or dropped screenshots, and the page tells you when the session is stuck at a permission prompt in the terminal. You can also ask Claude for a code review from the page, then fix or dismiss each finding there; findings are checked again after a rebuild. Where your checkout differs from what was pushed, you can preview your local code in place and revert a change. Threads and reviewed ticks are kept in a SQLite file between builds and across restarts. `dashboard/README.md` has the details.
 
+## Sharing
+
+You can open a running review to teammates over a link, so they can read the guide, chat and see Claude's answers. Press Share in the page's header, or ask Claude. The dashboard starts a Cloudflare quick tunnel and shows a link to send them.
+
+- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). To also ask for an email one-time PIN before the page loads, set `PRG_ALLOWED_MAIL` to a comma-separated list such as `alice@acme.com,*@acme.com`. That needs `cloudflared` 2026.11 or later.
+- A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
+- Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app with device flow enabled. Put its client id in `PRG_GITHUB_CLIENT_ID` until the plugin ships a default.
+- Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.
+- The link changes each time sharing starts, and stops working when you stop sharing.
+
+Guests see every thread on the review, including ones from before you shared. Claude answers their questions and reads the repo for them, but asks you before it does anything else for a guest. The details are in `dashboard/README.md`.
+
 ## Stacks
 
 Ask for a review of any PR in a stack and you get one page for every layer. It says what each layer does in the stack, and what only shows across it, such as code a later layer rewrites. The layers come from the open PRs' base branches, so stacks made with [gh-stack](https://github.com/github/gh-stack), [Graphite](https://graphite.dev) or by hand all work, with no checkout. That's why it needs `gh`, and why each layer has to be an open PR in the same repo. Where two open PRs build on the same one, it stops there, so ask from the top PR of the branch you want.

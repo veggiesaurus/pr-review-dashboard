@@ -69,6 +69,16 @@ The link can be opened more than once, so a second tab or a re-click works. Anyo
 
 Text from the PR that ends up in a frame to the session (a file path, a check's name) has its line breaks flattened, so it can't pass itself off as a frame or an instruction of its own.
 
+## Sharing
+
+`POST /api/share`, or the Share button, starts `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:PORT` and reads the `https://*.trycloudflare.com` address from its output. The link is that address with `/?g=CODE`, and it goes in the state file as `shareLink`. Stopping ends the tunnel and every guest's session. A new share is a new address, so guests sign in again.
+
+Guests sign in with GitHub's device flow, which needs only a public client id: `PRG_GITHUB_CLIENT_ID`, else the default in `server/signin.ts`. The server asks for no scope, reads the user's public profile, throws the token away, and checks with the owner's `gh` that the user is a collaborator on the reviewed repo (`gh api repos/acme/shop/collaborators/alice`). Sharing is refused if the owner's `gh` can't make that check. GitHub allows 50 code requests an hour per app.
+
+`PRG_ALLOWED_MAIL` adds Cloudflare's email gate in front of the page. It needs `cloudflared` 2026.11 or later, and `cloudflared` doesn't pass the email on, so guests are still identified by GitHub.
+
+Guests can chat, leave notes and tick their own sections. Their notes, drafts, ticks and unseen answers are their own. Rebuild, review requests, Fix this, posting to GitHub, the local-changes preview and archiving are the owner's, and the server refuses a guest on each. Quick tunnels have no uptime guarantee and the address is only as private as the link, so share it only with people you'd show the review to.
+
 ## Checking it
 
 ```
