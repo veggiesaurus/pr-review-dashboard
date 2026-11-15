@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import type { Message } from "../shared/messages";
+import type { Author, Message } from "../shared/messages";
 import { DISMISS_TEXT } from "../shared/reviews";
 import { typedText } from "../shared/typed";
 
@@ -35,12 +35,16 @@ const shots = (message: Message, dir?: string) =>
     ? [indent(`screenshots attached, open each with Read: ${message.images.map(id => join(dir, id)).join(" ")}`)]
     : [];
 
+// A message without an author is the owner's, as every message was before guests.
+const from = (author?: Author) => (author ? `from @${flat(author.login)} (${author.role})` : "from the owner");
+
 // One frame is one notification in the session, so each carries the ids Claude needs to answer.
 // finding is the review finding a follow-up answers, quoted so the session needn't remember what it wrote.
 export function chatFrame(message: Message, scope: string, reopened = false, finding?: Message, dir?: string) {
   const follow = message.replyTo ? `, following up on ${message.replyTo}${reopened ? " (reopened)" : ""}` : "";
+  const answer = message.answer ? ", the owner answering your question" : "";
   const lines = [
-    `[review page] chat ${message.id} on ${flat(scope)}${follow}`,
+    `[review page] chat ${message.id} ${from(message.author)} on ${flat(scope)}${follow}${answer}`,
     about(message),
     ...(finding ? [indent(`the finding: ${clip(finding.text, 1200)}`, "    "), ...patchOf(finding, "its proposed patch")] : []),
     ...shots(message, dir),
@@ -73,7 +77,7 @@ function inParts(intro: string, items: string[], name: string) {
 
 export function notesFrames(notes: Message[], batch: number, scope: string, dir?: string) {
   const intro =
-    `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} on ${flat(scope)}. ` +
+    `[review page] batch ${batch}: ${notes.length} ${notes.length === 1 ? "note" : "notes"} ${from(notes[0]?.author)} on ${flat(scope)}. ` +
     "Fix what they ask in the working tree and leave it unstaged; answer questions in the reply. " +
     'For each note, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
     '{"replyTo":"<id>","state":"done"|"answered"|"declined","text":"what you did, the answer, or why not"}.' +

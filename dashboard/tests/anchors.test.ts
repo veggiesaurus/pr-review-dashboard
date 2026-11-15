@@ -43,7 +43,7 @@ test("a note on a repeated line follows its own copy through a rebuild, and goes
   grown[13] = "}";
   const moved = review(first, build("b", grown, 10, 24, [10, 11, 12, 13, 14, 15, 16, 17, 20]));
   const store = new Store(moved);
-  store.addUserMessage({ kind: "note", text: "closes the wrong block", anchor: at(13) });
+  store.addUserMessage({ kind: "note", text: "closes the wrong block", anchor: at(13) }, null);
   await moved.reload();
   expect(store.messages[0]?.anchor).toMatchObject({ line: 21, code: "}" });
   expect(store.messages[0]?.anchor.outdated).toBeUndefined();
@@ -52,7 +52,7 @@ test("a note on a repeated line follows its own copy through a rebuild, and goes
   const rewritten = text.map((line, i) => (i >= 9 && i <= 15 ? `other ${i}` : line));
   const gone = review(first, build("c", rewritten, 10, 16, [10, 11, 12, 13, 14, 15, 16]));
   const left = new Store(gone);
-  left.addUserMessage({ kind: "note", text: "closes the wrong block", anchor: at(13) });
+  left.addUserMessage({ kind: "note", text: "closes the wrong block", anchor: at(13) }, null);
   await gone.reload();
   expect(left.messages[0]?.anchor).toMatchObject({ line: 13, outdated: true });
 });
@@ -60,7 +60,7 @@ test("a note on a repeated line follows its own copy through a rebuild, and goes
 test("a restart keeps a note on an opened unchanged line, a long range, and a thread kept before neighbours were", () => {
   const db = openDb();
   const store = new Store(review(first), { db });
-  store.addUserMessage({ kind: "note", text: "a brace no hunk shows", anchor: at(20) });
+  store.addUserMessage({ kind: "note", text: "a brace no hunk shows", anchor: at(20) }, null);
   expect(new Store(review(first), { db }).messages[0]?.anchor).toMatchObject({ line: 20, loc: "src/a.ts:R20@aaaaaaa" });
 
   // Sixty lines of eighty characters: more code than a thread keeps.
@@ -73,7 +73,7 @@ test("a restart keeps a note on an opened unchanged line, a long range, and a th
     long.map((_, i) => i + 1),
   );
   const ranged = openDb();
-  new Store(review(wide), { db: ranged }).addUserMessage({ kind: "note", text: "the whole block", anchor: at(1, 60) });
+  new Store(review(wide), { db: ranged }).addUserMessage({ kind: "note", text: "the whole block", anchor: at(1, 60) }, null);
   const again = new Store(review(wide), { db: ranged }).messages[0]?.anchor;
   expect(again).toMatchObject({ line: 1, endLine: 60 });
   expect(again?.outdated).toBeUndefined();

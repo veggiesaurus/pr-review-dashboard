@@ -2,6 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 
 import { type CommentsResponse, type PostPreview, postSchema, previewSchema } from "../../shared/comments";
+import type { Author } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { buildPreview, githubLogin, postReview, readThreads, type ThreadsRead } from "../comments";
 import { run } from "../exec";
@@ -71,7 +72,11 @@ export function commentsRoutes(deps: AppDeps) {
   });
 
   // What would be posted, worked out from the notes on the server, with the login it would go under.
-  const preview = async (layerParam: string, request: { ids: string[]; mode: "pending" | "now"; summary: string }) => {
+  const preview = async (
+    layerParam: string,
+    request: { ids: string[]; mode: "pending" | "now"; summary: string },
+    author: Author | null,
+  ) => {
     const layer = findLayer(deps.review, layerParam);
     if (!layer?.meta.number) {
       return { status: 404 as const, error: "this layer has no pull request" };
@@ -83,7 +88,9 @@ export function commentsRoutes(deps: AppDeps) {
     if (read.error) {
       return { status: 502 as const, error: `GitHub didn't answer: ${read.error}` };
     }
-    const built = buildPreview(deps.review, layer, id => deps.store.find(id), request, {
+    // Someone else's draft is as missing here as it is from their page.
+    const notes = deps.store.messagesFor(author);
+    const built = buildPreview(deps.review, layer, id => notes.find(m => m.id === id), request, {
       login,
       head: read.head,
       pendingReviews: read.pendingReviews,
@@ -95,7 +102,7 @@ export function commentsRoutes(deps: AppDeps) {
     if (!deps.githubComments) {
       return c.json({ error: OFF }, 403);
     }
-    const result = await preview(c.req.param("layer"), c.req.valid("json"));
+    const result = await preview(c.req.param("layer"), c.req.valid("json"), c.get("author"));
     return result.status === 200 ? c.json(result.preview) : c.json({ error: result.error }, result.status);
   });
 
@@ -109,7 +116,7 @@ export function commentsRoutes(deps: AppDeps) {
     posting = true;
     try {
       const request = c.req.valid("json");
-      const result = await preview(c.req.param("layer"), request);
+      const result = await preview(c.req.param("layer"), request, c.get("author"));
       if (result.status !== 200) {
         return c.json({ error: result.error }, result.status);
       }

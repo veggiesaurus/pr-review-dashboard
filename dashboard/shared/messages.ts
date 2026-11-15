@@ -84,12 +84,18 @@ export const questionSchema = z.object({
   question: z.string().trim().min(1).max(300),
   options: z.array(z.string().trim().min(1).max(200)).min(2).max(6),
   multiple: z.boolean().optional(),
+  // Only the owner may answer it: an approval Claude needs before acting on a guest's request.
+  owner: z.boolean().optional(),
 });
 export type Question = z.infer<typeof questionSchema>;
 
 export type Message = {
   id: string;
   from: "user" | "claude";
+  // On a user's message: who sent it, set by the server. Left out means the owner, as on messages from before guests.
+  author?: Author;
+  // On a follow-up: the owner answering an owner-only question.
+  answer?: boolean;
   // A note is held as a draft until the batch is sent; chat goes at once.
   kind: "chat" | "note";
   text: string;
@@ -150,6 +156,8 @@ export const newMessageSchema = z.object({
   // Kept on a note only.
   intent: z.enum(NOTE_INTENTS).optional(),
   images: z.array(z.string().regex(IMAGE_ID)).max(6).optional(),
+  // On a follow-up: it answers Claude's questions. Only the owner's may answer an owner-only one.
+  answer: z.boolean().optional(),
 });
 
 export const editSchema = z.object({ text: z.string().trim().min(1).max(8000) });

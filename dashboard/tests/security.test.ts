@@ -160,7 +160,7 @@ describe("what the session reads", () => {
     await page("/api/messages/send", { method: "POST" });
 
     expect(frames).toHaveLength(2);
-    expect(margin(frames[0] ?? "")).toEqual([expect.stringMatching(/^\[review page\] chat m1 on /)]);
+    expect(margin(frames[0] ?? "")).toEqual([expect.stringMatching(/^\[review page\] chat m1 from @olive \(owner\) on /)]);
     expect(margin(frames[1] ?? "")).toEqual([expect.stringMatching(/^\[review page\] batch 1: /), expect.stringMatching(/^m2 about /)]);
   });
 

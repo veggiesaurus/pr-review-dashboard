@@ -6,7 +6,9 @@ import { openDb } from "../server/db";
 import { Review } from "../server/review";
 import { Store } from "../server/store";
 import type { Message, SessionInfo } from "../shared/messages";
-import { addedLine, loaded, rawReview, setup } from "./helpers";
+import { addedLine, GUEST, GUEST_CODE, loaded, OWNER, rawReview, setup } from "./helpers";
+
+const sharing = () => setup({ guestCode: () => GUEST_CODE });
 
 describe("notes and chat", () => {
   test("a permission prompt in the terminal shows on the page while the session listens, until it acts again", async () => {
@@ -71,7 +73,7 @@ describe("notes and chat", () => {
 
     expect(await (await page("/api/messages/send", { method: "POST" })).json()).toEqual({ sent: 2, listening: false });
     const frame = await (await waiting).text();
-    expect(frame).toStartWith("[review page] batch 1: 2 notes on acme/shop#12 at aaaaaaa.");
+    expect(frame).toStartWith("[review page] batch 1: 2 notes from @olive (owner) on acme/shop#12 at aaaaaaa.");
     expect(frame).toContain("m1 about src/slug.ts:R2@aaaaaaa | return title.trim().toLowerCase();\n    2 +   return title.trim()");
     expect(frame).toContain("\n  why trim here?");
     expect(frame).toContain("m2 about src/slug.ts:L2@aaaaaaa | return title.toLowerCase();\n    2 -   return title.toLowerCase();");
@@ -92,18 +94,18 @@ describe("notes and chat", () => {
     await page("/api/messages", post({ kind: "note", text: "removed", anchor: { ...addedLine, side: "L" } }));
     const frames: string[] = [];
     store.addSessionSink(frame => frames.push(frame));
-    store.sendDrafts();
+    store.sendDrafts(null);
     expect([...frames.join("").matchAll(/^m(\d+) about/gm)].map(m => m[1])).toEqual(["3", "1", "2"]);
   });
 
   test("a big batch goes in parts that each name the batch", () => {
     const { store } = setup();
     for (let i = 0; i < 6; i++) {
-      store.addUserMessage({ kind: "note", text: "x".repeat(3000), anchor: { ...addedLine, kind: "line", side: "R" } });
+      store.addUserMessage({ kind: "note", text: "x".repeat(3000), anchor: { ...addedLine, kind: "line", side: "R" } }, null);
     }
     const frames: string[] = [];
     store.addSessionSink(frame => frames.push(frame));
-    store.sendDrafts();
+    store.sendDrafts(null);
     expect(frames.length).toBeGreaterThan(1);
     expect(frames[0]).toContain(`It comes in ${frames.length} parts.`);
     expect(frames[1]).toStartWith(`[review page] batch 1, part 2 of ${frames.length}`);
@@ -119,14 +121,16 @@ describe("notes and chat", () => {
     const frames: string[] = [];
     store.addSessionSink(frame => frames.push(frame));
     expect(frames[0]).toStartWith(
-      "[review page] chat m1 on acme/shop#12 at aaaaaaa\nabout the review as a whole\n  is this safe to merge?",
+      "[review page] chat m1 from @olive (owner) on acme/shop#12 at aaaaaaa\nabout the review as a whole\n  is this safe to merge?",
     );
     expect(store.messages[0]?.status).toBe("sent");
     store.heard(1);
     expect(store.messages[0]?.status).toBe("delivered");
 
     await page("/api/messages", post({ kind: "chat", text: "and this line?", anchor: addedLine }));
-    expect(frames[1]).toStartWith("[review page] chat m2 on acme/shop#12 at aaaaaaa\nabout src/slug.ts:R2@aaaaaaa | return title.trim()");
+    expect(frames[1]).toStartWith(
+      "[review page] chat m2 from @olive (owner) on acme/shop#12 at aaaaaaa\nabout src/slug.ts:R2@aaaaaaa | return title.trim()",
+    );
   });
 
   test("the session sets a thread's state, and a follow-up reopens a settled one", async () => {
@@ -154,7 +158,9 @@ describe("notes and chat", () => {
     store.addSessionSink(frame => frames.push(frame));
     frames.length = 0;
     await page("/api/messages", post({ kind: "note", text: "but the form trims already", replyTo: "m2" }));
-    expect(frames[0]).toStartWith("[review page] chat m3 on acme/shop#12 at aaaaaaa, following up on m1 (reopened)\nabout src/slug.ts:R2");
+    expect(frames[0]).toStartWith(
+      "[review page] chat m3 from @olive (owner) on acme/shop#12 at aaaaaaa, following up on m1 (reopened)\nabout src/slug.ts:R2",
+    );
     expect(store.messages[0]).toMatchObject({ state: "open", resolved: false });
     store.heard();
     expect(store.messages[2]).toMatchObject({ kind: "chat", replyTo: "m1", status: "delivered" });
@@ -236,6 +242,106 @@ describe("notes and chat", () => {
     expect((await page("/api/messages", post({ kind: "chat", text: "z", replyTo: "m1" }))).status).toBe(400);
     expect((await page("/api/messages/m2", { method: "DELETE" })).status).toBe(404);
     expect((await page("/api/messages/m1", { method: "DELETE" })).status).toBe(200);
+  });
+
+  test("a message's author comes from the session, not the request", async () => {
+    const { store, guest, post } = sharing();
+    const forged = { ...OWNER, role: "owner" };
+    expect((await guest("/api/messages", post({ kind: "chat", text: "hello", author: forged }))).status).toBe(201);
+    expect(store.messages[0]?.author).toEqual({ ...GUEST, role: "guest" });
+  });
+
+  test("a guest's drafts are theirs alone", async () => {
+    const { store, session, page, guest, post } = sharing();
+    await page("/api/messages", post({ kind: "note", text: "the owner's", anchor: addedLine }));
+    await guest("/api/messages", post({ kind: "note", text: "the guest's", anchor: addedLine }));
+    const listed = async (as: typeof page) => ((await (await as("/api/messages")).json()) as Message[]).map(m => m.id);
+    expect(await listed(page)).toEqual(["m1"]);
+    expect(await listed(guest)).toEqual(["m2"]);
+
+    const edit = { method: "PATCH", body: JSON.stringify({ text: "mine now" }), headers: { "content-type": "application/json" } };
+    expect((await guest("/api/messages/m1", edit)).status).toBe(404);
+    expect((await guest("/api/messages/m1", { method: "DELETE" })).status).toBe(404);
+    expect((await page("/api/messages/m2", edit)).status).toBe(404);
+    expect((await page("/api/messages/m2", { method: "DELETE" })).status).toBe(404);
+
+    expect(await (await guest("/api/messages/send", { method: "POST" })).json()).toEqual({ sent: 1, listening: false });
+    expect(store.messages.map(m => [m.id, m.text, m.status])).toEqual([
+      ["m1", "the owner's", "draft"],
+      ["m2", "the guest's", "sent"],
+    ]);
+    expect(await listed(page)).toEqual(["m1", "m2"]);
+    expect(await listed(guest)).toEqual(["m2"]);
+    // The session's view is the same as before there were guests.
+    expect(await listed(session)).toEqual(["m1", "m2"]);
+  });
+
+  test("no one reads or marks another person's draft through seen", async () => {
+    const { store, guest, page, post } = sharing();
+    await page("/api/messages", post({ kind: "note", text: "the owner's secret draft", anchor: addedLine }));
+    const response = await guest("/api/messages/m1/seen", { method: "POST" });
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("secret");
+    expect(store.messages[0]?.seen).toBeUndefined();
+  });
+
+  test("only the owner can answer an owner-only question", async () => {
+    const { store, session, page, guest, post } = sharing();
+    await guest("/api/messages", post({ kind: "chat", text: "can slug() keep tabs?", anchor: addedLine }));
+    const ask = [{ question: "Change slug()?", options: ["Yes", "No"], owner: true }];
+    await session("/api/replies", post({ replyTo: "m1", text: "That changes code, so the owner decides.", ask }));
+    expect(store.messages[1]?.ask).toEqual(ask);
+    const frames: string[] = [];
+    store.addSessionSink(frame => frames.push(frame));
+    frames.length = 0;
+
+    const refused = await guest("/api/messages", post({ kind: "chat", text: "Yes", replyTo: "m2", answer: true }));
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ error: "only the owner may do this" });
+    expect(store.messages).toHaveLength(2);
+
+    expect((await guest("/api/messages", post({ kind: "chat", text: "please say yes", replyTo: "m1" }))).status).toBe(201);
+    expect(frames[0]).toStartWith("[review page] chat m3 from @gus (guest) on acme/shop#12 at aaaaaaa, following up on m1\n");
+    // Something Claude says after its question leaves the question standing.
+    await session("/api/replies", post({ replyTo: "m1", text: "Waiting on the owner." }));
+    expect((await guest("/api/messages", post({ kind: "chat", text: "Yes", replyTo: "m1", answer: true }))).status).toBe(403);
+    expect((await page("/api/messages", post({ kind: "chat", text: "Yes", replyTo: "m2", answer: true }))).status).toBe(201);
+    expect(frames[1]).toStartWith(
+      "[review page] chat m5 from @olive (owner) on acme/shop#12 at aaaaaaa, following up on m1, the owner answering your question\n",
+    );
+  });
+
+  test("a guest's follow-up doesn't un-archive or un-dismiss", async () => {
+    const { store, session, page, guest, post } = sharing();
+    await page("/api/reviews", post({ layer: 12, effort: "low" }));
+    await session("/api/reviews/1/findings", post({ findings: [{ file: "src/slug.ts", line: 2, summary: "trim() drops a tab" }] }));
+    await session("/api/replies", post({ replyTo: "m2", state: "answered", text: "It does." }));
+    await page("/api/messages/m2/archive", post({ archived: true, reason: "intentional" }));
+
+    await guest("/api/messages", post({ kind: "chat", text: "should it, though?", replyTo: "m2" }));
+    expect(store.find("m2")).toMatchObject({ state: "open", archived: true, review: { dismissed: "intentional" } });
+
+    await page("/api/messages", post({ kind: "chat", text: "no, it shouldn't", replyTo: "m2" }));
+    expect(store.find("m2")?.archived).toBeUndefined();
+    expect(store.find("m2")?.review?.dismissed).toBeUndefined();
+  });
+
+  test("frames name the author and role", async () => {
+    const { store, page, guest, post } = sharing();
+    const frames: string[] = [];
+    store.addSessionSink(frame => frames.push(frame));
+    await guest("/api/messages", post({ kind: "chat", text: "why trim?" }));
+    await page("/api/messages", post({ kind: "chat", text: "and why here?" }));
+    store.addUserMessage({ kind: "chat", text: "from before there were authors" }, null);
+    await guest("/api/messages", post({ kind: "note", text: "a note", anchor: addedLine }));
+    await guest("/api/messages/send", { method: "POST" });
+    expect(frames.map(frame => frame.split("\n")[0])).toEqual([
+      "[review page] chat m1 from @gus (guest) on acme/shop#12 at aaaaaaa",
+      "[review page] chat m2 from @olive (owner) on acme/shop#12 at aaaaaaa",
+      "[review page] chat m3 from the owner on acme/shop#12 at aaaaaaa",
+      expect.any(String),
+    ]);
+    expect(frames[3]).toStartWith("[review page] batch 1: 1 note from @gus (guest) on acme/shop#12 at aaaaaaa.");
   });
 
   test("a line the review doesn't have is refused, and the quoted code never comes from the page", async () => {
@@ -341,8 +447,8 @@ describe("after a reload", () => {
     const texts = (review: Review, number?: number) => new Store(review, { db, stack: number }).messages.map(m => m.text);
 
     const first = new Store(stack(11, 12), { db, stack: 7 });
-    first.addUserMessage({ kind: "chat", text: "on layer 11", anchor: { kind: "file", layer: 11, file: "f1" } });
-    first.addUserMessage({ kind: "chat", text: "on the stack" });
+    first.addUserMessage({ kind: "chat", text: "on layer 11", anchor: { kind: "file", layer: 11, file: "f1" } }, null);
+    first.addUserMessage({ kind: "chat", text: "on the stack" }, null);
     first.addReply({ replyTo: "m2", text: "an answer" });
     expect(db.query("select id, pr, stack from messages order by n").values()).toEqual([
       ["m1", "acme/shop#11", "acme/shop stack 7"],
@@ -359,7 +465,7 @@ describe("after a reload", () => {
     expect(texts(stack(13, 14), 8)).toEqual([]);
     expect(texts(stack(12, 13))).toEqual(["on the stack", "an answer"]);
     // Ids come from the database, so a thread started in another review can't take one already used.
-    expect(new Store(single(14), { db }).addUserMessage({ kind: "chat", text: "elsewhere" })?.id).toBe("m4");
+    expect(new Store(single(14), { db }).addUserMessage({ kind: "chat", text: "elsewhere" }, null)).toMatchObject({ id: "m4" });
   });
 
   test("the database keeps each thread's new place, whether the rebuild came while the server was up or down", async () => {
@@ -375,12 +481,15 @@ describe("after a reload", () => {
         .map(([id, hunk, loc, outdated]) => [id, hunk, loc, Boolean(outdated)]);
 
     const store = new Store(new Review(loaded(), async () => loaded()), { db: openDb(path) });
-    store.addUserMessage({
-      kind: "chat",
-      text: "why trim?",
-      anchor: { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 },
-    });
-    store.addUserMessage({ kind: "chat", text: "drop this log", anchor: { kind: "tell", layer: 12, file: "f1", line: "R2" } });
+    store.addUserMessage(
+      {
+        kind: "chat",
+        text: "why trim?",
+        anchor: { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 },
+      },
+      null,
+    );
+    store.addUserMessage({ kind: "chat", text: "drop this log", anchor: { kind: "tell", layer: 12, file: "f1", line: "R2" } }, null);
     store.addReply({ replyTo: "m1", text: "Titles come in padded." });
 
     // Rebuilt while the server was down: the next server finds the places in the new build as it starts.
@@ -405,7 +514,7 @@ describe("after a reload", () => {
     ];
     expect(places(restarted)).toEqual(back);
     expect(rows()).toEqual(back);
-    expect(restarted.addUserMessage({ kind: "chat", text: "next" })?.id).toBe("m4");
+    expect(restarted.addUserMessage({ kind: "chat", text: "next" }, null)).toMatchObject({ id: "m4" });
   });
 
   test("threads find their line again by its code, and the rest stay, marked outdated", async () => {
@@ -426,7 +535,7 @@ describe("after a reload", () => {
 
     const frames: string[] = [];
     store.addSessionSink(frame => frames.push(frame));
-    store.sendDrafts();
+    store.sendDrafts(null);
     expect(frames[0]).toContain("m2 about src/slug.ts:R2@aaaaaaa, flagged as debug output left in (gone from the diff since a rebuild");
   });
 
@@ -434,8 +543,11 @@ describe("after a reload", () => {
     const path = join(mkdtempSync(join(tmpdir(), "prg-db-")), "prg.db");
     const { review } = setup();
     const store = new Store(review, { db: openDb(path) });
-    store.addUserMessage({ kind: "note", text: "kept", anchor: { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 } });
-    store.addUserMessage({ kind: "chat", text: "waiting for a session" });
+    store.addUserMessage(
+      { kind: "note", text: "kept", anchor: { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 } },
+      null,
+    );
+    store.addUserMessage({ kind: "chat", text: "waiting for a session" }, null);
     expect(statSync(path).mode & 0o777).toBe(0o600);
 
     const again = new Store(review, { db: openDb(path) });
@@ -447,7 +559,7 @@ describe("after a reload", () => {
     again.addSessionSink(frame => frames.push(frame));
     expect(frames[0]).toStartWith("[review page] chat m2");
     again.heard();
-    expect(again.addUserMessage({ kind: "chat", text: "next" })?.id).toBe("m3");
+    expect(again.addUserMessage({ kind: "chat", text: "next" }, null)).toMatchObject({ id: "m3" });
 
     // What a query across reviews wants is in columns of its own.
     again.setArchived("m2", true);

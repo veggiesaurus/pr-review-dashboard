@@ -28,21 +28,25 @@ export function messagesRoutes(deps: AppDeps) {
     return c.json(store.session);
   });
 
-  app.get("/messages", c => c.json(store.messages));
+  // The session reads every message, as it did before there were guests.
+  app.get("/messages", c => c.json(c.get("who") === "session" ? store.messages : store.messagesFor(c.get("author"))));
 
   app.post("/messages", only("owner", "guest"), small, zValidator("json", newMessageSchema), c => {
     const input = c.req.valid("json");
     if (input.images?.some(id => !hasAttachment(deps.attachments, id))) {
       return c.json({ error: "an attached screenshot isn't on the server; attach it again" }, 400);
     }
-    const message = store.addUserMessage(input);
+    const message = store.addUserMessage(input, c.get("author"));
+    if (message === "owner-only") {
+      return c.json({ error: "only the owner may do this" }, 403);
+    }
     return message ? c.json(message, 201) : c.json({ error: "that anchor or message isn't in this review" }, 400);
   });
 
-  app.post("/messages/send", only("owner", "guest"), c => c.json({ sent: store.sendDrafts(), listening: store.listening }));
+  app.post("/messages/send", only("owner", "guest"), c => c.json({ sent: store.sendDrafts(c.get("author")), listening: store.listening }));
 
   app.patch("/messages/:id", only("owner", "guest"), small, zValidator("json", editSchema), c => {
-    const draft = store.editDraft(c.req.param("id"), c.req.valid("json").text);
+    const draft = store.editDraft(c.req.param("id"), c.req.valid("json").text, c.get("author"));
     return draft ? c.json(draft) : c.json({ error: "no such draft" }, 404);
   });
 
@@ -58,7 +62,7 @@ export function messagesRoutes(deps: AppDeps) {
   });
 
   app.delete("/messages/:id", only("owner", "guest"), c =>
-    store.deleteDraft(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "no such draft" }, 404),
+    store.deleteDraft(c.req.param("id"), c.get("author")) ? c.json({ ok: true }) : c.json({ error: "no such draft" }, 404),
   );
 
   // 201 with Claude's message when there is text, else 200 with the thread whose state changed.
