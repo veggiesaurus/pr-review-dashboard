@@ -73,7 +73,7 @@ Text from the PR that ends up in a frame to the session (a file path, a check's 
 
 `POST /api/share`, or the Share button, starts `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:PORT` and reads the `https://*.trycloudflare.com` address from its output. The link is that address with `/?g=CODE`, and it goes in the state file as `shareLink`. Stopping ends the tunnel and every guest's session. A new share is a new address, so guests sign in again.
 
-Guests sign in with GitHub's device flow, which needs only a public client id: `PRG_GITHUB_CLIENT_ID`, else the default in `server/signin.ts`. The server asks for no scope, reads the user's public profile, throws the token away, and checks with the owner's `gh` that the user is a collaborator on the reviewed repo (`gh api repos/acme/shop/collaborators/alice`). Sharing is refused if the owner's `gh` can't make that check. GitHub allows 50 code submissions an hour per app, across all its users.
+Guests sign in with GitHub's device flow, which needs only a public client id: `PRG_GITHUB_CLIENT_ID`, from an OAuth app the owner registers. There is no default. The server asks for no scope, reads the user's public profile, throws the token away, and checks with the owner's `gh` that the user is a collaborator on the reviewed repo (`gh api repos/acme/shop/collaborators/alice`). Sharing is refused if the owner's `gh` can't make that check. GitHub allows 50 code submissions an hour per app, across all its users.
 
 `PRG_ALLOWED_MAIL` adds Cloudflare's email gate in front of the page. It needs `cloudflared` 2026.11 or later, and `cloudflared` doesn't pass the email on, so guests are still identified by GitHub.
 

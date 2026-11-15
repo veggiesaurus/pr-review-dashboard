@@ -5,9 +5,6 @@ import type { SignInStatus } from "../shared/messages";
 import { REPO, type Runner } from "./comments";
 import { LOGIN } from "./github";
 
-// The OAuth app guests sign in with, which PRG_GITHUB_CLIENT_ID overrides. Empty until it is registered.
-export const DEFAULT_GITHUB_CLIENT_ID = "";
-
 const KEEP_MS = 15 * 60_000;
 
 const deviceSchema = z.object({

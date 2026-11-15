@@ -21,7 +21,7 @@ export function shareRoutes(deps: AppDeps) {
   // What stops sharing, as far as can be known without asking GitHub, so the page can say so before Start.
   function blocked() {
     if (!signIn.clientId) {
-      return "sharing needs a GitHub OAuth app for guests to sign in with, and none is set up: set PRG_GITHUB_CLIENT_ID to its client id";
+      return "sharing needs a GitHub OAuth app of your own for guests to sign in with: register one at https://github.com/settings/applications/new with Enable Device Flow ticked, then set PRG_GITHUB_CLIENT_ID to its client id";
     }
     if (!people.owner) {
       return "sharing needs your GitHub login to check who may sign in, and gh api user failed when the dashboard started: check gh auth status, then start it again";

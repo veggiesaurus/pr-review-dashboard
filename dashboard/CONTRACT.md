@@ -135,7 +135,7 @@ Ticks, drafts and `seen` belong to the person: `GET /ticks` returns the caller's
 
 The page's socket, `WS /ws`, also takes `{type: "where", layer, tab, section, hidden}` from the page whenever its reader moves or its tab hides or shows (`whereSchema`, `shared/messages.ts`). The server keeps one seat per socket in memory and pushes `{type: "presence"}` when the list changes, and the page refetches `GET /presence`, which shows a person on several devices once, at the one that moved last. Nothing is stored.
 
-`PRG_GITHUB_CLIENT_ID` is the client id of the GitHub OAuth app guests sign in with, else `DEFAULT_GITHUB_CLIENT_ID` in `server/signin.ts`. `PRG_ALLOWED_MAIL` is a comma-separated list for `cloudflared`'s email gate, which needs `cloudflared` 2026.11 or later. The state file has `shareLink` while sharing.
+`PRG_GITHUB_CLIENT_ID` is the client id of the GitHub OAuth app guests sign in with, which the owner registers; there is no default, and sharing is refused without it. `PRG_ALLOWED_MAIL` is a comma-separated list for `cloudflared`'s email gate, which needs `cloudflared` 2026.11 or later. The state file has `shareLink` while sharing.
 
 ## Messages and anchors
 

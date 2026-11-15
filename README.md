@@ -59,7 +59,7 @@ You can open a running review to teammates over a link, so they can read the gui
 
 - Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. To also ask for an email one-time PIN before the page loads, set `PRG_ALLOWED_MAIL` to a comma-separated list such as `alice@acme.com,*@acme.com`. That needs `cloudflared` 2026.11 or later.
 - A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
-- Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app with device flow enabled. Put its client id in `PRG_GITHUB_CLIENT_ID` until the plugin ships a default.
+- Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in `PRG_GITHUB_CLIENT_ID`. The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in.
 - Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.
 - The link changes each time sharing starts, and stops working when you stop sharing.
 
