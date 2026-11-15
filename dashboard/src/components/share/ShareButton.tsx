@@ -82,13 +82,17 @@ export function ShareButton() {
         ) : (
           <>
             <p className="text-muted-foreground text-xs">
-              Share this review with teammates over a Cloudflare tunnel. They sign in with GitHub, and only collaborators on the repo get
-              in. Guests will see every thread on this review.
+              Share this review with teammates over a Cloudflare quick tunnel, which needs no Cloudflare account. They sign in with GitHub,
+              and only collaborators on the repo get in. Guests will see every thread on this review.
             </p>
             {unpushed}
-            <Button size="sm" className="w-fit" disabled={start.isPending} onClick={() => start.mutate()}>
-              {start.isPending ? "Starting…" : "Start sharing"}
-            </Button>
+            {data?.blocked ? (
+              <p className="rounded-md border bg-muted px-2 py-1.5 text-xs first-letter:uppercase">{data.blocked}.</p>
+            ) : (
+              <Button size="sm" className="w-fit" disabled={start.isPending} onClick={() => start.mutate()}>
+                {start.isPending ? "Starting…" : "Start sharing"}
+              </Button>
+            )}
             {start.isError && <p className="text-danger text-xs">{errorText(start.error)}</p>}
           </>
         )}

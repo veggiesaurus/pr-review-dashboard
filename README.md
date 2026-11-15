@@ -35,7 +35,7 @@ A small local server in `dashboard/` serves the page and passes messages between
 
 You can open a running review to teammates over a link, so they can read the guide, chat and see Claude's answers. Press Share in the page's header, or ask Claude. The dashboard starts a Cloudflare quick tunnel and shows a link to send them.
 
-- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). To also ask for an email one-time PIN before the page loads, set `PRG_ALLOWED_MAIL` to a comma-separated list such as `alice@acme.com,*@acme.com`. That needs `cloudflared` 2026.11 or later.
+- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. To also ask for an email one-time PIN before the page loads, set `PRG_ALLOWED_MAIL` to a comma-separated list such as `alice@acme.com,*@acme.com`. That needs `cloudflared` 2026.11 or later.
 - A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
 - Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app with device flow enabled. Put its client id in `PRG_GITHUB_CLIENT_ID` until the plugin ships a default.
 - Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.

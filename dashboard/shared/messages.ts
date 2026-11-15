@@ -224,7 +224,8 @@ export type SignInStatus =
   | { state: "done"; person: Person }
   | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "error" };
 // unpushed: some layer's head isn't on GitHub, so guests would read code that is only on this machine.
-export type ShareInfo = { sharing: boolean; link: string | null; signedIn: Person[]; unpushed: boolean };
+// blocked: why sharing can't start, from the checks that don't ask GitHub, or null.
+export type ShareInfo = { sharing: boolean; link: string | null; signedIn: Person[]; unpushed: boolean; blocked: string | null };
 
 export type NewMessage = z.infer<typeof newMessageSchema>;
 export type Reply = z.infer<typeof replySchema>;

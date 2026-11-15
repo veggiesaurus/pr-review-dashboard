@@ -105,6 +105,12 @@ describe("the share", () => {
     const gated = new Share({ port: () => PORT, spawn, allowedMail: ["*@acme.com"], runner, people: new People(), onChange: () => {} });
     expect(await gated.start()).toEqual({ error: expect.stringContaining("install cloudflared") });
   });
+
+  test("a cloudflared that isn't on the PATH is missing before anything starts", () => {
+    const share = (which: () => string | null) => new Share({ port: () => PORT, which, people: new People(), onChange: () => {} });
+    expect(share(() => null).missing).toEqual(expect.stringContaining("no Cloudflare account: install cloudflared"));
+    expect(share(() => "/usr/local/bin/cloudflared").missing).toBeNull();
+  });
 });
 
 describe("the share routes", () => {
@@ -138,6 +144,7 @@ describe("the share routes", () => {
   test("POST /api/share refuses until a GitHub app is set up for guests to sign in with", async () => {
     const { calls, runner } = gh(0);
     const { page, cloudflared, share } = setup({ runner, clientId: "" });
+    expect(await (await page("/api/share")).json()).toMatchObject({ blocked: expect.stringContaining("PRG_GITHUB_CLIENT_ID") });
     const refused = await page("/api/share", { method: "POST" });
     expect(refused.status).toBe(400);
     expect(await refused.json()).toEqual({ error: expect.stringContaining("PRG_GITHUB_CLIENT_ID") });
@@ -155,7 +162,13 @@ describe("the share routes", () => {
     const started = await page("/api/share", { method: "POST" });
     expect(started.status).toBe(200);
     const info = await started.json();
-    expect(info).toEqual({ sharing: true, link: expect.stringContaining(`https://${TUNNEL}/?g=`), signedIn: [GUEST], unpushed: false });
+    expect(info).toEqual({
+      sharing: true,
+      link: expect.stringContaining(`https://${TUNNEL}/?g=`),
+      signedIn: [GUEST],
+      unpushed: false,
+      blocked: null,
+    });
     expect(calls).toHaveLength(1);
     expect(pushes).toContainEqual({ type: "session" });
     expect(await (await page("/api/share")).json()).toEqual(info);
@@ -163,7 +176,7 @@ describe("the share routes", () => {
 
     expect((await session("/api/share", { method: "DELETE" })).status).toBe(200);
     expect(people.signedIn()).toEqual([]);
-    expect(await (await page("/api/share")).json()).toEqual({ sharing: false, link: null, signedIn: [], unpushed: false });
+    expect(await (await page("/api/share")).json()).toEqual({ sharing: false, link: null, signedIn: [], unpushed: false, blocked: null });
   });
 
   test("a branch with no pull request is unpushed", async () => {

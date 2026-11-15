@@ -53,8 +53,15 @@ export class Share {
       onChange: () => void;
       runner?: Runner;
       timeoutMs?: number;
+      which?: (cmd: string) => string | null;
     },
   ) {}
+
+  // What to install before a tunnel can start, or null when cloudflared is on the PATH.
+  get missing() {
+    const which = this.opts.which ?? (cmd => Bun.which(cmd));
+    return which("cloudflared") ? null : `sharing needs cloudflared, which is free and needs no Cloudflare account: ${INSTALL}`;
+  }
 
   get link() {
     return this.host && this.guestCode ? `https://${this.host}/?g=${this.guestCode}` : null;

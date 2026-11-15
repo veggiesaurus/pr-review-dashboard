@@ -187,14 +187,14 @@ Add `"owner": true` to a question when only the owner may answer it, which is ho
 
 ## Sharing
 
-The owner can share the running review with teammates through a Cloudflare quick tunnel, from the Share button in the page or by asking you. Both need `cloudflared`; the page explains what is missing if it isn't installed.
+The owner can share the running review with teammates through a Cloudflare quick tunnel, from the Share button in the page or by asking you. Both need `cloudflared`, which needs no Cloudflare account; the page says what is missing before the owner presses Start.
 
 ```
 curl -s -X POST -H "Authorization: Bearer $T" "$O/api/share"
 curl -s -X DELETE -H "Authorization: Bearer $T" "$O/api/share"
 ```
 
-`POST` starts the tunnel and answers `{sharing, link, signedIn, unpushed}`, or 400 `{error}` saying why it can't: no `cloudflared`, no GitHub OAuth app set up for sign-in, or the owner's `gh` can't check who is a collaborator on the repo. `DELETE` stops it and signs every guest out, as `cloudflared` stopping by itself does. While sharing, the state file has `shareLink`. Read it the way you read `token`, and give it to the user only when they ask for it. Never print it otherwise, since whoever holds it can try to sign in. The link changes every time sharing starts, so an old one gives a page saying it has expired or is wrong.
+`POST` starts the tunnel and answers `{sharing, link, signedIn, unpushed, blocked}`, or 400 `{error}` saying why it can't: no `cloudflared`, no GitHub OAuth app set up for sign-in, or the owner's `gh` can't check who is a collaborator on the repo. `DELETE` stops it and signs every guest out, as `cloudflared` stopping by itself does. While sharing, the state file has `shareLink`. Read it the way you read `token`, and give it to the user only when they ask for it. Never print it otherwise, since whoever holds it can try to sign in. The link changes every time sharing starts, so an old one gives a page saying it has expired or is wrong.
 
 While sharing, never put `link`, `lanLink`, the token or any `?t=` code in a reply on the page. Guests read every reply, and the owner's code works through the tunnel, so whoever has it is the owner. Give them in the terminal.
 
