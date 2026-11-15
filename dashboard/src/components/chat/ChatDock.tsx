@@ -19,6 +19,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "src/components/ui/message-scroller";
+import { useIsOwner } from "src/queries/me.query";
 import { useArchiveReview, useArchiveThread, useSendDrafts } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useReview } from "src/queries/review.query";
@@ -68,6 +69,7 @@ function ThreadList({ threads, archived, focus }: { threads: ClaudeThread[]; arc
   const setFocus = useChatStore(state => state.setFocus);
   const active = focus?.kind === "thread" ? focus.id : null;
   const archiveReview = useArchiveReview();
+  const owner = useIsOwner();
   // A review's request and findings are listed together, newest review first.
   const reviews = [...new Set(threads.flatMap(t => t.root.review?.n ?? []))].sort((a, b) => b - a);
   return (
@@ -98,16 +100,18 @@ function ThreadList({ threads, archived, focus }: { threads: ClaudeThread[]; arc
           <div key={`review-${n}`}>
             <h3 className="flex items-center px-2 font-medium text-muted-foreground text-xs">
               Review {n} ({mine.length})
-              <button
-                type="button"
-                className="ml-auto cursor-pointer hover:text-foreground"
-                title={`Archive every thread of review ${n}`}
-                aria-label={`Archive every thread of review ${n}`}
-                disabled={archiveReview.isPending}
-                onClick={() => archiveReview.mutate(n)}
-              >
-                <Archive className="size-3.5" />
-              </button>
+              {owner && (
+                <button
+                  type="button"
+                  className="ml-auto cursor-pointer hover:text-foreground"
+                  title={`Archive every thread of review ${n}`}
+                  aria-label={`Archive every thread of review ${n}`}
+                  disabled={archiveReview.isPending}
+                  onClick={() => archiveReview.mutate(n)}
+                >
+                  <Archive className="size-3.5" />
+                </button>
+              )}
             </h3>
             <ul className="mt-1 grid gap-0.5">
               {mine.map(thread => (
@@ -226,6 +230,7 @@ export function ChatDock({ connected }: { connected: boolean }) {
   const { data: session } = useSession();
   const send = useSendDrafts();
   const archive = useArchiveThread();
+  const owner = useIsOwner();
   const { chatOpen, drawer, focus, setChatOpen, openDrawer, setFocus, openThread } = useChatStore();
   const listening = connected && Boolean(session?.listening);
   // What the session last said it is doing, while it's listening.
@@ -285,7 +290,7 @@ export function ChatDock({ connected }: { connected: boolean }) {
                   </Button>
                 )}
                 <span className="ml-auto flex items-center gap-1">
-                  {shown && (
+                  {owner && shown && (
                     <Button
                       variant="ghost"
                       size="icon"

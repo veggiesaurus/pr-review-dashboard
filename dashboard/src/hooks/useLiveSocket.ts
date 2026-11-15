@@ -7,7 +7,7 @@ import { pageKey } from "src/queries/key";
 const KEYS: Record<Push["type"], string[]> = {
   review: ["review", "github", "linear", "usages", "lines", "refs"],
   messages: ["messages", "refs"],
-  session: ["session"],
+  session: ["session", "me", "share"],
   github: ["github"],
   ticks: ["ticks"],
   presence: ["presence"],

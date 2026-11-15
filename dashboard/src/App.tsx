@@ -11,11 +11,15 @@ import { SectionRail } from "src/components/guide/SectionRail";
 import { shownSections } from "src/components/guide/visible";
 import { Header } from "src/components/Header";
 import { Overview } from "src/components/overview/Overview";
+import { ShareButton } from "src/components/share/ShareButton";
+import { SignIn } from "src/components/share/SignIn";
 import { ThemeButton } from "src/components/ThemeButton";
 import { useCurrentSection } from "src/hooks/useCurrentSection";
 import { useHashSync } from "src/hooks/useHashSync";
 import { useLiveSocket } from "src/hooks/useLiveSocket";
 import { usePresence } from "src/hooks/usePresence";
+import { useIsOwner } from "src/queries/me.query";
+import { errorText } from "src/queries/messages.mutation";
 import { useLayer, useReview } from "src/queries/review.query";
 import { PAGE_COLUMN, useViewStore } from "src/store/view.store";
 import { cn } from "src/utils/cn";
@@ -35,7 +39,8 @@ function useLayerSwapped(layer: number | null, tab: string) {
 
 export function App() {
   const connected = useLiveSocket();
-  const { data, isPending, isError } = useReview();
+  const { data, isPending, isError, error } = useReview();
+  const owner = useIsOwner();
   useHashSync(data);
   useKeyboard();
   const layer = useViewStore(state => state.layer);
@@ -53,12 +58,18 @@ export function App() {
     }
   }, [data, shown]);
 
+  // A guest who has opened the share link but not signed in is told so by every call.
+  if (isError && errorText(error, "") === "sign in") {
+    return <SignIn />;
+  }
+
   return (
     <div className="relative min-h-screen">
       {/* On the column's right edge, level with the header's first line. */}
       <div className={cn("pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-end", PAGE_COLUMN)}>
         <div className="pointer-events-auto flex items-center gap-1">
-          <RebuildButton />
+          {owner && <ShareButton />}
+          {owner && <RebuildButton />}
           <KeysHelp />
           <ThemeButton />
         </div>

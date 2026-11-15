@@ -218,6 +218,11 @@ export type Role = "owner" | "guest";
 export type Author = Person & { role: Role };
 // sharing: whether the share link works right now.
 export type Me = { role: Role; person: Person | null; sharing: boolean };
+// Where a guest's GitHub sign-in stands.
+export type SignInStatus =
+  | { state: "pending"; userCode: string; verificationUri: string; expiresAt: string }
+  | { state: "done"; person: Person }
+  | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "error" };
 // unpushed: some layer's head isn't on GitHub, so guests would read code that is only on this machine.
 export type ShareInfo = { sharing: boolean; link: string | null; signedIn: Person[]; unpushed: boolean };
 

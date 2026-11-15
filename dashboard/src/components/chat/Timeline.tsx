@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
 import type { Message, ThreadEvent } from "shared/messages";
-
 import { Marker, MarkerContent } from "src/components/ui/marker";
 import {
   Questionnaire,
@@ -25,6 +24,7 @@ import {
   TraceLine,
   TraceTitle,
 } from "src/components/ui/trace";
+import { useMe } from "src/queries/me.query";
 import { ago, fullDate } from "src/utils/dates";
 
 export type Entry = { message: Message } | { steps: ThreadEvent[] } | { note: ThreadEvent };
@@ -100,6 +100,7 @@ export function Note({ note }: { note: ThreadEvent }) {
 // Claude's questions, each with its choices and room for another answer. What is picked goes back as a follow-up.
 export function Ask({ message, pending, onAnswer }: { message: Message; pending: boolean; onAnswer: (text: string) => void }) {
   const questions = message.ask ?? [];
+  const guest = useMe()?.role === "guest";
   const name = (index: number) => `q${index}`;
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -116,6 +117,19 @@ export function Ask({ message, pending, onAnswer }: { message: Message; pending:
       onAnswer(text);
     }
   };
+  // The server refuses a guest's answer while any question on the thread is the owner's.
+  if (guest && questions.some(q => q.owner)) {
+    return (
+      <div className="grid gap-2 rounded-md border bg-background p-3 text-sm">
+        {questions.map(q => (
+          <p key={q.question}>
+            {q.question}{" "}
+            <span className="text-muted-foreground">{q.owner ? "Waiting on @owner" : "Waiting on the owner's answers first"}</span>
+          </p>
+        ))}
+      </div>
+    );
+  }
   return (
     <Questionnaire
       items={questions.map((q, index) => ({ name: name(index), required: true, choices: q.options.map(value => ({ value })) }))}

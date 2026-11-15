@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
 import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "src/components/ui/dropdown-menu";
+import { useIsOwner, useMe } from "src/queries/me.query";
 import { errorText, useAddMessage, useArchiveThread, useDeleteDraft, useEditDraft, useMarkSeen } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useViewStore } from "src/store/view.store";
@@ -199,10 +200,22 @@ export function Bubble({ message }: { message: Message }) {
   const shown = useViewStore(state => state.layer);
   const layer = layerOf(message, shown);
   const mine = message.from === "user";
+  const me = useMe();
+  const { author } = message;
+  // No author is the owner's: sent before guests, or with no login known.
+  const own = author ? author.id === me?.person?.id : me?.role === "owner";
   return (
     <div className={cn("rounded-md border px-2.5 py-2", mine ? "bg-background" : "border-primary/25 bg-primary/6")}>
       <div className="flex flex-wrap items-center gap-x-2 text-xs">
-        <span className={cn("font-medium", mine ? "text-foreground/75" : "text-primary")}>{mine ? "You" : "Claude"}</span>
+        <span className={cn("inline-flex items-center gap-1.5 font-medium", mine ? "text-foreground/75" : "text-primary")}>
+          {mine && !own && author && (
+            <Avatar size="xs">
+              <AvatarImage src={`/api/github/avatar/${author.login}`} alt="" />
+              <AvatarFallback>{author.login.slice(0, 2).toUpperCase()}</AvatarFallback>
+            </Avatar>
+          )}
+          {!mine ? "Claude" : own ? "You" : author ? `@${author.login}` : "Owner"}
+        </span>
         <time dateTime={message.at} title={fullDate(message.at)} className="text-muted-foreground">
           {ago(message.at)}
         </time>
@@ -282,6 +295,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   const [wasResolved, setWasResolved] = useState(root.resolved);
   const add = useAddMessage();
   const archive = useArchiveThread();
+  const owner = useIsOwner();
   // An answer counts as seen once its thread has been on screen, open, wherever on the page that is.
   const box = useRef<HTMLDivElement>(null);
   const { mutate: markSeen } = useMarkSeen();
@@ -379,10 +393,15 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             );
           })}
           {asking && (
-            <Ask message={asking} pending={add.isPending} onAnswer={text => add.mutate({ kind: "chat", text, replyTo: root.id })} />
+            <Ask
+              message={asking}
+              pending={add.isPending}
+              onAnswer={text => add.mutate({ kind: "chat", text, replyTo: root.id, answer: true })}
+            />
           )}
+          {asking && add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't send.")}</span>}
           {!(live && "steps" in (entries.at(-1) ?? {})) && <Working thread={root.id} waiting={awaited(root, replies)} />}
-          {finding && fixable(root, replies) && (
+          {owner && finding && fixable(root, replies) && (
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" disabled={add.isPending} onClick={() => add.mutate({ kind: "chat", text: "Fix this.", replyTo: root.id })}>
                 Fix this

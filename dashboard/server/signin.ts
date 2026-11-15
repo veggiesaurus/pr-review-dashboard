@@ -1,17 +1,12 @@
 import { randomBytes } from "node:crypto";
 
 import { z } from "zod";
-import type { Person } from "../shared/messages";
+import type { SignInStatus } from "../shared/messages";
 import { REPO, type Runner } from "./comments";
 import { LOGIN } from "./github";
 
 // The OAuth app guests sign in with, which PRG_GITHUB_CLIENT_ID overrides. Empty until it is registered.
 export const DEFAULT_GITHUB_CLIENT_ID = "";
-
-export type SignInStatus =
-  | { state: "pending"; userCode: string; verificationUri: string; expiresAt: string }
-  | { state: "done"; person: Person }
-  | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "error" };
 
 const KEEP_MS = 15 * 60_000;
 

@@ -11,6 +11,7 @@ import { Button } from "src/components/ui/button";
 import { ButtonGroup } from "src/components/ui/button-group";
 import { Block } from "src/components/ui/disclosure";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "src/components/ui/dropdown-menu";
+import { useIsOwner } from "src/queries/me.query";
 import { errorText, useFixRecommended, useRequestReview } from "src/queries/messages.mutation";
 import { useLayer, useReview } from "src/queries/review.query";
 import { progressKeys, useTickedCount } from "src/store/ticks.store";
@@ -43,6 +44,9 @@ export function ReviewButton({ layer }: { layer: number }) {
   const variant = read ? "default" : "outline";
   const running = request && !request.root.resolved ? request.root.review?.n : undefined;
   const busy = running !== undefined || ask.isPending;
+  if (!useIsOwner()) {
+    return null;
+  }
   return (
     <span className="flex flex-wrap items-center justify-end gap-2">
       {ask.isError && <span className="text-danger text-sm">{errorText(ask.error, "That didn't send.")}</span>}
@@ -91,6 +95,7 @@ export function ReviewBlock({ layer }: { layer: number }) {
   const review = useReview().data;
   const openThread = useChatStore(state => state.openThread);
   const fix = useFixRecommended();
+  const owner = useIsOwner();
   const { request, findings } = useLatestReview(layer);
   const n = request?.root.review?.n;
   if (!request || n === undefined) {
@@ -116,7 +121,7 @@ export function ReviewBlock({ layer }: { layer: number }) {
           {findings.length > 0 && (
             <p className={cn(NOTE, "flex flex-wrap items-center gap-x-3 gap-y-1.5")}>
               {counts.map(c => `${c.count} ${c.name}`).join(", ")}
-              {toFix > 0 && (
+              {owner && toFix > 0 && (
                 <Button size="sm" variant="outline" className="text-foreground" disabled={fix.isPending} onClick={() => fix.mutate(n)}>
                   Fix the recommended ({toFix})
                 </Button>
