@@ -29,7 +29,7 @@ Notes, chat and reviewed ticks are kept in `prg.db`, a SQLite file in the state 
 
 ## Listening
 
-Arm Monitor on `bun scripts/listen.mjs STATE.json`, which prints each frame and tells the server it has. Monitor expires after 30 minutes at most, so re-arm it when it does. While nothing listens, frames wait on the server, through a restart too, and go when a session connects.
+Arm Monitor on `bun scripts/listen.mjs STATE.json`, which prints each frame and tells the server it has. Monitor expires after 30 minutes at most, so re-arm it when it does, without a word to the user: an expiry is routine, not news. With more than one review open, listen to them all from one Monitor, each line labelled with its review, so there is one expiry rather than one per review. While nothing listens, frames wait on the server, through a restart too, and go when a session connects.
 
 A frame counts as delivered once the server hears from the session after sending it: the listener's word on the socket, or any `POST /api/replies`, `POST /api/activity`, findings or long-poll of yours. Until then the page shows the message as waiting, and the frame goes again to the next listener if the socket closes or the server restarts first. So a frame can reach you twice: check `GET /api/messages` before acting on one you may already have answered.
 
