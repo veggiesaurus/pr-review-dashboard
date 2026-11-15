@@ -211,7 +211,13 @@ export class Store {
 
   // What one person's page shows: everything sent, and their own drafts.
   messagesFor(author: Author | null): Message[] {
-    return this.messages.filter(m => m.status !== "draft" || draftOf(m, author));
+    return this.messages.filter(m => m.status !== "draft" || draftOf(m, author)).map(m => this.viewFor(m, author));
+  }
+
+  // A thread's seen mark is the reader's own; other people's marks stay off the wire.
+  viewFor(message: Message, author: Author | null): Message {
+    const { seenBy, ...rest } = message;
+    return author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
   }
 
   addUserMessage(input: NewMessage, author: Author | null): Message | null | "owner-only" {
@@ -483,25 +489,34 @@ export class Store {
   }
 
   // Reviewed ticks for this review's PRs. They are kept by PR, so the same PR in another review shows them too.
-  get ticks(): string[] {
+  // The owner's keys are stored bare; a guest's carry their id in front.
+  ticksFor(author: Author | null): string[] {
     const mine = this.tickScopes();
+    const prefix = this.tickPrefix(author);
     return this.db
       .query<{ key: string }, []>("select key from ticks")
       .all()
       .map(row => row.key)
+      .filter(key => key.startsWith(prefix))
+      .map(key => key.slice(prefix.length))
       .filter(key => mine.some(scope => key.startsWith(scope)));
   }
 
-  setTicks(keys: string[], done: boolean) {
+  setTicks(keys: string[], done: boolean, author: Author | null) {
     const mine = this.tickScopes();
+    const prefix = this.tickPrefix(author);
     const change = this.db.query(done ? "insert or ignore into ticks (key) values (?)" : "delete from ticks where key = ?");
     this.db.transaction(() => {
       for (const key of keys.filter(key => mine.some(scope => key.startsWith(scope)))) {
-        change.run(key);
+        change.run(prefix + key);
       }
     })();
     this.notify("ticks");
-    return this.ticks;
+    return this.ticksFor(author);
+  }
+
+  private tickPrefix(author: Author | null) {
+    return author?.role === "guest" ? `g${author.id}:` : "";
   }
 
   private tickScopes() {
@@ -509,14 +524,19 @@ export class Store {
   }
 
   // The thread has been on the user's screen, so nothing in it so far is news to them.
-  markSeen(id: string) {
+  markSeen(id: string, author: Author | null) {
     const thread = this.root(id);
     if (!thread || thread.status === "draft") {
       return null;
     }
-    thread.seen = this.messages.findLast(m => m.id === thread.id || m.replyTo === thread.id)?.id;
+    const last = this.messages.findLast(m => m.id === thread.id || m.replyTo === thread.id)?.id;
+    if (author?.role === "guest") {
+      thread.seenBy = { ...thread.seenBy, [author.id]: last as string };
+    } else {
+      thread.seen = last;
+    }
     this.notify("messages");
-    return thread;
+    return this.viewFor(thread, author);
   }
 
   setArchived(id: string, archived: boolean, reason?: DismissReason) {

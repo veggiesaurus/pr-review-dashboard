@@ -110,6 +110,8 @@ export type Message = {
   archived?: boolean;
   // On a thread's first message: the id of the last message in it the user has had on screen.
   seen?: string;
+  // The same for each guest, by their id; the server shows each reader only their own, as seen.
+  seenBy?: Record<string, string>;
   // On a thread's first message: the steps Claude took and notes on what became of it, in the order they happened.
   events?: ThreadEvent[];
   // On a message from Claude: questions it wants answered before it goes on.

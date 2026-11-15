@@ -57,7 +57,7 @@ export function messagesRoutes(deps: AppDeps) {
   });
 
   app.post("/messages/:id/seen", only("owner", "guest"), c => {
-    const thread = store.markSeen(c.req.param("id"));
+    const thread = store.markSeen(c.req.param("id"), c.get("author"));
     return thread ? c.json(thread) : c.json({ error: "no such thread" }, 404);
   });
 

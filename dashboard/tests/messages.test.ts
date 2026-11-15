@@ -285,6 +285,44 @@ describe("notes and chat", () => {
     expect(store.messages[0]?.seen).toBeUndefined();
   });
 
+  test("ticks are per person", async () => {
+    const { page, guest, session, post } = sharing();
+    const mine = "prg:tick:acme/shop#12:src/slug.ts:own";
+    const theirs = "prg:tick:acme/shop#12:src/slug.ts:guest";
+    await page("/api/ticks", post({ keys: [mine], done: true }));
+    expect(await (await guest("/api/ticks")).json()).toEqual([]);
+    await guest("/api/ticks", post({ keys: [theirs], done: true }));
+    expect(await (await guest("/api/ticks")).json()).toEqual([theirs]);
+    expect(await (await page("/api/ticks")).json()).toEqual([mine]);
+    expect(await (await session("/api/ticks")).json()).toEqual([mine]);
+    await guest("/api/ticks", post({ keys: [mine], done: false }));
+    expect(await (await page("/api/ticks")).json()).toEqual([mine]);
+  });
+
+  test("seen is per person", async () => {
+    const { store, guest, page, post } = sharing();
+    await guest("/api/messages", post({ kind: "chat", text: "first", anchor: addedLine }));
+    await guest("/api/messages/send", { method: "POST" });
+    await guest("/api/messages", post({ kind: "chat", text: "second", replyTo: "m1" }));
+    await guest("/api/messages/m1/seen", { method: "POST" });
+    const root = async (who: typeof page) => ((await (await who("/api/messages")).json()) as Message[])[0];
+    expect((await root(guest))?.seen).toBe("m2");
+    expect((await root(page))?.seen).toBeUndefined();
+    expect(store.messages[0]?.seen).toBeUndefined();
+    await page("/api/messages/m1/seen", { method: "POST" });
+    expect((await root(page))?.seen).toBe("m2");
+    expect(JSON.stringify(await (await page("/api/messages")).json())).not.toContain("seenBy");
+  });
+
+  test("the owner's seen mark never shows on a guest's page", async () => {
+    const { guest, page, post } = sharing();
+    await guest("/api/messages", post({ kind: "chat", text: "first", anchor: addedLine }));
+    await guest("/api/messages/send", { method: "POST" });
+    await page("/api/messages/m1/seen", { method: "POST" });
+    const listed = (await (await guest("/api/messages")).json()) as Message[];
+    expect(listed[0]?.seen).toBeUndefined();
+  });
+
   test("only the owner can answer an owner-only question", async () => {
     const { store, session, page, guest, post } = sharing();
     await guest("/api/messages", post({ kind: "chat", text: "can slug() keep tabs?", anchor: addedLine }));
