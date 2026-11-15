@@ -29,23 +29,14 @@ Each version installs into its own folder, so the first review after an update i
 
 ## Configuration
 
-The plugin has no settings file of its own. The dashboard reads three optional variables from the environment Claude Code runs in, so export them in your shell profile before starting `claude`, or put them under `env` in `~/.claude/settings.json`:
+The plugin has two settings, both only for sharing. Claude Code asks for them when you install it, and you can change them later with `/plugin configure pr-review-dashboard@pr-review-dashboard` or in `/config`:
 
-```json
-{
-  "env": {
-    "LINEAR_API_KEY": "lin_api_…",
-    "PRG_GITHUB_CLIENT_ID": "Ov23li…",
-    "PRG_ALLOWED_MAIL": "alice@acme.com,*@acme.com"
-  }
-}
-```
+- GitHub OAuth app client id: the app guests sign in with when you share a review (see Sharing).
+- Emails allowed into a shared review: an optional comma-separated list such as `alice@acme.com,*@acme.com`. Cloudflare then asks guests for an email one-time PIN before the page loads.
 
-- `LINEAR_API_KEY` shows the PR's Linear issues. A read-only key is enough, and it only ever goes to `api.linear.app`. `settings.json` is plain text, so you may prefer to export this one from your shell.
-- `PRG_GITHUB_CLIENT_ID` is the GitHub OAuth app guests sign in with when you share a review (see Sharing).
-- `PRG_ALLOWED_MAIL` makes Cloudflare ask guests for an email one-time PIN before the page loads.
+A change reaches the next review you ask for, not one that's already running. `PRG_GITHUB_CLIENT_ID` and `PRG_ALLOWED_MAIL` in the environment still work when a setting is empty.
 
-Claude Code reads them when it starts, and a dashboard keeps the environment it started with, so restart both after changing one.
+Linear issues need `LINEAR_API_KEY` in the environment Claude Code runs in, exported from your shell profile before starting `claude`. A read-only key is enough, and it only ever goes to `api.linear.app`. It isn't a plugin setting because Claude Code can't hand a secret setting to the dashboard without putting it in the environment of every command Claude runs.
 
 Two things are per review, and off unless you ask for them when you ask for the review: posting your notes to the PR as a GitHub review from the page ("with posting to GitHub on"), and a plain HTTP link a phone on the same network can open ("with a link for my phone").
 
@@ -57,9 +48,9 @@ A small local server in `dashboard/` serves the page and passes messages between
 
 You can open a running review to teammates over a link, so they can read the guide, chat and see Claude's answers. Press Share in the page's header, or ask Claude. The dashboard starts a Cloudflare quick tunnel and shows a link to send them.
 
-- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. To also ask for an email one-time PIN before the page loads, set `PRG_ALLOWED_MAIL` to a comma-separated list such as `alice@acme.com,*@acme.com`. That needs `cloudflared` 2026.11 or later.
+- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. To also ask for an email one-time PIN before the page loads, fill in the allowed emails setting (see Configuration). That needs `cloudflared` 2026.11 or later.
 - A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
-- Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in `PRG_GITHUB_CLIENT_ID`. The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in.
+- Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in the plugin's settings (see Configuration). The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in.
 - Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.
 - The link changes each time sharing starts, and stops working when you stop sharing.
 

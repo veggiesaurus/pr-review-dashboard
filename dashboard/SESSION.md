@@ -5,7 +5,7 @@ The session starts the server, gives the user the link, listens for what the pag
 ## Starting it
 
 ```
-bun run server/index.ts --state STATE.json --data DIR --repo CLONE [--github-comments]
+bun run server/index.ts --state STATE.json --data DIR --repo CLONE [--github-comments] [--github-client-id ID] [--allowed-mail LIST]
 ```
 
 `--data` is the folder `collect.py` or `stack.py` wrote. Run it in the background. When it is up it writes `STATE.json` (mode 0600):
@@ -24,6 +24,8 @@ O=$(python3 -c "import json;print(json.load(open('STATE.json'))['origin'])")
 Notes, chat and reviewed ticks are kept in `prg.db`, a SQLite file in the state file's folder. Each thread is kept with the PR it is about and, in a stack, GitHub's number for the stack, so a restart brings back the threads of the review's PRs and its stack, including anything still waiting for a session, whatever `--state` and `--data` it is given. Message ids are numbered across every review. Start every review with its state file in the same folder so they share the one database.
 
 `--host ADDRESS` also listens on that address of this machine and adds `lanLink` to the state file, for a phone on the same network. Only start it that way when the user asks, and say that the link is plain HTTP on their network.
+
+`--github-client-id` and `--allowed-mail` carry the plugin's two sharing settings, which the skill's start command fills in; pass them on as it gives them, including when they're empty.
 
 `--github-comments` lets the user post their notes to the pull request as a review from the page. It is off by default. The session never posts; the page shows the user exactly what would go, under whose login, and posts only when they confirm.
 

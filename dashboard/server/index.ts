@@ -26,12 +26,14 @@ const { values } = parseArgs({
     "idle-minutes": { type: "string", default: "60" },
     "github-comments": { type: "boolean", default: false },
     host: { type: "string" },
+    "github-client-id": { type: "string" },
+    "allowed-mail": { type: "string" },
   },
 });
 
 if (!values.state || !values.data) {
   console.error(
-    "usage: bun run server/index.ts --state FILE --data DIR [--repo DIR] [--scripts DIR] [--static DIR] [--idle-minutes N] [--github-comments] [--host ADDRESS]",
+    "usage: bun run server/index.ts --state FILE --data DIR [--repo DIR] [--scripts DIR] [--static DIR] [--idle-minutes N] [--github-comments] [--host ADDRESS] [--github-client-id ID] [--allowed-mail LIST]",
   );
   process.exit(2);
 }
@@ -104,8 +106,12 @@ const token = secret();
 const linkCode = secret();
 let lastActivity = Date.now();
 
-// Comma-separated, as --allowed-mail takes it: "a@acme.com,*@acme.com".
-const allowedMail = process.env.PRG_ALLOWED_MAIL?.split(",")
+// The skill passes the plugin's settings as flags. An unset one can arrive as the literal "${user_config.…}".
+const setting = (flag: string | undefined) => (flag && !flag.startsWith("${") ? flag : undefined);
+
+// Comma-separated, as cloudflared's --allowed-mail takes it: "a@acme.com,*@acme.com".
+const allowedMail = (setting(values["allowed-mail"]) ?? process.env.PRG_ALLOWED_MAIL)
+  ?.split(",")
   .map(mail => mail.trim())
   .filter(Boolean);
 const share = new Share({
@@ -119,7 +125,7 @@ const share = new Share({
 });
 
 const signIn = new SignIn({
-  clientId: process.env.PRG_GITHUB_CLIENT_ID ?? "",
+  clientId: setting(values["github-client-id"]) || process.env.PRG_GITHUB_CLIENT_ID || "",
   fetcher: fetch,
   runner: run,
   repo: () => reviewedRepo(review) ?? "",

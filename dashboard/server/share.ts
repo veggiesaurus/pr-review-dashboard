@@ -141,12 +141,12 @@ export class Share {
   private async tooOld() {
     const said = await (this.opts.runner ?? run)(["cloudflared", "--version"], process.cwd()).catch(() => null);
     if (said?.code !== 0) {
-      return `PRG_ALLOWED_MAIL needs cloudflared, which isn't here: ${INSTALL}`;
+      return `the allowed emails setting needs cloudflared, which isn't here: ${INSTALL}`;
     }
     const [, year, month] = /version (\d+)\.(\d+)/.exec(said.stdout) ?? [];
     if (Number(year) * 100 + Number(month) >= 202611) {
       return null;
     }
-    return `PRG_ALLOWED_MAIL needs cloudflared 2026.11 or later for --allowed-mail, and this one says "${said.stdout.trim()}": update it (brew upgrade cloudflared, or https://github.com/cloudflare/cloudflared/releases)`;
+    return `the allowed emails setting needs cloudflared 2026.11 or later for --allowed-mail, and this one says "${said.stdout.trim()}": update it (brew upgrade cloudflared, or https://github.com/cloudflare/cloudflared/releases)`;
   }
 }

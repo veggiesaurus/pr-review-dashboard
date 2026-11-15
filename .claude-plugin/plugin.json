@@ -11,5 +11,19 @@
     "code-review",
     "pull-request",
     "self-review"
-  ]
+  ],
+  "userConfig": {
+    "github_client_id": {
+      "type": "string",
+      "title": "GitHub OAuth app client id",
+      "description": "Client id of a GitHub OAuth app you register, with device flow enabled, that guests sign in with when you share a review. Sharing is refused without it.",
+      "default": ""
+    },
+    "allowed_mail": {
+      "type": "string",
+      "title": "Emails allowed into a shared review",
+      "description": "Optional comma-separated list, such as alice@acme.com,*@acme.com. Cloudflare then asks guests for an email one-time PIN before the page loads. Needs cloudflared 2026.11 or later.",
+      "default": ""
+    }
+  }
 }
