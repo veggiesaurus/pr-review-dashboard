@@ -12,6 +12,7 @@ import { Screenshots, useScreenshots } from "src/components/chat/Screenshots";
 import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
 import { type ClaudeThread, type GithubThreadView, type Thread, unseenReply } from "src/components/chat/useThreads";
 import { awaited, verbFor } from "src/components/chat/verbs";
+import { handleOf, PersonFace } from "src/components/links/Github";
 import { Markdown, MessageText } from "src/components/links/Markdown";
 import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
 import { Badge } from "src/components/ui/badge";
@@ -208,13 +209,8 @@ export function Bubble({ message }: { message: Message }) {
     <div className={cn("rounded-md border px-2.5 py-2", mine ? "bg-background" : "border-primary/25 bg-primary/6")}>
       <div className="flex flex-wrap items-center gap-x-2 text-xs">
         <span className={cn("inline-flex items-center gap-1.5 font-medium", mine ? "text-foreground/75" : "text-primary")}>
-          {mine && !own && author && (
-            <Avatar size="xs">
-              <AvatarImage src={`/api/github/avatar/${author.login}`} alt="" />
-              <AvatarFallback>{author.login.slice(0, 2).toUpperCase()}</AvatarFallback>
-            </Avatar>
-          )}
-          {!mine ? "Claude" : own ? "You" : author ? `@${author.login}` : "Owner"}
+          {mine && !own && author && <PersonFace person={author} />}
+          {!mine ? "Claude" : own ? "You" : author ? handleOf(author) : "Owner"}
         </span>
         <time dateTime={message.at} title={fullDate(message.at)} className="text-muted-foreground">
           {ago(message.at)}

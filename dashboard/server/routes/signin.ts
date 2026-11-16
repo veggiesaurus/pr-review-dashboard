@@ -1,23 +1,35 @@
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
 
+import { type SignInWith, signInNameSchema } from "../../shared/messages";
 import type { AppDeps } from "../app";
-import type { Env } from "../guards";
+import { type Env, small } from "../guards";
 import { browserOf } from "../signin";
+
+// Enough for a team; past it the waiting list is someone with the link filling it.
+const MAX_WAITING = 20;
 
 // Reached with the share link alone, before its holder is anyone.
 export function signinRoutes({ signIn, people, share, port, store }: AppDeps) {
   const app = new Hono<Env>();
 
-  app.post("/signin", async c => {
+  app.get("/signin", c => c.json({ with: (signIn.clientId ? "github" : "name") satisfies SignInWith }));
+
+  app.post("/signin", small, async c => {
     // Only Cloudflare sets cf-* headers, so they are trusted on the tunnel host alone.
     const country = c.req.header("host") === share.host ? c.req.header("cf-ipcountry") : undefined;
-    return c.json(
-      await signIn.start({
-        country: country && /^[A-Z]{2}$/.test(country) ? country : null,
-        browser: browserOf(c.req.header("user-agent")),
-      }),
-    );
+    const from = { country: country && /^[A-Z]{2}$/.test(country) ? country : null, browser: browserOf(c.req.header("user-agent")) };
+    if (signIn.clientId) {
+      return c.json(await signIn.start(from));
+    }
+    const body = signInNameSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) {
+      return c.json({ error: "type your name, up to 40 letters, numbers, spaces, dots, hyphens and apostrophes" }, 400);
+    }
+    if (signIn.waiting().length >= MAX_WAITING) {
+      return c.json({ error: "too many people are waiting to be let in, so try again in a few minutes" }, 429);
+    }
+    return c.json(signIn.named(body.data.name, from));
   });
 
   app.get("/signin/:id", c => {

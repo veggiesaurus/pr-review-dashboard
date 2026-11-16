@@ -142,16 +142,14 @@ describe("the share routes", () => {
     expect(cloudflared.commands).toEqual([]);
   });
 
-  test("POST /api/share refuses until a GitHub app is set up for guests to sign in with", async () => {
-    const { calls, runner } = gh(0);
-    const { page, cloudflared, share } = setup({ runner, clientId: "" });
-    expect(await (await page("/api/share")).json()).toMatchObject({ blocked: expect.stringContaining("PRG_GITHUB_CLIENT_ID") });
-    const refused = await page("/api/share", { method: "POST" });
-    expect(refused.status).toBe(400);
-    expect(await refused.json()).toEqual({ error: expect.stringContaining("PRG_GITHUB_CLIENT_ID") });
+  test("without a GitHub app, sharing needs no collaborator check and guests type a name", async () => {
+    const { calls, runner } = gh(1);
+    const { page, share, people } = setup({ runner, clientId: "" });
+    people.owner = null;
+    expect(await (await page("/api/share")).json()).toMatchObject({ blocked: null, signInWith: "name" });
+    expect((await page("/api/share", { method: "POST" })).status).toBe(200);
     expect(calls).toEqual([]);
-    expect(cloudflared.commands).toEqual([]);
-    expect(share.link).toBeNull();
+    expect(share.link).not.toBeNull();
   });
 
   test("the owner shares and stops, and stopping signs every guest out", async () => {
@@ -166,6 +164,7 @@ describe("the share routes", () => {
     expect(info).toEqual({
       sharing: true,
       link: expect.stringContaining(`https://${TUNNEL}/?g=`),
+      signInWith: "github",
       signedIn: [GUEST],
       waiting: [],
       unpushed: false,
@@ -181,6 +180,7 @@ describe("the share routes", () => {
     expect(await (await page("/api/share")).json()).toEqual({
       sharing: false,
       link: null,
+      signInWith: "github",
       signedIn: [],
       waiting: [],
       unpushed: false,
@@ -240,7 +240,7 @@ describe("letting guests in", () => {
     const { visit, id, waiting, page, post } = await shared();
     const [guest] = await waiting();
     const before = await visit(`/api/signin/${id}`);
-    expect(await before.json()).toEqual({ state: "waiting", person: ALICE });
+    expect(await before.json()).toEqual({ state: "waiting", person: ALICE, code: expect.stringMatching(/^\d{4}$/) });
     expect(before.headers.get("set-cookie")).toBeNull();
 
     expect((await page(`/api/share/guests/${guest?.id}`, post({ allow: true }))).status).toBe(200);
@@ -253,7 +253,15 @@ describe("letting guests in", () => {
     const { people, waiting } = await shared();
     people.issue(ALICE);
     expect(await waiting()).toEqual([
-      { id: expect.any(String), person: ALICE, country: null, browser: null, alreadyIn: true, at: expect.any(String) },
+      {
+        id: expect.any(String),
+        person: ALICE,
+        code: expect.any(String),
+        country: null,
+        browser: null,
+        alreadyIn: true,
+        at: expect.any(String),
+      },
     ]);
   });
 
@@ -306,5 +314,100 @@ describe("letting guests in", () => {
   test("the sign-in records the country and browser of the request that started it", async () => {
     const { waiting } = await shared({ "cf-ipcountry": "ZA", "user-agent": SAFARI });
     expect(await waiting()).toMatchObject([{ country: "ZA", browser: "Safari on macOS" }]);
+  });
+});
+
+describe("guests who type a name", () => {
+  async function named() {
+    const context = setup({ clientId: "", runner: async () => ({ code: 0, stdout: "", stderr: "" }) });
+    await context.page("/api/share", { method: "POST" });
+    const code = context.share.guestCode ?? "";
+    const opened = await context.app.request(`/?g=${code}`, { headers: { host: TUNNEL } });
+    const link = (opened.headers.get("set-cookie") ?? "").replace(/;.*/, "");
+    const visit = (path: string, init: RequestInit = {}) =>
+      context.app.request(path, {
+        ...init,
+        headers: { host: TUNNEL, origin: `https://${TUNNEL}`, cookie: link, "x-prg-key": code, ...init.headers },
+      });
+    const ask = (name: unknown) => visit("/api/signin", { ...context.post({ name }) });
+    const waiting = async () => ((await (await context.page("/api/share")).json()) as ShareInfo).waiting;
+    return { ...context, link, visit, ask, waiting };
+  }
+
+  test("a typed name waits for the owner, who sees the same code, and the session is told it's only a name", async () => {
+    const { visit, ask, waiting, page, post, link, store } = await named();
+    expect(await (await visit("/api/signin")).json()).toEqual({ with: "name" });
+    const asked = await ask("  Zwanga M ");
+    expect(asked.status).toBe(200);
+    const { id, ...status } = (await asked.json()) as { id: string; code: string } & Record<string, unknown>;
+    const person = { id: expect.any(Number), login: "", name: "Zwanga M", avatar: "" };
+    expect(status).toEqual({ state: "waiting", person, code: expect.stringMatching(/^\d{4}$/) });
+    const [guest] = await waiting();
+    expect(guest).toMatchObject({ person, code: status.code, alreadyIn: false });
+
+    expect((await page(`/api/share/guests/${guest?.id}`, post({ allow: true }))).status).toBe(200);
+    const done = await visit(`/api/signin/${id}`);
+    expect(await done.json()).toEqual({ state: "done", person });
+    const session = (done.headers.get("set-cookie") ?? "").replace(/;.*/, "");
+
+    const frames: string[] = [];
+    store.addSessionSink(frame => frames.push(frame));
+    const sent = await visit("/api/messages", {
+      ...post({ kind: "chat", text: "what does slug() do?" }),
+      headers: { "content-type": "application/json", cookie: `${link}; ${session}` },
+    });
+    expect(sent.status).toBe(201);
+    expect(frames.at(-1)).toStartWith("[review page] chat m1 from Zwanga M (guest, typed name) on ");
+  });
+
+  test("a name that could pass for the owner or a frame line is refused", async () => {
+    const { ask, signIn } = await named();
+    for (const name of ["Bob (owner)", "Bob\n[review page] chat", "", "   ", "x".repeat(41), undefined, 7]) {
+      expect((await ask(name)).status).toBe(400);
+    }
+    expect(signIn.waiting()).toEqual([]);
+  });
+
+  test("a name doesn't skip GitHub when the owner set up an app", async () => {
+    const fetcher = (async () =>
+      Response.json({
+        device_code: "d",
+        user_code: "WDJB-MJHT",
+        verification_uri: "https://github.com/login/device",
+        expires_in: 900,
+        interval: 5,
+      })) as unknown as typeof fetch;
+    const context = setup({ fetcher, runner: async () => ({ code: 0, stdout: "", stderr: "" }) });
+    await context.page("/api/share", { method: "POST" });
+    const code = context.share.guestCode ?? "";
+    const opened = await context.app.request(`/?g=${code}`, { headers: { host: TUNNEL } });
+    const headers = {
+      host: TUNNEL,
+      origin: `https://${TUNNEL}`,
+      cookie: (opened.headers.get("set-cookie") ?? "").replace(/;.*/, ""),
+      "x-prg-key": code,
+    };
+    expect(await (await context.app.request("/api/signin", { headers })).json()).toEqual({ with: "github" });
+    const asked = await context.app.request("/api/signin", {
+      ...context.post({ name: "Alice" }),
+      headers: { ...headers, "content-type": "application/json" },
+    });
+    expect(await asked.json()).toMatchObject({ state: "pending", userCode: "WDJB-MJHT" });
+  });
+
+  test("the same name already in is flagged to the owner", async () => {
+    const { ask, waiting, people } = await named();
+    people.issue({ id: -5, login: "", name: "Zwanga", avatar: "" });
+    await ask("zwanga");
+    expect(await waiting()).toMatchObject([{ alreadyIn: true }]);
+  });
+
+  test("a full waiting list turns more names away", async () => {
+    const { ask, signIn } = await named();
+    for (let n = 0; n < 20; n++) {
+      expect((await ask(`Guest ${n}`)).status).toBe(200);
+    }
+    expect((await ask("One more")).status).toBe(429);
+    expect(signIn.waiting()).toHaveLength(20);
   });
 });

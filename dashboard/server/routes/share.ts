@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { guestAnswerSchema, type ShareInfo } from "../../shared/messages";
+import { guestAnswerSchema, type Person, type ShareInfo } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { reviewedRepo } from "../comments";
 import { run } from "../exec";
@@ -10,11 +10,14 @@ export function shareRoutes(deps: AppDeps) {
   const { share, people, review, signIn } = deps;
   const app = new Hono<Env>();
 
+  // A typed name has no id to match, so the same name already in is what the owner is warned of.
+  const same = (a: Person, b: Person) => (a.login ? a.id === b.id : !b.login && a.name?.toLowerCase() === b.name?.toLowerCase());
   const info = (): ShareInfo => ({
     sharing: share.link !== null,
     link: share.link,
+    signInWith: signIn.clientId ? "github" : "name",
     signedIn: people.signedIn(),
-    waiting: signIn.waiting().map(guest => ({ ...guest, alreadyIn: people.signedIn().some(person => person.id === guest.person.id) })),
+    waiting: signIn.waiting().map(guest => ({ ...guest, alreadyIn: people.signedIn().some(person => same(guest.person, person)) })),
     unpushed: review.response.layers.some(layer => !layer.meta.number || layer.meta.checks?.stale),
     blocked: blocked(),
   });
@@ -22,7 +25,7 @@ export function shareRoutes(deps: AppDeps) {
   // What stops sharing, as far as can be known without asking GitHub, so the page can say so before Start.
   function blocked() {
     if (!signIn.clientId) {
-      return "sharing needs a GitHub OAuth app of your own for guests to sign in with: register one at https://github.com/settings/applications/new with Enable Device Flow ticked, then put its client id in the plugin's settings (/plugin configure pr-review-dashboard@pr-review-dashboard) or PRG_GITHUB_CLIENT_ID";
+      return share.missing;
     }
     if (!people.owner) {
       return "sharing needs your GitHub login to check who may sign in, and gh api user failed when the dashboard started: check gh auth status, then start it again";
@@ -33,11 +36,11 @@ export function shareRoutes(deps: AppDeps) {
     return share.missing;
   }
 
-  // Only collaborators on the reviewed repo may sign in, which only someone with push access to it can check.
+  // Only collaborators on the reviewed repo may sign in with GitHub, which only someone with push access to it can check.
   async function cannotCheck() {
     const early = blocked();
     const repo = reviewedRepo(review);
-    if (early || !repo || !people.owner) {
+    if (early || !signIn.clientId || !repo || !people.owner) {
       return early;
     }
     const checked = await (deps.runner ?? run)(["gh", "api", `repos/${repo}/collaborators/${people.owner.login}`], deps.repo).catch(

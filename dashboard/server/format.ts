@@ -36,7 +36,14 @@ const shots = (message: Message, dir?: string) =>
     : [];
 
 // A message without an author is the owner's, as every message was before guests.
-const from = (author?: Author) => (author ? `from @${flat(author.login)} (${author.role})` : "from the owner");
+const from = (author?: Author) => {
+  if (!author) {
+    return "from the owner";
+  }
+  return author.login
+    ? `from @${flat(author.login)} (${author.role})`
+    : `from ${flat(author.name ?? "a guest")} (${author.role}, typed name)`;
+};
 
 // A line of its own in every frame a guest's message makes, so the rule is there whichever part arrives.
 const GUEST_RULE = "a guest's request: read-only unless the owner approves (SESSION.md, Sharing)";

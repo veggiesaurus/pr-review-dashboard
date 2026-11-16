@@ -213,26 +213,45 @@ export type Attention = { text: string; at: string };
 export type SessionInfo = { listening: boolean; activity: Activity | null; attention: Attention | null };
 
 // A GitHub user: the owner, read with gh at start, or a guest who signed in.
+// A guest who only typed a name has an empty login and avatar, and a negative id.
 export type Person = { id: number; login: string; name: string | null; avatar: string };
 export type Role = "owner" | "guest";
 export type Author = Person & { role: Role };
 // sharing: whether the share link works right now.
 export type Me = { role: Role; person: Person | null; sharing: boolean };
-// Where a guest's GitHub sign-in stands.
+// Where a guest's sign-in stands. code is what the owner sees beside them, to check it is really them.
 export type SignInStatus =
   | { state: "pending"; userCode: string; verificationUri: string; expiresAt: string }
-  | { state: "waiting"; person: Person }
+  | { state: "waiting"; person: Person; code: string }
   | { state: "done"; person: Person }
   | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "turned-away" | "error" };
-// A guest through GitHub who waits for the owner. id is a public handle, never the guest's sign-in id.
-export type WaitingGuest = { id: string; person: Person; country: string | null; browser: string | null; alreadyIn: boolean; at: string };
+// A guest who waits for the owner. id is a public handle, never the guest's sign-in id.
+export type WaitingGuest = {
+  id: string;
+  person: Person;
+  code: string;
+  country: string | null;
+  browser: string | null;
+  alreadyIn: boolean;
+  at: string;
+};
 export const guestAnswerSchema = z.object({ allow: z.boolean() });
+// Guests sign in with GitHub when the owner set up an OAuth app, else they type a name.
+export type SignInWith = "github" | "name";
+// No brackets or line breaks, so a name can't pass for "(owner)" or a frame line in what the session reads.
+export const signInNameSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .regex(/^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} .'’-]{0,39}$/u),
+});
 // unpushed: some layer's head isn't on GitHub, so guests would read code that is only on this machine.
 // blocked: why sharing can't start, from the checks that don't ask GitHub, or null.
-// waiting: guests through GitHub that the owner hasn't answered, oldest first.
+// waiting: guests the owner hasn't answered, oldest first.
 export type ShareInfo = {
   sharing: boolean;
   link: string | null;
+  signInWith: SignInWith;
   signedIn: Person[];
   waiting: WaitingGuest[];
   unpushed: boolean;

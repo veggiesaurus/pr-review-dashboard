@@ -16,7 +16,7 @@
     "github_client_id": {
       "type": "string",
       "title": "GitHub OAuth app client id",
-      "description": "Client id of a GitHub OAuth app you register, with device flow enabled, that guests sign in with when you share a review. Sharing is refused without it.",
+      "description": "Optional. Client id of a GitHub OAuth app you register, with device flow enabled, that guests sign in with when you share a review. Without it guests type a name, which nothing checks, and you check a code with them before letting them in.",
       "default": ""
     },
     "allowed_mail": {

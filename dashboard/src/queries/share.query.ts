@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ShareInfo, SignInStatus } from "shared/messages";
+import type { ShareInfo, SignInStatus, SignInWith } from "shared/messages";
 
 import { api } from "src/queries/api";
 
@@ -27,7 +27,13 @@ export function useAnswerGuest() {
   });
 }
 
-export const useStartSignIn = () => useMutation({ mutationFn: () => api.post("signin").json<{ id: string } & SignInStatus>() });
+export const useSignInWith = () => useQuery({ queryKey: ["signin-with"], queryFn: () => api.get("signin").json<{ with: SignInWith }>() });
+
+// A name only when guests sign in with one; GitHub's sign-in takes nothing.
+export const useStartSignIn = () =>
+  useMutation({
+    mutationFn: (name?: string) => api.post("signin", name === undefined ? {} : { json: { name } }).json<{ id: string } & SignInStatus>(),
+  });
 
 // Asked every couple of seconds until the server has an answer: the server polls GitHub itself.
 export const useSignInStatus = (id: string | undefined) =>

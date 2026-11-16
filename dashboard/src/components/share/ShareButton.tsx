@@ -1,11 +1,24 @@
 import { Check, Copy, Share2 } from "lucide-react";
 import { useState } from "react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
+import type { Person } from "shared/messages";
+
+import { handleOf, PersonFace } from "src/components/links/Github";
 import { Button } from "src/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { errorText } from "src/queries/messages.mutation";
 import { useAnswerGuest, useShare, useStartShare, useStopShare } from "src/queries/share.query";
+
+function Who({ person }: { person: Person }) {
+  return (
+    <div className="flex items-center gap-2">
+      <PersonFace person={person} />
+      {person.name ?? person.login}
+      {person.name && person.login && <span className="text-muted-foreground">@{person.login}</span>}
+      {!person.login && <span className="text-muted-foreground">(typed name)</span>}
+    </div>
+  );
+}
 
 // The owner's way to give the review to teammates over a Cloudflare quick tunnel.
 export function ShareButton() {
@@ -68,24 +81,22 @@ export function ShareButton() {
                     const where = [
                       guest.country && new Intl.DisplayNames(undefined, { type: "region" }).of(guest.country),
                       guest.browser,
-                      guest.alreadyIn && "already in from another browser",
+                      guest.alreadyIn && (guest.person.login ? "already in from another browser" : "someone with this name is already in"),
                     ].filter(Boolean);
                     return (
                       <li key={guest.id} className="grid gap-1 text-xs">
-                        <div className="flex items-center gap-2">
-                          <Avatar size="xs">
-                            <AvatarImage src={`/api/github/avatar/${guest.person.login}`} alt="" />
-                            <AvatarFallback>{guest.person.login.slice(0, 2).toUpperCase()}</AvatarFallback>
-                          </Avatar>
-                          {guest.person.name ?? guest.person.login}
-                          {guest.person.name && <span className="text-muted-foreground">@{guest.person.login}</span>}
+                        <div className="flex items-center justify-between gap-2">
+                          <Who person={guest.person} />
+                          <span title="Their page shows this code too. Check it with them before letting them in.">
+                            Code <span className="font-mono font-medium text-sm tracking-wider">{guest.code}</span>
+                          </span>
                         </div>
                         {where.length > 0 && <p className="text-muted-foreground">{where.join(" · ")}</p>}
                         <div className="flex gap-2">
                           <Button
                             size="sm"
                             disabled={answer.isPending}
-                            aria-label={`Let in @${guest.person.login}`}
+                            aria-label={`Let in ${handleOf(guest.person)}`}
                             onClick={() => answer.mutate({ id: guest.id, allow: true })}
                           >
                             Let in
@@ -94,7 +105,7 @@ export function ShareButton() {
                             size="sm"
                             variant="outline"
                             disabled={answer.isPending}
-                            aria-label={`Turn away @${guest.person.login}`}
+                            aria-label={`Turn away ${handleOf(guest.person)}`}
                             onClick={() => answer.mutate({ id: guest.id, allow: false })}
                           >
                             Turn away
@@ -112,13 +123,8 @@ export function ShareButton() {
               {data?.signedIn.length ? (
                 <ul className="grid gap-1">
                   {data.signedIn.map(person => (
-                    <li key={person.id} className="flex items-center gap-2 text-xs">
-                      <Avatar size="xs">
-                        <AvatarImage src={`/api/github/avatar/${person.login}`} alt="" />
-                        <AvatarFallback>{person.login.slice(0, 2).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                      {person.name ?? person.login}
-                      {person.name && <span className="text-muted-foreground">@{person.login}</span>}
+                    <li key={person.id} className="text-xs">
+                      <Who person={person} />
                     </li>
                   ))}
                 </ul>
@@ -134,8 +140,11 @@ export function ShareButton() {
         ) : (
           <>
             <p className="text-muted-foreground text-xs">
-              Share this review with teammates over a Cloudflare quick tunnel, which needs no Cloudflare account. They sign in with GitHub,
-              and only collaborators on the repo get in. Guests will see every thread on this review.
+              Share this review with teammates over a Cloudflare quick tunnel, which needs no Cloudflare account.{" "}
+              {data?.signInWith === "name"
+                ? "They type their name, and nothing checks it's theirs, so check the code beside each one with them before you let them in."
+                : "They sign in with GitHub, only collaborators on the repo can, and you let each one in."}{" "}
+              Guests will see every thread on this review.
             </p>
             {unpushed}
             {data?.blocked ? (

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { PresenceEntry } from "shared/messages";
 
 import { land } from "src/components/guide/nav";
-import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
+import { PersonFace } from "src/components/links/Github";
 import { Tooltip, TooltipContent, TooltipTrigger } from "src/components/ui/tooltip";
 import { useViewStore } from "src/store/view.store";
 import { sectionElementId } from "src/utils/anchors";
@@ -50,13 +50,10 @@ function One({ entry, size }: { entry: PresenceEntry; size: "sm" | "md" }) {
           type="button"
           onClick={() => visit(entry)}
           aria-label={`${label}, ${away ? "away" : "reading"}`}
-          data-presence={person.login}
+          data-presence={person.login || person.name}
           className={cn("cursor-pointer rounded-full ring-2 ring-background", away && "opacity-40")}
         >
-          <Avatar size={size === "sm" ? "xs" : "sm"}>
-            <AvatarImage src={`/api/github/avatar/${person.login}`} alt="" />
-            <AvatarFallback>{person.login.slice(0, 2).toUpperCase()}</AvatarFallback>
-          </Avatar>
+          <PersonFace person={person} size={size === "sm" ? "xs" : "sm"} />
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>

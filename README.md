@@ -31,7 +31,7 @@ Each version installs into its own folder, so the first review after an update i
 
 The plugin has two settings, both only for sharing. Claude Code asks for them when you install it, and you can change them later with `/plugin configure pr-review-dashboard@pr-review-dashboard` or in `/config`:
 
-- GitHub OAuth app client id: the app guests sign in with when you share a review (see Sharing).
+- GitHub OAuth app client id: optional, the app guests sign in with when you share a review (see Sharing). Without it they type a name instead.
 - Emails allowed into a shared review: an optional comma-separated list such as `alice@acme.com,*@acme.com`. Cloudflare then asks guests for an email one-time PIN before the page loads. Leave it empty for now: Cloudflare's session for a guest lapses soon after the PIN, and the page's background requests can't renew it, so guests get stuck.
 
 A change reaches the next review you ask for, not one that's already running. `PRG_GITHUB_CLIENT_ID` and `PRG_ALLOWED_MAIL` in the environment still work when a setting is empty.
@@ -50,9 +50,9 @@ You can open a running review to teammates over a link, so they can read the gui
 
 - Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. Its email one-time PIN (the allowed emails setting) doesn't work with the dashboard yet; see Configuration.
 - A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
-- Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in the plugin's settings (see Configuration). The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in.
-- Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.
-- Each guest then waits for you to let them in from the Share popover, which shows where and in what browser they signed in, in case someone was tricked into entering a sign-in code.
+- With no setup, teammates type their name to ask to come in. Nothing checks the name is theirs, or that they can see the repo, so your approval is the only gate.
+- For a checked identity, have them sign in with GitHub instead, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in the plugin's settings (see Configuration). The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in. Guests must then be collaborators on the repo, and your `gh` needs push access to it to check that.
+- Either way, each guest then waits for you to let them in from the Share popover. It shows where and in what browser they signed in, and a 4-digit code their page shows too, so you can check it with them before letting them in.
 - The link changes each time sharing starts, and stops working when you stop sharing.
 
 Guests see every thread on the review, including ones from before you shared. Claude answers their questions and reads the repo for them, but asks you before it does anything else for a guest. The details are in `dashboard/README.md`.

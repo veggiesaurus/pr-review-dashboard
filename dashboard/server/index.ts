@@ -84,7 +84,7 @@ async function readOwner() {
   if (!owner) {
     const why = me?.stderr.trim().split("\n")[0];
     console.warn(
-      `couldn't read your GitHub user with gh api user${why ? ` (${why})` : ""}, so your messages go unnamed and sharing is off`,
+      `couldn't read your GitHub user with gh api user${why ? ` (${why})` : ""}, so your messages go unnamed and guests can't sign in with GitHub`,
     );
   }
   return owner;

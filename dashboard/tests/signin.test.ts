@@ -11,6 +11,7 @@ const ALICE: Person = { id: 7, login: "alice", name: "Alice", avatar: "https://a
 const DEVICE_CODE = "https://github.com/login/device/code";
 const ACCESS_TOKEN = "https://github.com/login/oauth/access_token";
 const USER = "https://api.github.com/user";
+const CODE = expect.stringMatching(/^\d{4}$/);
 
 // GitHub as the device flow meets it: a code, each poll's answer in turn, then a token and the user it belongs to.
 function fakeGithub(polls: object[] = []) {
@@ -86,7 +87,7 @@ describe("GitHub sign-in", () => {
       verificationUri: "https://github.com/login/device",
       expiresAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
     });
-    expect(await settled(signIn, started.id)).toEqual({ state: "waiting", person: ALICE });
+    expect(await settled(signIn, started.id)).toEqual({ state: "waiting", person: ALICE, code: CODE });
     expect(sleeps).toEqual([5000, 5000, 5000]);
 
     const sent = (url: string) => github.requests.filter(request => request.url === url).map(request => request.init);
@@ -110,7 +111,7 @@ describe("GitHub sign-in", () => {
   test("slow_down adds five seconds to the interval", async () => {
     const { signIn, sleeps } = signingIn([{ error: "slow_down", interval: 10 }]);
     const { id } = await signIn.start();
-    expect(await settled(signIn, id)).toEqual({ state: "waiting", person: ALICE });
+    expect(await settled(signIn, id)).toEqual({ state: "waiting", person: ALICE, code: CODE });
     expect(sleeps).toEqual([5000, 10000]);
   });
 
@@ -162,9 +163,12 @@ describe("the owner letting guests in", () => {
 
   test("a collaborator waits for the owner instead of signing in", async () => {
     const { signIn, id, handle } = await waitingGuest();
-    expect(signIn.status(id)).toEqual({ state: "waiting", person: ALICE });
+    const status = signIn.status(id);
+    expect(status).toEqual({ state: "waiting", person: ALICE, code: CODE });
+    // The guest's page and the owner's popover show the same code, so the owner can check it with them.
+    const code = status?.state === "waiting" ? status.code : "";
     expect(signIn.waiting()).toEqual([
-      { id: handle, person: ALICE, country: "ZA", browser: "Safari on macOS", at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+      { id: handle, person: ALICE, code, country: "ZA", browser: "Safari on macOS", at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
     ]);
     expect(handle).not.toBe(id);
   });
@@ -317,7 +321,7 @@ describe("signing in through the share link", () => {
 
     const waiting = await finished(id);
     said.push(waiting.text);
-    expect(JSON.parse(waiting.text)).toEqual({ state: "waiting", person: ALICE });
+    expect(JSON.parse(waiting.text)).toEqual({ state: "waiting", person: ALICE, code: CODE });
     const [guest] = signIn.waiting();
     expect((await page(`/api/share/guests/${guest?.id}`, post({ allow: true }))).status).toBe(200);
     const response = await visit(`/api/signin/${id}`);
