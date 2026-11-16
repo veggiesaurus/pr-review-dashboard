@@ -1,6 +1,6 @@
+import { HTTPError } from "ky";
 import { Check, Copy, ExternalLink } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { SignInStatus } from "shared/messages";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "src/components/ui/button";
 import { errorText } from "src/queries/messages.mutation";
@@ -33,17 +33,56 @@ function CopyCode({ code }: { code: string }) {
   );
 }
 
+// The sign-in this tab started, so a reload while waiting carries on with it rather than asking for GitHub again.
+const KEPT = "prg:signin";
+function kept() {
+  try {
+    return sessionStorage.getItem(KEPT) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+function keep(id: string | null) {
+  try {
+    if (id) {
+      sessionStorage.setItem(KEPT, id);
+    } else {
+      sessionStorage.removeItem(KEPT);
+    }
+  } catch {
+    // Without storage a reload just starts a new sign-in.
+  }
+}
+
 // What a guest sees until they have signed in with GitHub. Nothing of the review is asked for until then.
 export function SignIn() {
   const start = useStartSignIn();
   const { mutate } = start;
-  useEffect(() => mutate(), [mutate]);
-  const polled = useSignInStatus(start.data?.id).data;
-  const status: SignInStatus | undefined = polled ?? start.data;
+  const [resumed, setResumed] = useState(kept);
+  const id = start.data?.id ?? resumed;
+  const check = useSignInStatus(id);
+  const status = check.data ?? (start.data?.id === id ? start.data : undefined);
+  // The server forgets a sign-in when it restarts or the sign-in runs out.
+  const gone = check.error instanceof HTTPError && check.error.response.status === 404;
+
+  const begin = useCallback(() => {
+    keep(null);
+    setResumed(undefined);
+    mutate(undefined, { onSuccess: data => keep(data.id) });
+  }, [mutate]);
+
+  useEffect(() => {
+    if ((!id && start.isIdle) || gone) {
+      begin();
+    }
+  }, [id, start.isIdle, gone, begin]);
 
   useEffect(() => {
     if (status?.state === "done") {
+      keep(null);
       location.reload();
+    } else if (status?.state === "failed") {
+      keep(null);
     }
   }, [status?.state]);
 
@@ -63,13 +102,26 @@ export function SignIn() {
         </>
       )}
       {status?.state === "waiting" && (
-        <p className="text-muted-foreground text-sm">Signed in as @{status.person.login}. Waiting for the owner to let you in.</p>
+        <p className="text-muted-foreground text-sm">
+          Signed in as @{status.person.login}. Waiting for the owner to let you in; keep this page open.
+        </p>
+      )}
+      {check.isError && !gone && (
+        <>
+          <p className="text-danger text-sm">
+            Couldn't reach the review to check your sign-in ({errorText(check.error, "no answer")}). If this keeps happening, open the share
+            link again.
+          </p>
+          <Button className="w-fit" variant="outline" disabled={check.isFetching} onClick={() => check.refetch()}>
+            Check again
+          </Button>
+        </>
       )}
       {status?.state === "done" && <p className="text-muted-foreground text-sm">Signed in. Opening the review…</p>}
       {(status?.state === "failed" || start.isError) && (
         <>
           {status?.state === "failed" && <p className="text-danger text-sm">{WHY[status.reason]}</p>}
-          <Button className="w-fit" variant="outline" disabled={start.isPending} onClick={() => mutate()}>
+          <Button className="w-fit" variant="outline" disabled={start.isPending} onClick={begin}>
             Try again
           </Button>
         </>

@@ -36,4 +36,6 @@ export const useSignInStatus = (id: string | undefined) =>
     queryFn: () => api.get(`signin/${id}`).json<SignInStatus>(),
     enabled: id !== undefined,
     refetchInterval: query => (query.state.data?.state === "pending" || query.state.data?.state === "waiting" ? 2000 : false),
+    // The guest is usually on GitHub's tab, or in chat with the owner, while this waits.
+    refetchIntervalInBackground: true,
   });
