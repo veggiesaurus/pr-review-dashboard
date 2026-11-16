@@ -26,6 +26,14 @@ describe("notes and chat", () => {
     expect(await attention()).toBeNull();
   });
 
+  test("a guest is not told what the terminal is waiting on", async () => {
+    const { session, page, guest, post } = setup({ guestCode: () => GUEST_CODE });
+    void session("/api/session/wait");
+    await session("/api/attention", post({ text: "Claude needs your permission to use Bash" }));
+    expect(((await (await page("/api/session")).json()) as SessionInfo).attention).not.toBeNull();
+    expect(((await (await guest("/api/session")).json()) as SessionInfo).attention).toBeNull();
+  });
+
   test("the session says what it's doing, for a thread or in general, until it answers, stops or goes quiet", async () => {
     const { session, page, post } = setup();
     await page("/api/messages", post({ kind: "chat", text: "why trim here?", anchor: addedLine }));

@@ -1,6 +1,6 @@
 import { Archive, ArchiveRestore, ArrowLeft, Crosshair, MessageCircle, NotebookPen, Plus, Send, X } from "lucide-react";
-import { useEffect } from "react";
-import type { Anchor } from "shared/messages";
+import { useEffect, useState } from "react";
+import type { Anchor, PermissionsInfo } from "shared/messages";
 import { Composer } from "src/components/chat/Composer";
 import { type Focus, useChatStore } from "src/components/chat/chat.store";
 import { NotesPanel } from "src/components/chat/NotesPanel";
@@ -20,8 +20,9 @@ import {
   MessageScrollerViewport,
 } from "src/components/ui/message-scroller";
 import { useIsOwner } from "src/queries/me.query";
-import { useArchiveReview, useArchiveThread, useSendDrafts } from "src/queries/messages.mutation";
+import { errorText, useArchiveReview, useArchiveThread, useSendDrafts } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
+import { useAnswerPermission, usePermissions } from "src/queries/permissions.query";
 import { useReview } from "src/queries/review.query";
 import { PAGE_COLUMN, useViewStore } from "src/store/view.store";
 import { anchorKey } from "src/utils/anchors";
@@ -225,12 +226,80 @@ function Pane({ threads, archived, focus }: { threads: ClaudeThread[]; archived:
   );
 }
 
+// The oldest permission prompt the session is stopped at, which the owner may answer here instead of in the terminal.
+function PermissionBar({ info }: { info: PermissionsInfo }) {
+  const answer = useAnswerPermission();
+  const [expanded, setExpanded] = useState(false);
+  // The buttons wait a moment after a prompt appears, so a double tap on the last one can't approve this.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 700);
+    return () => clearTimeout(timer);
+  }, []);
+  const [prompt, ...rest] = info.prompts;
+  if (!prompt) {
+    return null;
+  }
+  const choose = (behavior: "allow" | "deny") => answer.mutate({ id: prompt.id, behavior });
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm" aria-live="polite">
+      <span className="size-2 shrink-0 animate-pulse rounded-full bg-warning" />
+      <span className="font-medium">{prompt.text}</span>
+      {prompt.code && (
+        <button
+          type="button"
+          className={cn("max-w-[28rem] text-left", expanded && "max-w-full")}
+          aria-expanded={expanded}
+          title={expanded ? "Show less" : "Show all"}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <code
+            className={cn(
+              "block rounded bg-muted px-1.5 py-0.5 font-mono text-xs",
+              expanded ? "whitespace-pre-wrap break-all" : "truncate",
+            )}
+          >
+            {prompt.code}
+          </code>
+        </button>
+      )}
+      {prompt.description && <span className="truncate text-muted-foreground">{prompt.description}</span>}
+      {rest.length > 0 && <span className="text-muted-foreground">and {rest.length} more</span>}
+      {info.answerable ? (
+        <>
+          <Button
+            size="sm"
+            disabled={!ready || answer.isPending}
+            aria-label={`Allow: ${prompt.text}${prompt.code ? ` ${prompt.code}` : ""}`}
+            onClick={() => choose("allow")}
+          >
+            Allow
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!ready || answer.isPending}
+            aria-label={`Deny: ${prompt.text}${prompt.code ? ` ${prompt.code}` : ""}`}
+            onClick={() => choose("deny")}
+          >
+            Deny
+          </Button>
+        </>
+      ) : (
+        <span className="text-muted-foreground">Answer on this computer or in the terminal.</span>
+      )}
+      {answer.isError && <span className="text-danger">{errorText(answer.error)}</span>}
+    </span>
+  );
+}
+
 export function ChatDock({ connected }: { connected: boolean }) {
   const { threads, archived, drafts, latestReply } = useThreads();
   const { data: session } = useSession();
   const send = useSendDrafts();
   const archive = useArchiveThread();
   const owner = useIsOwner();
+  const permissions = usePermissions();
   const { chatOpen, drawer, focus, setChatOpen, openDrawer, setFocus, openThread } = useChatStore();
   const listening = connected && Boolean(session?.listening);
   // What the session last said it is doing, while it's listening.
@@ -239,7 +308,8 @@ export function ChatDock({ connected }: { connected: boolean }) {
   const waiting = threads.flatMap(t => awaited(t.root, t.replies) ?? []).at(-1);
   const busy = listening && (activity !== null || waiting !== undefined);
   // The prompt is in the owner's terminal, so only the owner can act on it.
-  const attention = connected && owner ? (session?.attention ?? null) : null;
+  const prompting = connected && owner && (permissions?.prompts.length ?? 0) > 0;
+  const attention = connected && owner && !prompting ? (session?.attention ?? null) : null;
   const status = !connected
     ? "Lost the server"
     : attention
@@ -342,7 +412,8 @@ export function ChatDock({ connected }: { connected: boolean }) {
           </div>
         )}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
-          <span className="flex min-w-0 items-center gap-2 text-sm" aria-live="polite">
+          {prompting && permissions && <PermissionBar key={permissions.prompts[0]?.id} info={permissions} />}
+          <span className={cn("flex min-w-0 items-center gap-2 text-sm", prompting && "hidden")} aria-live="polite">
             {busy && !attention ? (
               <Thinking />
             ) : (

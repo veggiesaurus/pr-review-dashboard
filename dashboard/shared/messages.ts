@@ -256,3 +256,19 @@ export const whereSchema = z.object({
 export type Where = z.infer<typeof whereSchema>;
 // since: when hidden last changed, so the page can dim someone who has been away a while.
 export type PresenceEntry = { person: Person; role: Role; layer: number; tab: Tab; section: number | null; hidden: boolean; since: string };
+
+export const permissionRequestSchema = z.object({
+  tool: z.string().min(1).max(200),
+  input: z.record(z.string(), z.unknown()),
+  deadline: z.string().datetime(),
+});
+export const permissionClearSchema = z.object({
+  tool: z.string().max(200).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+});
+export const permissionAnswerSchema = z.object({ behavior: z.enum(["allow", "deny"]) });
+// A permission prompt the session's terminal is showing, put in words for the owner's page.
+export type PermissionPrompt = { id: string; text: string; code: string | null; description: string | null; at: string };
+// answerable: false on the tunnel, where the owner can see prompts but not answer them.
+export type PermissionsInfo = { prompts: PermissionPrompt[]; answerable: boolean };
+export type PermissionState = "waiting" | "allow" | "deny" | "dropped";

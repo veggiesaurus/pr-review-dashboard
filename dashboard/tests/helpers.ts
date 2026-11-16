@@ -7,6 +7,7 @@ import { type Runner, reviewedRepo } from "../server/comments";
 import { run } from "../server/exec";
 import { type Loaded, toLoaded } from "../server/load";
 import { People } from "../server/people";
+import { Permissions } from "../server/permissions";
 import { Review } from "../server/review";
 import { Share, type Spawn } from "../server/share";
 import { SignIn } from "../server/signin";
@@ -137,6 +138,7 @@ export function setup(
     sleep: async () => {},
     onChange: () => store.notify("session"),
   });
+  const permissions = new Permissions({ onChange: () => store.notify("session") });
   const app = createApp({
     store,
     review,
@@ -154,6 +156,7 @@ export function setup(
     onActivity: options.onActivity,
     host: options.host,
     people,
+    permissions,
     share,
     signIn,
     guestCode: options.guestCode ?? (() => share.guestCode),
@@ -175,7 +178,7 @@ export function setup(
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
-  return { app, store, review, session, page, guest, post, attachments, people, share, signIn, cloudflared };
+  return { app, store, review, session, page, guest, post, attachments, people, permissions, share, signIn, cloudflared };
 }
 
 export const addedLine = { kind: "line", layer: 12, file: "f1", hunk: "f1h1", side: "R", line: 2 };

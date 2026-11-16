@@ -11,6 +11,7 @@ import { openDb } from "./db";
 import { parseJson, run } from "./exec";
 import { loadReview } from "./load";
 import { People } from "./people";
+import { Permissions } from "./permissions";
 import { Review } from "./review";
 import { Share } from "./share";
 import { SignIn } from "./signin";
@@ -135,6 +136,8 @@ const signIn = new SignIn({
   onChange: () => store.notify("session"),
 });
 
+const permissions = new Permissions({ onChange: () => store.notify("session") });
+
 function shutdown(reason: string) {
   console.log(`pr-review-dashboard stopping: ${reason}`);
   share.stop();
@@ -149,6 +152,7 @@ const app = createApp({
   linkCode,
   cookieSecret: secret(),
   people,
+  permissions,
   share,
   signIn,
   guestCode: () => share.guestCode,

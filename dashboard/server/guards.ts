@@ -5,7 +5,7 @@ import type { Author } from "../shared/messages";
 import type { Review } from "./review";
 
 export type Who = "owner" | "guest" | "session";
-export type Env = { Variables: { who: Who; author: Author | null } };
+export type Env = { Variables: { who: Who; author: Author | null; tunnel: boolean } };
 
 // The error names the first role allowed, so a guest refused an owner route reads "only the owner may do this".
 export const only = (...allowed: Who[]) =>

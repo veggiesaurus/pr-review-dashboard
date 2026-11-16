@@ -3,7 +3,13 @@
     "Notification": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" set" }] }
     ],
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/permission.sh\"", "timeout": 3600 }] }
+    ],
     "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" clear" }] }
+    ],
+    "PostToolUseFailure": [
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/dashboard/scripts/attention.sh\" clear" }] }
     ],
     "Stop": [

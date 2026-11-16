@@ -12,7 +12,8 @@ export function messagesRoutes(deps: AppDeps) {
   const { store } = deps;
   const app = new Hono<Env>();
 
-  app.get("/session", c => c.json(store.session));
+  // A guest isn't told what the terminal is waiting on.
+  app.get("/session", c => c.json(c.get("who") === "guest" ? { ...store.session, attention: null } : store.session));
 
   // The session says what it is doing now, optionally for one thread; an empty line says it has stopped.
   app.post("/activity", only("session"), small, zValidator("json", activitySchema), c => {

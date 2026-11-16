@@ -4,7 +4,7 @@ import { guestAnswerSchema, type ShareInfo } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { reviewedRepo } from "../comments";
 import { run } from "../exec";
-import { type Env, only } from "../guards";
+import { type Env, only, small } from "../guards";
 
 export function shareRoutes(deps: AppDeps) {
   const { share, people, review, signIn } = deps;
@@ -66,7 +66,7 @@ export function shareRoutes(deps: AppDeps) {
     return c.json(info());
   });
 
-  app.post("/share/guests/:id", only("owner"), async c => {
+  app.post("/share/guests/:id", only("owner"), small, async c => {
     const body = guestAnswerSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success) {
       return c.json({ error: "say whether to let them in" }, 400);
@@ -74,7 +74,6 @@ export function shareRoutes(deps: AppDeps) {
     if (!signIn.answer(c.req.param("id"), body.data.allow)) {
       return c.json({ error: "no guest is waiting with that id" }, 404);
     }
-    deps.store.notify("session");
     return c.json(info());
   });
 

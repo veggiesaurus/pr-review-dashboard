@@ -196,7 +196,7 @@ curl -s -X POST -H "Authorization: Bearer $T" "$O/api/share"
 curl -s -X DELETE -H "Authorization: Bearer $T" "$O/api/share"
 ```
 
-`POST` starts the tunnel and answers `{sharing, link, signedIn, unpushed, blocked}`, or 400 `{error}` saying why it can't: no `cloudflared`, no GitHub OAuth app set up for sign-in, or the owner's `gh` can't check who is a collaborator on the repo. `DELETE` stops it and signs every guest out, as `cloudflared` stopping by itself does. While sharing, the state file has `shareLink`. Read it the way you read `token`, and give it to the user only when they ask for it. Never print it otherwise, since whoever holds it can try to sign in. The link changes every time sharing starts, so an old one gives a page saying it has expired or is wrong.
+`POST` starts the tunnel and answers `{sharing, link, signedIn, waiting, unpushed, blocked}`, or 400 `{error}` saying why it can't: no `cloudflared`, no GitHub OAuth app set up for sign-in, or the owner's `gh` can't check who is a collaborator on the repo. `DELETE` stops it and signs every guest out, as `cloudflared` stopping by itself does. While sharing, the state file has `shareLink`. Read it the way you read `token`, and give it to the user only when they ask for it. Never print it otherwise, since whoever holds it can try to sign in. The link changes every time sharing starts, so an old one gives a page saying it has expired or is wrong.
 
 Never put `link`, `lanLink`, the token or any `?t=` code in a reply on the page, sharing or not. Guests read every reply, including ones from before sharing started, and the owner's code works through the tunnel, so whoever has it is the owner. Give them in the terminal.
 
@@ -216,6 +216,8 @@ Owner-only in the page, and refused by the server for a guest: the local-changes
 ## Waiting at a prompt
 
 The plugin's hooks tell the dashboard when this session stops at a permission prompt in its terminal: the owner's page says "Waiting for you in the terminal" in its bar with the prompt's text until the next tool call, the end of the turn, a new prompt, or your next `POST /api/activity` or reply. The server knows its session from `CLAUDE_CODE_SESSION_ID`, written to the state file as `session`, so start it from the session's own shell.
+
+The owner can also answer a permission prompt on the page, with Allow and Deny in the bar, when they are on this machine or on the phone link but not through the share link. So don't send them to the terminal for one. The terminal warning above stays for a prompt the permission hook doesn't see.
 
 ## Saying what you're doing
 

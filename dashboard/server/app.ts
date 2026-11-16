@@ -7,6 +7,7 @@ import { IMAGE_ID } from "../shared/messages";
 import type { Runner } from "./comments";
 import type { Env } from "./guards";
 import type { People } from "./people";
+import type { Permissions } from "./permissions";
 import type { Review } from "./review";
 import { attachmentsRoutes } from "./routes/attachments";
 import { commentsRoutes } from "./routes/comments";
@@ -14,6 +15,7 @@ import { fontsRoutes } from "./routes/fonts";
 import { githubRoutes } from "./routes/github";
 import { linearRoutes } from "./routes/linear";
 import { messagesRoutes } from "./routes/messages";
+import { permissionsRoutes } from "./routes/permissions";
 import { reviewRoutes } from "./routes/review";
 import { reviewsRoutes } from "./routes/reviews";
 import { shareRoutes } from "./routes/share";
@@ -33,6 +35,7 @@ export type AppDeps = {
   linkCode: string;
   cookieSecret: string;
   people: People;
+  permissions: Permissions;
   share: Share;
   signIn: SignIn;
   // The code in the share link guests send as their key; null while not sharing, which shuts every guest out.
@@ -105,6 +108,7 @@ export function createApp(deps: AppDeps) {
       return c.text("forbidden\n", 403);
     }
     const onTunnel = host === tunnel;
+    c.set("tunnel", onTunnel);
     const origin = c.req.header("origin");
     if (origin && !origins.includes(origin)) {
       return c.text("forbidden\n", 403);
@@ -194,6 +198,7 @@ export function createApp(deps: AppDeps) {
   app.route("/api", attachmentsRoutes(deps));
   app.route("/api", shareRoutes(deps));
   app.route("/api", signinRoutes(deps));
+  app.route("/api", permissionsRoutes(deps));
   deps.review.onChange(() => deps.store.notify("review"));
 
   app.all("/api/*", c => c.json({ error: "not found" }, 404));

@@ -82,13 +82,19 @@ export function ShareButton() {
                         </div>
                         {where.length > 0 && <p className="text-muted-foreground">{where.join(" · ")}</p>}
                         <div className="flex gap-2">
-                          <Button size="sm" disabled={answer.isPending} onClick={() => answer.mutate({ id: guest.id, allow: true })}>
+                          <Button
+                            size="sm"
+                            disabled={answer.isPending}
+                            aria-label={`Let in @${guest.person.login}`}
+                            onClick={() => answer.mutate({ id: guest.id, allow: true })}
+                          >
                             Let in
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             disabled={answer.isPending}
+                            aria-label={`Turn away @${guest.person.login}`}
                             onClick={() => answer.mutate({ id: guest.id, allow: false })}
                           >
                             Turn away
