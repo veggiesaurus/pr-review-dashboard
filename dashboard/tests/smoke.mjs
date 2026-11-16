@@ -1,7 +1,7 @@
 // The skill's tests/smoke.mjs on the server's page, served from a fresh fixture. Fails on any console error, page error
 // or CSP violation. Usage: bun tests/smoke.mjs [STATIC_DIR], STATIC_DIR the built page (default build/).
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -13,6 +13,22 @@ const built = resolve(process.argv[2] ?? join(here, "build"));
 const tmp = mkdtempSync(join(tmpdir(), "prg-smoke-"));
 const fx = join(tmp, "fx");
 const servers = [];
+// A tunnel and a GitHub login that need no network: the owner is "owner" and may check collaborators on o/r.
+const bin = join(tmp, "bin");
+mkdirSync(bin);
+const fake = (name, body) => {
+  writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
+  chmodSync(join(bin, name), 0o755);
+};
+fake("cloudflared", 'echo "https://quiet-river-1234.trycloudflare.com" >&2\nexec sleep 600');
+fake(
+  "gh",
+  `case "$*" in
+  "api user --jq "*) echo '{"id":1,"login":"owner","name":"Owner","avatar":"https://avatars.githubusercontent.com/u/1"}' ;;
+  "api repos/o/r/collaborators/"*) exit 0 ;;
+  *) echo "gh: not signed in" >&2; exit 1 ;;
+esac`,
+);
 const problems = [];
 let failures = 0;
 let browser;
@@ -29,6 +45,7 @@ async function serve(name, data) {
   const state = join(tmp, `${name}.json`);
   const child = spawn("bun", ["run", "server/index.ts", "--state", state, "--data", data, "--repo", join(fx, "repo"), "--static", built], {
     cwd: here,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PRG_GITHUB_CLIENT_ID: "test" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   const server = { child, state };
@@ -738,6 +755,116 @@ try {
   );
   await page.close();
   console.log("page ok");
+
+  // The same person on a second page is not shown to themselves. A guest can't reach a tunnel host from here, so one
+  // is faked at the presence endpoint and the walk checks how the page draws and uses it.
+  await open(work.link);
+  await tab("Guide");
+  await page.waitForSelector(SECTION);
+  const second = await browser.newPage();
+  await second.goto(work.link);
+  await second.waitForSelector("[role=tablist]");
+  await page.waitForTimeout(1200);
+  await check(
+    "the same person on two pages shows no avatar",
+    () => count("[data-presence]"),
+    n => n === 0,
+  );
+  await second.close();
+  const { layers } = await (await fetch(`${work.origin}/api/review`, { headers: { Authorization: `Bearer ${work.token}` } })).json();
+  const guest = { id: 2, login: "gus", name: null, avatar: "https://avatars.githubusercontent.com/u/2" };
+  const entry = {
+    person: guest,
+    role: "guest",
+    layer: layers[0].id,
+    tab: "guide",
+    section: 1,
+    hidden: false,
+    since: new Date().toISOString(),
+  };
+  const dot = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHuJ5PwAAAABJRU5ErkJggg==", "base64");
+  await page.route("**/api/github/avatar/gus", route => route.fulfill({ body: dot, contentType: "image/png" }));
+  await page.route("**/api/presence", route => route.fulfill({ json: [entry] }));
+  await page.reload();
+  await page.waitForSelector(SECTION);
+  const rail = page.getByRole("navigation", { name: "Sections" });
+  await check(
+    "the rail shows the guest beside their section",
+    () => rail.locator("div:has(> button[aria-label^='02']) [data-presence=gus]").count(),
+    n => n === 1,
+  );
+  await page.evaluate(() => window.scrollTo({ top: 0 }));
+  await rail.locator("[data-presence=gus]").click();
+  await check(
+    "clicking the guest lands on their section",
+    () => page.evaluate(() => window.scrollY),
+    y => y > 0,
+  );
+  await page.close();
+
+  // Sharing, from the owner's side, on the stack, which is the review that knows its repo. The tunnel is a fake.
+  await open(stack.link);
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  await page.getByRole("button", { name: "Start sharing" }).click();
+  await check(
+    "Share shows a link ending in the guest code",
+    () => page.getByRole("textbox", { name: "Share link" }).inputValue(),
+    link => /^https:\/\/quiet-river-1234\.trycloudflare\.com\/\?g=[0-9a-f]+$/.test(link),
+  );
+  await check("and says guests see every thread", () => page.getByText("Guests will see every thread on this review").count());
+  await page.getByRole("button", { name: "Stop sharing" }).click();
+  await check(
+    "Stop sharing clears the link",
+    () => page.getByRole("textbox", { name: "Share link" }).count(),
+    n => n === 0,
+  );
+  await page.close();
+
+  // The tunnel is the only host a share link works on, so here an old code gets the server's own page.
+  page = await browser.newPage();
+  const old = await page.goto(`${work.origin}/?g=old`);
+  await check(
+    "a share link with an old code gets 401",
+    async () => old.status(),
+    status => status === 401,
+  );
+  await check("and a page saying to ask for a new one", () =>
+    page.getByText("ask whoever shared it with you for a new one", { exact: false }).count(),
+  );
+  await page.close();
+
+  // A guest can't reach a tunnel host from here, so the owner's page is told it is a guest.
+  await asSession("replies", {
+    replyTo: (await said()).find(m => m.text === "Is this safe to merge?").id,
+    text: "Shall I merge it?",
+    ask: [{ question: "Merge now?", options: ["Yes", "No"], owner: true }],
+  });
+  const asGuest = {
+    role: "guest",
+    person: { id: 2, login: "gus", name: null, avatar: "https://avatars.githubusercontent.com/u/2" },
+    sharing: true,
+  };
+  page = await browser.newPage();
+  await page.route("**/api/me", route => route.fulfill({ json: asGuest }));
+  await page.goto(work.link);
+  await page.waitForSelector("[role=tablist]");
+  await check(
+    "a guest has no Rebuild or Share button",
+    () => count("button:text-is('Rebuild'), button:text-is('Share')"),
+    n => n === 0,
+  );
+  await page.getByRole("button", { name: /^Chat/ }).click();
+  await threadList()
+    .getByRole("button", { name: /Is this safe to merge/ })
+    .click();
+  await check("an owner-only question shows a guest that it waits on the owner", () => page.getByText("Waiting on @owner").count());
+  await check(
+    "and offers no options",
+    () => page.getByRole("radio", { name: "Yes" }).count(),
+    n => n === 0,
+  );
+  await asSession("replies", { replyTo: (await said()).find(m => m.text === "Is this safe to merge?").id, text: "Merged." });
+  await page.close();
 
   // The same page at a phone's width. Its socket goes through the walk, which can then drop it.
   await open(work.link, "", { width: 390, height: 844 });

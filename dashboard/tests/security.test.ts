@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { ciFrame } from "../server/github";
-import { COOKIE, HOST, LINK, loaded, ORIGIN, PORT, rawReview, setup, TOKEN } from "./helpers";
+import { COOKIE, GUEST, GUEST_CODE, HOST, LINK, loaded, ORIGIN, PORT, rawReview, setup, TOKEN, TUNNEL } from "./helpers";
 
 describe("who may call", () => {
   test("a request that names another host or comes from another site is refused before anything else", async () => {
@@ -85,12 +85,44 @@ describe("who may call", () => {
   });
 
   test("a cookie write with no Origin isn't from the page", async () => {
-    const { app, post } = setup();
+    const { app, post, people } = setup({ guestCode: () => GUEST_CODE });
     const response = await app.request("/api/messages", {
       ...post({ kind: "chat", text: "hi" }),
       headers: { host: HOST, cookie: `prg_${PORT}=${COOKIE}`, "content-type": "application/json" },
     });
     expect(response.status).toBe(403);
+    const guest = await app.request("/api/messages", {
+      ...post({ kind: "chat", text: "hi" }),
+      headers: {
+        host: HOST,
+        cookie: `prg_guest_${PORT}=${people.issue(GUEST)}`,
+        "x-prg-key": GUEST_CODE,
+        "content-type": "application/json",
+      },
+    });
+    expect(guest.status).toBe(403);
+  });
+
+  test("the tunnel's host is let in over https while sharing, and not at all otherwise", async () => {
+    const { app, share } = setup();
+    const owner = { host: TUNNEL, origin: `https://${TUNNEL}`, cookie: `prg_${PORT}=${COOKIE}`, "x-prg-key": LINK };
+    const ask = (headers: Record<string, string> = {}) => app.request("/api/review", { headers: { ...owner, ...headers } });
+    expect((await ask()).status).toBe(403);
+
+    await share.start();
+    const shared = await ask();
+    expect(shared.status).toBe(200);
+    expect(shared.headers.get("content-security-policy")).toContain(`wss://${TUNNEL}`);
+    expect((await ask({ origin: `http://${TUNNEL}` })).status).toBe(403);
+    expect((await app.request("/api/review", { headers: { host: TUNNEL, authorization: `Bearer ${TOKEN}` } })).status).toBe(401);
+
+    const opened = await app.request(`/?t=${LINK}`, { headers: { host: TUNNEL } });
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get("set-cookie")).toContain("Secure");
+    expect((await app.request(`/?t=${LINK}`, { headers: { host: HOST } })).headers.get("set-cookie")).not.toContain("Secure");
+
+    share.stop();
+    expect((await ask()).status).toBe(403);
   });
 
   test("a caller with no credential doesn't keep the server from going idle", async () => {
@@ -128,7 +160,7 @@ describe("what the session reads", () => {
     await page("/api/messages/send", { method: "POST" });
 
     expect(frames).toHaveLength(2);
-    expect(margin(frames[0] ?? "")).toEqual([expect.stringMatching(/^\[review page\] chat m1 on /)]);
+    expect(margin(frames[0] ?? "")).toEqual([expect.stringMatching(/^\[review page\] chat m1 from @olive \(owner\) on /)]);
     expect(margin(frames[1] ?? "")).toEqual([expect.stringMatching(/^\[review page\] batch 1: /), expect.stringMatching(/^m2 about /)]);
   });
 

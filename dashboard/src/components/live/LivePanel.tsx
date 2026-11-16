@@ -22,6 +22,7 @@ import { Button } from "src/components/ui/button";
 import { Switch } from "src/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "src/components/ui/tooltip";
 import { fetchGithub, useCiNotify, useGithub, useLinearIssue, useSetCiNotify } from "src/queries/live.query";
+import { useIsOwner } from "src/queries/me.query";
 import { useLayer, useReview } from "src/queries/review.query";
 import { cn } from "src/utils/cn";
 import { ago, fullDate } from "src/utils/dates";
@@ -273,6 +274,7 @@ function NotifySwitch() {
 
 export function LivePanel({ layer }: { layer: number }) {
   const queryClient = useQueryClient();
+  const owner = useIsOwner();
   const linear = useReview().data?.linear ?? false;
   const shown = useLayer(layer);
   const github = shown?.capabilities.github ?? false;
@@ -345,7 +347,7 @@ export function LivePanel({ layer }: { layer: number }) {
           <Checks live={live} layer={layer} />
           <Reviewers pr={pr} />
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-            <NotifySwitch />
+            {owner ? <NotifySwitch /> : <span />}
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="text-muted-foreground text-xs">Checked {ago(live.at)}</span>

@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 import {
   type Activity,
   type Attention,
+  type Author,
   type Finding,
   type Message,
   type NewMessage,
@@ -19,12 +20,17 @@ import { prKey, TICK_PREFIX } from "../shared/ticks";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
 import { chatFrame, fixFrames, notesFrames, recheckFrames, reviewFrame } from "./format";
+import { Presence } from "./presence";
 import type { Review } from "./review";
 
 // A frame for the session and the messages it carries; n is its row, kept until the session is heard from.
 type Pending = { n: number; frame: string; ids: string[] };
 // What a thread notes when the session settles it; starting work and answering show as steps and messages already.
 const STATE_NOTES: Partial<Record<NoteState, string>> = { done: "Marked done", declined: "Declined" };
+
+// A draft is its author's alone. No author is the owner, who sent every message before there were guests.
+const whose = (author?: Author | null) => (author?.role === "guest" ? author.id : "owner");
+const draftOf = (message: Message, author: Author | null) => message.status === "draft" && whose(message.author) === whose(author);
 
 // The review as the session's frames name it, as the skill's page does.
 function scopeOf(review: Review) {
@@ -55,6 +61,7 @@ export type StoreOptions = {
 
 export class Store {
   messages: Message[] = [];
+  readonly presence = new Presence();
 
   private pending: Pending[] = [];
   // Written to a session that hasn't been heard from since: they go again if it leaves without a word.
@@ -204,7 +211,18 @@ export class Store {
     return this.messages.find(m => m.id === id);
   }
 
-  addUserMessage(input: NewMessage): Message | null {
+  // What one person's page shows: everything sent, and their own drafts.
+  messagesFor(author: Author | null): Message[] {
+    return this.messages.filter(m => m.status !== "draft" || draftOf(m, author)).map(m => this.viewFor(m, author));
+  }
+
+  // A thread's seen mark is the reader's own; other people's marks stay off the wire.
+  viewFor(message: Message, author: Author | null): Message {
+    const { seenBy, ...rest } = message;
+    return author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
+  }
+
+  addUserMessage(input: NewMessage, author: Author | null): Message | null | "owner-only" {
     const parent = input.replyTo ? this.root(input.replyTo) : undefined;
     if (parent === null || parent?.status === "draft") {
       return null;
@@ -213,13 +231,21 @@ export class Store {
     if (anchor === null) {
       return null;
     }
+    const guest = author?.role === "guest";
+    // The question standing on the thread is the last one Claude asked, whatever it said after.
+    const asked = parent && this.messages.findLast(m => (m.id === parent.id || m.replyTo === parent.id) && m.from === "claude" && m.ask);
+    const ownerAnswer = Boolean(input.answer && asked?.ask?.some(question => question.owner));
+    if (ownerAnswer && guest) {
+      return "owner-only";
+    }
     // A follow-up goes at once, and reopens a thread the session had settled.
     const reopened = parent !== undefined && settled(parent.state);
     if (parent && reopened) {
       this.setState(parent, "open");
       this.log(parent, "note", "Reopened by a follow-up");
     }
-    if (parent) {
+    // Archiving and dismissing are the owner's, so a guest's follow-up leaves them as they are.
+    if (parent && !guest) {
       parent.archived = undefined;
       if (parent.review?.dismissed) {
         parent.review = { ...parent.review, dismissed: undefined };
@@ -229,6 +255,8 @@ export class Store {
     const message = this.insert(
       {
         from: "user",
+        ...(author && { author }),
+        ...(ownerAnswer && { answer: true }),
         kind,
         text: input.text,
         anchor,
@@ -451,8 +479,8 @@ export class Store {
     return thread?.from === "claude" && thread.review ? thread : undefined;
   }
 
-  editDraft(id: string, text: string) {
-    const draft = this.messages.find(m => m.id === id && m.status === "draft");
+  editDraft(id: string, text: string, author: Author | null) {
+    const draft = this.messages.find(m => m.id === id && draftOf(m, author));
     if (!draft) {
       return null;
     }
@@ -463,25 +491,34 @@ export class Store {
   }
 
   // Reviewed ticks for this review's PRs. They are kept by PR, so the same PR in another review shows them too.
-  get ticks(): string[] {
+  // The owner's keys are stored bare; a guest's carry their id in front.
+  ticksFor(author: Author | null): string[] {
     const mine = this.tickScopes();
+    const prefix = this.tickPrefix(author);
     return this.db
       .query<{ key: string }, []>("select key from ticks")
       .all()
       .map(row => row.key)
+      .filter(key => key.startsWith(prefix))
+      .map(key => key.slice(prefix.length))
       .filter(key => mine.some(scope => key.startsWith(scope)));
   }
 
-  setTicks(keys: string[], done: boolean) {
+  setTicks(keys: string[], done: boolean, author: Author | null) {
     const mine = this.tickScopes();
+    const prefix = this.tickPrefix(author);
     const change = this.db.query(done ? "insert or ignore into ticks (key) values (?)" : "delete from ticks where key = ?");
     this.db.transaction(() => {
       for (const key of keys.filter(key => mine.some(scope => key.startsWith(scope)))) {
-        change.run(key);
+        change.run(prefix + key);
       }
     })();
     this.notify("ticks");
-    return this.ticks;
+    return this.ticksFor(author);
+  }
+
+  private tickPrefix(author: Author | null) {
+    return author?.role === "guest" ? `g${author.id}:` : "";
   }
 
   private tickScopes() {
@@ -489,14 +526,19 @@ export class Store {
   }
 
   // The thread has been on the user's screen, so nothing in it so far is news to them.
-  markSeen(id: string) {
+  markSeen(id: string, author: Author | null) {
     const thread = this.root(id);
-    if (!thread) {
+    if (!thread || thread.status === "draft") {
       return null;
     }
-    thread.seen = this.messages.findLast(m => m.id === thread.id || m.replyTo === thread.id)?.id;
+    const last = this.messages.findLast(m => m.id === thread.id || m.replyTo === thread.id)?.id;
+    if (author?.role === "guest") {
+      thread.seenBy = { ...thread.seenBy, [author.id]: last as string };
+    } else {
+      thread.seen = last;
+    }
     this.notify("messages");
-    return thread;
+    return this.viewFor(thread, author);
   }
 
   setArchived(id: string, archived: boolean, reason?: DismissReason) {
@@ -515,15 +557,15 @@ export class Store {
     return thread;
   }
 
-  deleteDraft(id: string) {
+  deleteDraft(id: string, author: Author | null) {
     const before = this.messages.length;
-    this.messages = this.messages.filter(m => !(m.id === id && m.status === "draft"));
+    this.messages = this.messages.filter(m => !(m.id === id && draftOf(m, author)));
     this.notify("messages");
     return this.messages.length < before;
   }
 
-  sendDrafts() {
-    const drafts = this.messages.filter(m => m.status === "draft").sort(this.pageOrder());
+  sendDrafts(author: Author | null) {
+    const drafts = this.messages.filter(m => draftOf(m, author)).sort(this.pageOrder());
     if (drafts.length > 0) {
       const last = this.db.query<{ batch: number | null }, []>("select max(body ->> '$.batch') as batch from messages").get();
       const batch = (last?.batch ?? 0) + 1;

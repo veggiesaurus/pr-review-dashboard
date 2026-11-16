@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { CheckCounts, GithubPerson, GithubRefInfo } from "shared/live";
+import type { Person } from "shared/messages";
 import { type Ref, shortRef } from "shared/refs";
 
 import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
@@ -45,6 +46,18 @@ export function GithubAvatar({ person, size = "xs" }: { person: GithubPerson; si
     <Avatar size={size}>
       {person.avatar && <AvatarImage src={`/api/github/avatar/${person.login}`} alt="" />}
       <AvatarFallback>{person.login.slice(0, 2).toUpperCase()}</AvatarFallback>
+    </Avatar>
+  );
+}
+
+export const handleOf = (person: Person) => (person.login ? `@${person.login}` : (person.name ?? "a guest"));
+
+// Someone reading the review. A guest who only typed a name has no GitHub picture.
+export function PersonFace({ person, size = "xs" }: { person: Person; size?: "xs" | "sm" }) {
+  return (
+    <Avatar size={size}>
+      {person.login && <AvatarImage src={`/api/github/avatar/${person.login}`} alt="" />}
+      <AvatarFallback>{(person.login || person.name || "?").slice(0, 2).toUpperCase()}</AvatarFallback>
     </Avatar>
   );
 }

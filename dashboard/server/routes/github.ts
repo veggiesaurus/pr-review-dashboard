@@ -75,7 +75,7 @@ export function githubRoutes(deps: AppDeps) {
 
   app.get("/github/notify", c => c.json(notify));
 
-  app.put("/github/notify", only("page"), small, zValidator("json", z.object({ on: z.boolean() })), c => {
+  app.put("/github/notify", only("owner"), small, zValidator("json", z.object({ on: z.boolean() })), c => {
     notify.on = c.req.valid("json").on;
     deps.store.notify("github");
     return c.json(notify);
@@ -121,7 +121,7 @@ export function githubRoutes(deps: AppDeps) {
   // A GitHub user's picture, by login, for logins the server has seen in an answer it gave.
   app.get("/github/avatar/:login", async c => {
     const login = c.req.param("login");
-    const url = LOGIN.test(login) ? avatars.get(login.toLowerCase()) : undefined;
+    const url = LOGIN.test(login) ? (avatars.get(login.toLowerCase()) ?? deps.store.presence.avatarOf(login)) : undefined;
     if (!url) {
       return c.json({ error: "no picture" }, 404);
     }

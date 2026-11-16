@@ -35,14 +35,14 @@ test("a note's label goes to the session beside its id, and a batch with none re
   store.addSessionSink(frame => frames.push(frame));
   const add = (body: object) => page("/api/messages", post({ anchor: addedLine, ...body }));
   await add({ kind: "note", text: "plain" });
-  store.sendDrafts();
+  store.sendDrafts(null);
   expect(frames[0]).not.toContain("marked (fix)");
 
   expect((await add({ kind: "note", text: "is this needed?", intent: "question" })).status).toBe(201);
   expect((await add({ kind: "note", text: "x", intent: "praise" })).status).toBe(400);
   const chat = (await (await add({ kind: "chat", text: "now", intent: "nit" })).json()) as Message;
   expect(chat.intent).toBeUndefined();
-  store.sendDrafts();
+  store.sendDrafts(null);
   expect(frames.at(-1)).toContain("(question) an answer and no change");
   expect(frames.at(-1)).toContain("\n\nm2 (question) about src/slug.ts:R2@aaaaaaa");
 });

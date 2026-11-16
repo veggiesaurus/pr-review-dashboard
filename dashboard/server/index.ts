@@ -4,12 +4,17 @@ import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { websocket } from "hono/bun";
-
+import type { Person } from "../shared/messages";
 import { createApp } from "./app";
+import { reviewedRepo } from "./comments";
 import { openDb } from "./db";
-import { run } from "./exec";
+import { parseJson, run } from "./exec";
 import { loadReview } from "./load";
+import { People } from "./people";
+import { Permissions } from "./permissions";
 import { Review } from "./review";
+import { Share } from "./share";
+import { SignIn } from "./signin";
 import { Store } from "./store";
 
 const { values } = parseArgs({
@@ -22,12 +27,14 @@ const { values } = parseArgs({
     "idle-minutes": { type: "string", default: "60" },
     "github-comments": { type: "boolean", default: false },
     host: { type: "string" },
+    "github-client-id": { type: "string" },
+    "allowed-mail": { type: "string" },
   },
 });
 
 if (!values.state || !values.data) {
   console.error(
-    "usage: bun run server/index.ts --state FILE --data DIR [--repo DIR] [--scripts DIR] [--static DIR] [--idle-minutes N] [--github-comments] [--host ADDRESS]",
+    "usage: bun run server/index.ts --state FILE --data DIR [--repo DIR] [--scripts DIR] [--static DIR] [--idle-minutes N] [--github-comments] [--host ADDRESS] [--github-client-id ID] [--allowed-mail LIST]",
   );
   process.exit(2);
 }
@@ -70,21 +77,70 @@ async function stackNumber() {
   return result.code === 0 && Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
+// The owner's GitHub user, so their messages carry their name and avatar. Without it they go unnamed and sharing is refused.
+async function readOwner() {
+  const me = await run(["gh", "api", "user", "--jq", "{id,login,name,avatar:.avatar_url}"], resolve(values.repo)).catch(() => null);
+  const owner = me?.code === 0 ? (parseJson(me.stdout) as Person | null) : null;
+  if (!owner) {
+    const why = me?.stderr.trim().split("\n")[0];
+    console.warn(
+      `couldn't read your GitHub user with gh api user${why ? ` (${why})` : ""}, so your messages go unnamed and guests can't sign in with GitHub`,
+    );
+  }
+  return owner;
+}
+
+const [stack, owner] = await Promise.all([stackNumber(), readOwner()]);
 // Messages and ticks outlive a restart in one database beside the state file, shared by every review kept there.
 const attachments = resolve(dirname(statePath), "attachments");
 const store = new Store(review, {
   db: openDb(resolve(dirname(statePath), "prg.db")),
   attachments,
-  stack: await stackNumber(),
+  stack,
   repo: resolve(values.repo),
 });
+const people = new People();
+people.owner = owner;
+
 const secret = () => randomBytes(24).toString("hex");
 const token = secret();
 const linkCode = secret();
 let lastActivity = Date.now();
 
+// The skill passes the plugin's settings as flags. An unset one can arrive as the literal "${user_config.…}".
+const setting = (flag: string | undefined) => (flag && !flag.startsWith("${") ? flag : undefined);
+
+// Comma-separated, as cloudflared's --allowed-mail takes it: "a@acme.com,*@acme.com".
+const allowedMail = (setting(values["allowed-mail"]) ?? process.env.PRG_ALLOWED_MAIL)
+  ?.split(",")
+  .map(mail => mail.trim())
+  .filter(Boolean);
+const share = new Share({
+  port: () => server.port ?? 0,
+  allowedMail,
+  people,
+  onChange: () => {
+    if (!share.link) {
+      signIn.dropWaiting();
+    }
+    store.notify("session");
+    writeState();
+  },
+});
+
+const signIn = new SignIn({
+  clientId: setting(values["github-client-id"]) || process.env.PRG_GITHUB_CLIENT_ID || "",
+  fetcher: fetch,
+  runner: run,
+  repo: () => reviewedRepo(review) ?? "",
+  onChange: () => store.notify("session"),
+});
+
+const permissions = new Permissions({ onChange: () => store.notify("session") });
+
 function shutdown(reason: string) {
   console.log(`pr-review-dashboard stopping: ${reason}`);
+  share.stop();
   rmSync(statePath, { force: true });
   process.exit(0);
 }
@@ -95,6 +151,11 @@ const app = createApp({
   token,
   linkCode,
   cookieSecret: secret(),
+  people,
+  permissions,
+  share,
+  signIn,
+  guestCode: () => share.guestCode,
   attachments,
   port: () => server.port ?? 0,
   host,
@@ -144,23 +205,27 @@ if (host) {
 
 const origin = `http://127.0.0.1:${server.port}`;
 const lanLink = host ? `http://${host}:${server.port}/?t=${linkCode}` : undefined;
-writeFileSync(
-  statePath,
-  // session: the Claude Code session that started this, so its hooks can find it.
-  JSON.stringify({
-    port: server.port,
-    token,
-    origin,
-    link: `${origin}/?t=${linkCode}`,
-    lanLink,
-    pid: process.pid,
-    session: process.env.CLAUDE_CODE_SESSION_ID,
-  }),
-  {
-    mode: 0o600,
-  },
-);
-chmodSync(statePath, 0o600);
+function writeState() {
+  writeFileSync(
+    statePath,
+    // session: the Claude Code session that started this, so its hooks can find it.
+    JSON.stringify({
+      port: server.port,
+      token,
+      origin,
+      link: `${origin}/?t=${linkCode}`,
+      lanLink,
+      shareLink: share.link ?? undefined,
+      pid: process.pid,
+      session: process.env.CLAUDE_CODE_SESSION_ID,
+    }),
+    {
+      mode: 0o600,
+    },
+  );
+  chmodSync(statePath, 0o600);
+}
+writeState();
 // The secrets stay out of stdout, which ends up in the session's transcript.
 console.log(`pr-review-dashboard listening on ${origin}${host ? ` and http://${host}:${server.port}` : ""}, state in ${statePath}`);
 
@@ -170,5 +235,7 @@ setInterval(() => {
   }
 }, 30_000);
 
+// However the server ends, cloudflared ends with it.
+process.on("exit", () => share.stop());
 process.on("SIGINT", () => shutdown("interrupted"));
 process.on("SIGTERM", () => shutdown("terminated"));

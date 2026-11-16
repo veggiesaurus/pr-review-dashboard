@@ -27,9 +27,35 @@ claude plugin update pr-review-dashboard@pr-review-dashboard
 
 Each version installs into its own folder, so the first review after an update installs the dashboard's packages and builds it again. A dashboard that's already running stays on the old version until it's started again.
 
+## Configuration
+
+The plugin has two settings, both only for sharing. Claude Code asks for them when you install it, and you can change them later with `/plugin configure pr-review-dashboard@pr-review-dashboard` or in `/config`:
+
+- GitHub OAuth app client id: optional, the app guests sign in with when you share a review (see Sharing). Without it they type a name instead.
+- Emails allowed into a shared review: an optional comma-separated list such as `alice@acme.com,*@acme.com`. Cloudflare then asks guests for an email one-time PIN before the page loads. Leave it empty for now: Cloudflare's session for a guest lapses soon after the PIN, and the page's background requests can't renew it, so guests get stuck.
+
+A change reaches the next review you ask for, not one that's already running. `PRG_GITHUB_CLIENT_ID` and `PRG_ALLOWED_MAIL` in the environment still work when a setting is empty.
+
+Linear issues need `LINEAR_API_KEY` in the environment Claude Code runs in, exported from your shell profile before starting `claude`. A read-only key is enough, and it only ever goes to `api.linear.app`. It isn't a plugin setting because Claude Code can't hand a secret setting to the dashboard without putting it in the environment of every command Claude runs.
+
+Two things are per review, and off unless you ask for them when you ask for the review: posting your notes to the PR as a GitHub review from the page ("with posting to GitHub on"), and a plain HTTP link a phone on the same network can open ("with a link for my phone").
+
 ## The dashboard
 
-A small local server in `dashboard/` serves the page and passes messages between it and the session that started it. Notes and chat take markdown and pasted or dropped screenshots, and the page tells you when the session is stuck at a permission prompt in the terminal. You can also ask Claude for a code review from the page, then fix or dismiss each finding there; findings are checked again after a rebuild. Where your checkout differs from what was pushed, you can preview your local code in place and revert a change. Threads and reviewed ticks are kept in a SQLite file between builds and across restarts. `dashboard/README.md` has the details.
+A small local server in `dashboard/` serves the page and passes messages between it and the session that started it. Notes and chat take markdown and pasted or dropped screenshots, and the page shows you when the session is stuck at a permission prompt, and you can allow or deny it there from this machine or your phone, though not through the share link. You can also ask Claude for a code review from the page, then fix or dismiss each finding there; findings are checked again after a rebuild. Where your checkout differs from what was pushed, you can preview your local code in place and revert a change. Threads and reviewed ticks are kept in a SQLite file between builds and across restarts. `dashboard/README.md` has the details.
+
+## Sharing
+
+You can open a running review to teammates over a link, so they can read the guide, chat and see Claude's answers. Press Share in the page's header, or ask Claude. The dashboard starts a Cloudflare quick tunnel and shows a link to send them.
+
+- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. Its email one-time PIN (the allowed emails setting) doesn't work with the dashboard yet; see Configuration.
+- A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
+- With no setup, teammates type their name to ask to come in. Nothing checks the name is theirs, or that they can see the repo, so your approval is the only gate.
+- For a checked identity, have them sign in with GitHub instead, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in the plugin's settings (see Configuration). The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in. Guests must then be collaborators on the repo, and your `gh` needs push access to it to check that.
+- Either way, each guest then waits for you to let them in from the Share popover. It shows where and in what browser they signed in, and a 4-digit code their page shows too, so you can check it with them before letting them in.
+- The link changes each time sharing starts, and stops working when you stop sharing.
+
+Guests see every thread on the review, including ones from before you shared. Claude answers their questions and reads the repo for them, but asks you before it does anything else for a guest. The details are in `dashboard/README.md`.
 
 ## Stacks
 
@@ -41,7 +67,7 @@ Ask for a review of any PR in a stack and you get one page for every layer. It s
 - [`gh`](https://cli.github.com) logged in, for a PR by number, its CI and the annotations CI left on lines, its linked GitHub issues, and stacks. Without it, the guide works for any branch on any host, compared against `--base` or the remote's default branch.
 - Python 3.9 or later, standard library only.
 - [Bun](https://bun.sh) 1.4 or later, for the dashboard.
-- `LINEAR_API_KEY` in the environment if you want Linear issues shown; read-only is enough.
+- `LINEAR_API_KEY` if you want Linear issues shown (see Configuration).
 - Without Bun, the skill renders a static page and publishes it with the Artifact tool and its `comments` capability, and notes go back as one comment. Without that either, Claude opens the page from disk and Copy notes takes them back.
 
 `skills/pr-review-dashboard/SKILL.md` has how it runs and how notes come back; `reference/page.md`, `reference/collect.md` and `reference/design-notes.md` beside it have what the page shows, what counts as noise, what gets flagged, and why the models and steps are what they are. `dashboard/SESSION.md` is what the session does with the dashboard.

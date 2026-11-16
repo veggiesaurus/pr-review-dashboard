@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Runner } from "../server/comments";
 import type { CommentsResponse, PostPreview } from "../shared/comments";
 import type { Message } from "../shared/messages";
-import { addedLine, setup } from "./helpers";
+import { addedLine, GUEST_CODE, setup } from "./helpers";
 
 type Call = { cmd: string[]; input?: string };
 
@@ -229,6 +229,22 @@ describe("posting notes as a review", () => {
       (await busy.page("/api/layers/12/comments/post", busy.post({ ids: ["m1"], mode: "pending", confirm: shown.confirm }))).status,
     ).toBe(409);
     expect([...moved.posts(), ...busy.posts()]).toEqual([]);
+  });
+
+  test("a guest's draft never shows in the owner's preview or goes to GitHub", async () => {
+    const fake = stub();
+    const { page, guest, post, store } = setup({ runner: fake.runner, githubComments: true, guestCode: () => GUEST_CODE });
+    await guest("/api/messages", post({ kind: "note", text: "the guest's unsent thought", anchor: addedLine }));
+    const response = await preview(page, post, { ids: ["m1"], mode: "now" });
+    const text = await response.text();
+    expect(text).not.toContain("unsent thought");
+    const shown = JSON.parse(text) as PostPreview;
+    expect(shown.refused).toEqual([{ id: "m1", reason: "not one of your notes" }]);
+    const posted = await page("/api/layers/12/comments/post", post({ ids: ["m1"], mode: "now", confirm: shown.confirm }));
+    expect(posted.status).toBe(400);
+    expect(fake.posts()).toEqual([]);
+    expect(store.find("m1")).toMatchObject({ status: "draft" });
+    expect((store.find("m1") as Message).posted).toBeUndefined();
   });
 
   test("GitHub's refusal is passed on and the notes stay as they were", async () => {

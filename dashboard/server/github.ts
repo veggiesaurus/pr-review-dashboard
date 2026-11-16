@@ -239,7 +239,7 @@ const refSchema = z.object({
 const errorsSchema = z.object({ errors: z.array(z.object({ type: z.string().optional(), message: z.string() })) });
 
 const HEX = /^[0-9a-f]{6}$/i;
-const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+export const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const PREVIEW_LINK = /\[([^\]\n]{0,80}\bpreview)\]\((https:\/\/[^)\s]+)\)/gi;
 const MAX_PREVIEWS = 5;
 

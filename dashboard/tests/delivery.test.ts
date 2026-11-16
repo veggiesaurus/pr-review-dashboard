@@ -15,14 +15,14 @@ test("a frame goes again until the session is heard from, through a dropped sock
   const db = openDb();
   const store = new Store(review, { db });
   const first = listen(store);
-  store.addUserMessage({ kind: "chat", text: "one" });
+  store.addUserMessage({ kind: "chat", text: "one" }, null);
   store.heard(1);
-  store.addUserMessage({ kind: "chat", text: "two" });
+  store.addUserMessage({ kind: "chat", text: "two" }, null);
   store.tell("[review page] the checks went red");
   first.stop();
   expect(store.messages.map(m => m.status)).toEqual(["delivered", "sent"]);
 
-  const unanswered = ["[review page] chat m2 on acme/shop#12 at aaaaaaa", "[review page] the checks went red"];
+  const unanswered = ["[review page] chat m2 from the owner on acme/shop#12 at aaaaaaa", "[review page] the checks went red"];
   const second = listen(store);
   expect(heads(second.frames)).toEqual(unanswered);
   second.stop();
@@ -39,14 +39,14 @@ test("a thread left as being worked on is offered again to the next session, and
   const db = openDb();
   const store = new Store(review, { db });
   const first = listen(store);
-  store.addUserMessage({ kind: "chat", text: "why trim here?", anchor: { ...addedLine, kind: "line", side: "R" } });
+  store.addUserMessage({ kind: "chat", text: "why trim here?", anchor: { ...addedLine, kind: "line", side: "R" } }, null);
   store.heard();
   store.addReply({ replyTo: "m1", state: "working" });
   first.stop();
 
   const { frames } = listen(store);
   expect(frames).toHaveLength(1);
-  expect(frames[0]).toStartWith("[review page] chat m1 on acme/shop#12 at aaaaaaa\nabout src/slug.ts:R2@aaaaaaa");
+  expect(frames[0]).toStartWith("[review page] chat m1 from the owner on acme/shop#12 at aaaaaaa\nabout src/slug.ts:R2@aaaaaaa");
   expect(frames[0]).toEndWith("carry on if that was you)");
   expect(store.messages[0]).toMatchObject({
     state: "open",
@@ -56,7 +56,7 @@ test("a thread left as being worked on is offered again to the next session, and
   // The session that took it up again dies with the server; the next one is asked once more.
   store.heard();
   store.addReply({ replyTo: "m1", state: "working" });
-  expect(heads(listen(new Store(review, { db })).frames)).toEqual(["[review page] chat m1 on acme/shop#12 at aaaaaaa"]);
+  expect(heads(listen(new Store(review, { db })).frames)).toEqual(["[review page] chat m1 from the owner on acme/shop#12 at aaaaaaa"]);
 });
 
 test("a fix or a re-check too long for one frame comes in parts that leave no finding out", async () => {

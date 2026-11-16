@@ -75,7 +75,7 @@ describe("a review asked for from the page", () => {
   test("asking for a fix quotes the finding, and the whole review archives at once", async () => {
     const { store, frames, page, post } = await reviewed();
     await page("/api/messages", post({ kind: "chat", text: "Fix this.", replyTo: "m2" }));
-    expect(frames.at(-1)).toStartWith("[review page] chat m6 on acme/shop#12 at aaaaaaa, following up on m2");
+    expect(frames.at(-1)).toStartWith("[review page] chat m6 from @olive (owner) on acme/shop#12 at aaaaaaa, following up on m2");
     expect(frames.at(-1)).toContain("    the finding: trim() drops a leading tab too");
 
     expect(await (await page("/api/reviews/1/archive", { method: "POST" })).json()).toEqual({ archived: 5 });

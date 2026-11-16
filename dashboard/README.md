@@ -49,7 +49,7 @@ The session listens by arming Monitor on `bun scripts/listen.mjs STATE.json`, wh
 - screenshots dropped or pasted into a note or a chat box go with it, and the session reads them from disk
 - notes are drafts on the page until "Send N notes to Claude", then go as one batch for Claude to work through
 
-The note and chat boxes format markdown as it is typed (`code`, _emphasis_, lists, and a code block from ``` and a language followed by a space or Enter) and send markdown; a sent code block is coloured by its language. The chat boxes send on Enter, with Shift+Enter for a new line and Enter making a new line inside a code block; the note box keeps ⌘↵ for a note and ⇧⌘↵ for a question now, and ⌘↵ sends from either. While the session is stopped at a permission prompt in its terminal, the bar at the bottom of the page says so.
+The note and chat boxes format markdown as it is typed (`code`, _emphasis_, lists, and a code block from ``` and a language followed by a space or Enter) and send markdown; a sent code block is coloured by its language. The chat boxes send on Enter, with Shift+Enter for a new line and Enter making a new line inside a code block; the note box keeps Enter for a new line, ⌘↵ for a note and ⇧↵ (or ⇧⌘↵) to send to Claude straight away, and ⌘↵ sends from either. While the session is stopped at a permission prompt, the bar at the bottom of the page shows it with Allow and Deny buttons, for the owner only. They work on this machine and on the phone link (`--host`) but not through the share link, since the tunnel is open to the internet and an Allow gets past your `ask` rules; there the bar says to answer on this computer or in the terminal. Answering in the terminal works as before and clears the bar.
 
 Claude answers with `POST /api/replies` and the bearer token, and the reply shows up in the thread on the page. While it works it can say what it's doing with `POST /api/activity`, which the page shows in its bottom bar and under the thread, and a thread waiting on an answer shows one of Claude Code's verbs ("Contemplating…") until it does. A note's `state` shows it as being worked on, done, answered or declined. If nothing is listening the page says so and keeps the messages until a session connects.
 
@@ -68,6 +68,20 @@ The session holds a bearer token. The page holds two things: an HttpOnly cookie 
 The link can be opened more than once, so a second tab or a re-click works. Anyone who could reuse it can already read the state file.
 
 Text from the PR that ends up in a frame to the session (a file path, a check's name) has its line breaks flattened, so it can't pass itself off as a frame or an instruction of its own.
+
+## Sharing
+
+`POST /api/share`, or the Share button, starts `cloudflared tunnel --no-autoupdate --url http://127.0.0.1:PORT` and reads the `https://*.trycloudflare.com` address from its output. The link is that address with `/?g=CODE`, and it goes in the state file as `shareLink`. Stopping ends the tunnel and every guest's session. A new share is a new address, so guests sign in again.
+
+With a public client id from an OAuth app the owner registers (`--github-client-id`, which the skill fills from the plugin's settings, else `PRG_GITHUB_CLIENT_ID`), guests sign in with GitHub's device flow. The server asks for no scope, reads the user's public profile, throws the token away, and checks with the owner's `gh` that the user is a collaborator on the reviewed repo (`gh api repos/acme/shop/collaborators/alice`). Sharing is refused if the owner's `gh` can't make that check. GitHub allows 50 code submissions an hour per app, across all its users.
+
+Without a client id, guests type a name instead, and nothing checks it's theirs or that they can see the repo. The session's frames mark them as `(guest, typed name)`, and at most 20 can wait at once.
+
+Either way a guest then waits in the Share popover until the owner lets them in, with the country and browser the sign-in came from and a 4-digit code that their page shows too. The owner can check the code with them before letting them in, so someone else with the link, or someone tricked into entering a sign-in code, can't get in unnoticed.
+
+`--allowed-mail` (the plugin's allowed emails setting), else `PRG_ALLOWED_MAIL`, adds Cloudflare's email gate in front of the page. It doesn't work with the dashboard yet: the gate's session cookie lapses soon after the PIN, and once it has, the gate redirects every API call and the live socket to its login page, which `fetch` and WebSockets can't follow. It needs `cloudflared` 2026.11 or later, and `cloudflared` doesn't pass the email on, so guests are still identified by GitHub or the name they type.
+
+Guests can chat, leave notes and tick their own sections. Their notes, drafts, ticks and unseen answers are their own. Review requests, Fix the recommended, posting to GitHub, the local-changes preview, archiving and sharing are the owner's, and the server refuses a guest on each. Rebuild and Fix this are owner's buttons too, but they send ordinary chat text that a guest could type, so the session acts on them only when the frame says it came from the owner, as `SESSION.md` says. Quick tunnels have no uptime guarantee and the address is only as private as the link, so share it only with people you'd show the review to.
 
 ## Checking it
 

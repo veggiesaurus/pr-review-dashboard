@@ -5,13 +5,15 @@ import { upgradeWebSocket } from "hono/bun";
 import { activitySchema, archiveSchema, attentionSchema, editSchema, newMessageSchema, replySchema } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { type Env, only, small } from "../guards";
+import { parseWhere } from "../presence";
 import { hasAttachment } from "./attachments";
 
 export function messagesRoutes(deps: AppDeps) {
   const { store } = deps;
   const app = new Hono<Env>();
 
-  app.get("/session", c => c.json(store.session));
+  // A guest isn't told what the terminal is waiting on.
+  app.get("/session", c => c.json(c.get("who") === "guest" ? { ...store.session, attention: null } : store.session));
 
   // The session says what it is doing now, optionally for one thread; an empty line says it has stopped.
   app.post("/activity", only("session"), small, zValidator("json", activitySchema), c => {
@@ -28,37 +30,41 @@ export function messagesRoutes(deps: AppDeps) {
     return c.json(store.session);
   });
 
-  app.get("/messages", c => c.json(store.messages));
+  // The session reads every message, as it did before there were guests.
+  app.get("/messages", c => c.json(c.get("who") === "session" ? store.messages : store.messagesFor(c.get("author"))));
 
-  app.post("/messages", only("page"), small, zValidator("json", newMessageSchema), c => {
+  app.post("/messages", only("owner", "guest"), small, zValidator("json", newMessageSchema), c => {
     const input = c.req.valid("json");
     if (input.images?.some(id => !hasAttachment(deps.attachments, id))) {
       return c.json({ error: "an attached screenshot isn't on the server; attach it again" }, 400);
     }
-    const message = store.addUserMessage(input);
+    const message = store.addUserMessage(input, c.get("author"));
+    if (message === "owner-only") {
+      return c.json({ error: "only the owner may do this" }, 403);
+    }
     return message ? c.json(message, 201) : c.json({ error: "that anchor or message isn't in this review" }, 400);
   });
 
-  app.post("/messages/send", only("page"), c => c.json({ sent: store.sendDrafts(), listening: store.listening }));
+  app.post("/messages/send", only("owner", "guest"), c => c.json({ sent: store.sendDrafts(c.get("author")), listening: store.listening }));
 
-  app.patch("/messages/:id", only("page"), small, zValidator("json", editSchema), c => {
-    const draft = store.editDraft(c.req.param("id"), c.req.valid("json").text);
+  app.patch("/messages/:id", only("owner", "guest"), small, zValidator("json", editSchema), c => {
+    const draft = store.editDraft(c.req.param("id"), c.req.valid("json").text, c.get("author"));
     return draft ? c.json(draft) : c.json({ error: "no such draft" }, 404);
   });
 
-  app.post("/messages/:id/archive", only("page"), small, zValidator("json", archiveSchema), c => {
+  app.post("/messages/:id/archive", only("owner"), small, zValidator("json", archiveSchema), c => {
     const { archived, reason } = c.req.valid("json");
     const thread = store.setArchived(c.req.param("id"), archived, reason);
     return thread ? c.json(thread) : c.json({ error: "no such thread" }, 404);
   });
 
-  app.post("/messages/:id/seen", only("page"), c => {
-    const thread = store.markSeen(c.req.param("id"));
+  app.post("/messages/:id/seen", only("owner", "guest"), c => {
+    const thread = store.markSeen(c.req.param("id"), c.get("author"));
     return thread ? c.json(thread) : c.json({ error: "no such thread" }, 404);
   });
 
-  app.delete("/messages/:id", only("page"), c =>
-    store.deleteDraft(c.req.param("id")) ? c.json({ ok: true }) : c.json({ error: "no such draft" }, 404),
+  app.delete("/messages/:id", only("owner", "guest"), c =>
+    store.deleteDraft(c.req.param("id"), c.get("author")) ? c.json({ ok: true }) : c.json({ error: "no such draft" }, 404),
   );
 
   // 201 with Claude's message when there is text, else 200 with the thread whose state changed.
@@ -96,19 +102,38 @@ export function messagesRoutes(deps: AppDeps) {
 
   app.get(
     "/ws",
-    only("page"),
-    upgradeWebSocket(() => {
+    only("owner", "guest"),
+    upgradeWebSocket(c => {
+      // An owner whose GitHub details couldn't be read has no one to show, so isn't listed.
+      const author = c.get("author");
       let remove = () => {};
+      const socket = crypto.randomUUID();
       return {
         onOpen(_event, ws) {
           remove = store.addPageSink(push => ws.send(JSON.stringify(push)));
+          if (author) {
+            store.presence.join(socket, author);
+          }
+        },
+        onMessage(event) {
+          const where = typeof event.data === "string" ? parseWhere(event.data) : null;
+          if (where && author) {
+            store.presence.move(socket, where);
+            store.notify("presence");
+          }
         },
         onClose() {
           remove();
+          if (author) {
+            store.presence.leave(socket);
+            store.notify("presence");
+          }
         },
       };
     }),
   );
+
+  app.get("/presence", only("owner", "guest"), c => c.json(store.presence.list()));
 
   return app;
 }

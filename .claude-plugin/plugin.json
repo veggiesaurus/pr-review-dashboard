@@ -1,7 +1,7 @@
 {
   "name": "pr-review-dashboard",
   "description": "Builds a section-by-section self-review dashboard for a pull request or a stack of them, and acts on the notes you leave on it",
-  "version": "0.4.1",
+  "version": "0.5.4",
   "author": {
     "name": "Angus Comrie"
   },
@@ -11,5 +11,19 @@
     "code-review",
     "pull-request",
     "self-review"
-  ]
+  ],
+  "userConfig": {
+    "github_client_id": {
+      "type": "string",
+      "title": "GitHub OAuth app client id",
+      "description": "Optional. Client id of a GitHub OAuth app you register, with device flow enabled, that guests sign in with when you share a review. Without it guests type a name, which nothing checks, and you check a code with them before letting them in.",
+      "default": ""
+    },
+    "allowed_mail": {
+      "type": "string",
+      "title": "Emails allowed into a shared review",
+      "description": "Optional comma-separated list, such as alice@acme.com,*@acme.com. Cloudflare then asks guests for an email one-time PIN before the page loads. Leave it empty for now: Cloudflare's session lapses soon after the PIN and guests get stuck.",
+      "default": ""
+    }
+  }
 }

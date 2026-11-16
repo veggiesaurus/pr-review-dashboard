@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { NOTE_INTENTS, type NoteIntent } from "./intents";
 import { DISMISS_REASONS, type DismissReason, REVIEW_EFFORTS, type ReviewEffort, SEVERITIES, type Severity } from "./reviews";
+import { TABS, type Tab } from "./tabs";
 
 const layer = z.number().int().min(0).max(999_999_999);
 const fileId = z.string().regex(/^f\d{1,6}$/);
@@ -84,12 +85,18 @@ export const questionSchema = z.object({
   question: z.string().trim().min(1).max(300),
   options: z.array(z.string().trim().min(1).max(200)).min(2).max(6),
   multiple: z.boolean().optional(),
+  // Only the owner may answer it: an approval Claude needs before acting on a guest's request.
+  owner: z.boolean().optional(),
 });
 export type Question = z.infer<typeof questionSchema>;
 
 export type Message = {
   id: string;
   from: "user" | "claude";
+  // On a user's message: who sent it, set by the server. Left out means the owner, as on messages from before guests.
+  author?: Author;
+  // On a follow-up: the owner answering an owner-only question.
+  answer?: boolean;
   // A note is held as a draft until the batch is sent; chat goes at once.
   kind: "chat" | "note";
   text: string;
@@ -104,6 +111,8 @@ export type Message = {
   archived?: boolean;
   // On a thread's first message: the id of the last message in it the user has had on screen.
   seen?: string;
+  // The same for each guest, by their id; the server shows each reader only their own, as seen.
+  seenBy?: Record<string, string>;
   // On a thread's first message: the steps Claude took and notes on what became of it, in the order they happened.
   events?: ThreadEvent[];
   // On a message from Claude: questions it wants answered before it goes on.
@@ -150,6 +159,8 @@ export const newMessageSchema = z.object({
   // Kept on a note only.
   intent: z.enum(NOTE_INTENTS).optional(),
   images: z.array(z.string().regex(IMAGE_ID)).max(6).optional(),
+  // On a follow-up: it answers Claude's questions. Only the owner's may answer an owner-only one.
+  answer: z.boolean().optional(),
 });
 
 export const editSchema = z.object({ text: z.string().trim().min(1).max(8000) });
@@ -201,8 +212,82 @@ export type Activity = { text: string; thread: string | null; at: string };
 export type Attention = { text: string; at: string };
 export type SessionInfo = { listening: boolean; activity: Activity | null; attention: Attention | null };
 
+// A GitHub user: the owner, read with gh at start, or a guest who signed in.
+// A guest who only typed a name has an empty login and avatar, and a negative id.
+export type Person = { id: number; login: string; name: string | null; avatar: string };
+export type Role = "owner" | "guest";
+export type Author = Person & { role: Role };
+// sharing: whether the share link works right now.
+export type Me = { role: Role; person: Person | null; sharing: boolean };
+// Where a guest's sign-in stands. code is what the owner sees beside them, to check it is really them.
+export type SignInStatus =
+  | { state: "pending"; userCode: string; verificationUri: string; expiresAt: string }
+  | { state: "waiting"; person: Person; code: string }
+  | { state: "done"; person: Person }
+  | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "turned-away" | "error" };
+// A guest who waits for the owner. id is a public handle, never the guest's sign-in id.
+export type WaitingGuest = {
+  id: string;
+  person: Person;
+  code: string;
+  country: string | null;
+  browser: string | null;
+  alreadyIn: boolean;
+  at: string;
+};
+export const guestAnswerSchema = z.object({ allow: z.boolean() });
+// Guests sign in with GitHub when the owner set up an OAuth app, else they type a name.
+export type SignInWith = "github" | "name";
+// No brackets or line breaks, so a name can't pass for "(owner)" or a frame line in what the session reads.
+export const signInNameSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .regex(/^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N} .'’-]{0,39}$/u),
+});
+// unpushed: some layer's head isn't on GitHub, so guests would read code that is only on this machine.
+// blocked: why sharing can't start, from the checks that don't ask GitHub, or null.
+// waiting: guests the owner hasn't answered, oldest first.
+export type ShareInfo = {
+  sharing: boolean;
+  link: string | null;
+  signInWith: SignInWith;
+  signedIn: Person[];
+  waiting: WaitingGuest[];
+  unpushed: boolean;
+  blocked: string | null;
+};
+
 export type NewMessage = z.infer<typeof newMessageSchema>;
 export type Reply = z.infer<typeof replySchema>;
 
 // What the page's socket says changed; the page refetches it.
-export type Push = { type: "review" | "messages" | "session" | "github" | "ticks"; layer?: number };
+export type Push = { type: "review" | "messages" | "session" | "github" | "ticks" | "presence"; layer?: number };
+
+// Where a page says its reader is. section is the data-section index on the Guide tab, else null.
+export const whereSchema = z.object({
+  type: z.literal("where"),
+  layer: z.number().int(),
+  tab: z.enum(TABS),
+  section: z.number().int().nullable(),
+  hidden: z.boolean(),
+});
+export type Where = z.infer<typeof whereSchema>;
+// since: when hidden last changed, so the page can dim someone who has been away a while.
+export type PresenceEntry = { person: Person; role: Role; layer: number; tab: Tab; section: number | null; hidden: boolean; since: string };
+
+export const permissionRequestSchema = z.object({
+  tool: z.string().min(1).max(200),
+  input: z.record(z.string(), z.unknown()),
+  deadline: z.string().datetime(),
+});
+export const permissionClearSchema = z.object({
+  tool: z.string().max(200).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+});
+export const permissionAnswerSchema = z.object({ behavior: z.enum(["allow", "deny"]) });
+// A permission prompt the session's terminal is showing, put in words for the owner's page.
+export type PermissionPrompt = { id: string; text: string; code: string | null; description: string | null; at: string };
+// answerable: false on the tunnel, where the owner can see prompts but not answer them.
+export type PermissionsInfo = { prompts: PermissionPrompt[]; answerable: boolean };
+export type PermissionState = "waiting" | "allow" | "deny" | "dropped";

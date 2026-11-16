@@ -7,10 +7,9 @@ id=$(printf '%s' "$input" | sed -n 's/.*"session_id" *: *"\([A-Za-z0-9_-]*\)".*/
 marker="$HOME/.cache/prg/waiting/$id"
 if [ "$1" = clear ]; then
   [ -e "$marker" ] || exit 0
-  waiting=$(cat "$marker")
   tool=$(printf '%s' "$input" | sed -n 's/.*"tool_name" *: *"\([^"]*\)".*/\1/p' | head -n 1)
-  # A tool call clears only the tool that asked; the end of a turn or a new prompt clears whatever it was.
-  if [ -n "$tool" ] && [ -n "$waiting" ] && [ "$tool" != "$waiting" ]; then
+  # The marker holds a tool name per line. A tool call clears only a tool that asked; the end of a turn or a new prompt clears whatever it was.
+  if [ -n "$tool" ] && grep -q . "$marker" && ! grep -qxF "$tool" "$marker"; then
     exit 0
   fi
 fi

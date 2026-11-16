@@ -7,10 +7,19 @@ import { pageKey } from "src/queries/key";
 const KEYS: Record<Push["type"], string[]> = {
   review: ["review", "github", "linear", "usages", "lines", "refs"],
   messages: ["messages", "refs"],
-  session: ["session"],
+  session: ["session", "me", "share", "permissions"],
   github: ["github"],
   ticks: ["ticks"],
+  presence: ["presence"],
 };
+
+let live: WebSocket | null = null;
+
+export function sendLive(message: object) {
+  if (live?.readyState === WebSocket.OPEN) {
+    live.send(JSON.stringify(message));
+  }
+}
 
 // The server says what changed and the page refetches it, so the socket carries no data of its own.
 export function useLiveSocket() {
@@ -24,7 +33,8 @@ export function useLiveSocket() {
     let stopped = false;
 
     const connect = () => {
-      socket = new WebSocket(`ws://${location.host}/api/ws?k=${pageKey}`);
+      socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/ws?k=${pageKey}`);
+      live = socket;
       socket.onopen = () => {
         delay = 500;
         setConnected(true);
@@ -54,6 +64,7 @@ export function useLiveSocket() {
       stopped = true;
       clearTimeout(timer);
       socket?.close();
+      live = null;
     };
   }, [queryClient]);
 

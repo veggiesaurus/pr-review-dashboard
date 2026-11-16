@@ -25,6 +25,7 @@ import {
   TraceTitle,
 } from "src/components/ui/trace";
 import { useComments } from "src/queries/comments.query";
+import { useIsOwner } from "src/queries/me.query";
 import { errorText, useDeleteDraft, useSendDrafts } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useLayer, useReview } from "src/queries/review.query";
@@ -280,6 +281,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
   const [status, setStatus] = useState("");
   const [manual, setManual] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
+  const owner = useIsOwner();
   const box = useRef<HTMLTextAreaElement>(null);
 
   const order = pageOrder(review);
@@ -290,7 +292,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
   const sent = notes.filter(n => n.root.status !== "draft").sort((a, b) => order(a.root, b.root));
   const batches = [...new Set(sent.map(n => n.root.batch ?? 0))].sort((a, b) => b - a);
   const nCopied = drafts.filter(d => copied[d.id] === d.text).length;
-  const canPost = Boolean(comments?.canPost) && layer !== null;
+  const canPost = Boolean(comments?.canPost) && layer !== null && owner;
   const postable = (m: Message) =>
     canPost && !m.posted && !m.anchor.outdated && (m.anchor.kind === "line" || m.anchor.kind === "tell") && m.anchor.layer === layer;
   const pickedNow = picked.filter(id => notes.some(n => n.root.id === id && postable(n.root)));
