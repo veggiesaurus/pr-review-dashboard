@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 
 import { cn } from "src/utils/cn";
 
-// How the boxes send: the chat boxes on Enter, the note composer on ⌘↵ (a note) and ⇧⌘↵ (a question now).
+// How the boxes send: the chat boxes on Enter, the note composer on ⌘↵ (a note) and ⇧↵ or ⇧⌘↵ (a question now).
 export type SendKey = "enter" | "mod-enter";
 
 type Props = {
@@ -84,7 +84,7 @@ export function MarkdownEditor({ value, onChange, onSend, onEscape, onFiles, sen
           };
           return Object.fromEntries([
             ["Enter", () => fence() || (latest.current.sendKey === "enter" && !inCode() ? send(false) : false)],
-            ["Shift-Enter", () => fence() || newLine()],
+            ["Shift-Enter", () => fence() || (latest.current.sendKey === "mod-enter" ? send(true) : newLine())],
             ["Mod-Enter", () => send(false)],
             ["Shift-Mod-Enter", () => send(true)],
             [

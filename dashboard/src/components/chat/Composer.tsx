@@ -83,7 +83,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
           variant="outline"
           onClick={() => submit("chat")}
           disabled={empty || add.isPending || shots.uploading}
-          title="Goes to Claude now (⇧⌘↵)"
+          title="Goes to Claude now (⇧↵)"
         >
           Ask Claude now
         </Button>
