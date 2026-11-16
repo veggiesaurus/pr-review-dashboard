@@ -32,7 +32,7 @@ Each version installs into its own folder, so the first review after an update i
 The plugin has two settings, both only for sharing. Claude Code asks for them when you install it, and you can change them later with `/plugin configure pr-review-dashboard@pr-review-dashboard` or in `/config`:
 
 - GitHub OAuth app client id: the app guests sign in with when you share a review (see Sharing).
-- Emails allowed into a shared review: an optional comma-separated list such as `alice@acme.com,*@acme.com`. Cloudflare then asks guests for an email one-time PIN before the page loads.
+- Emails allowed into a shared review: an optional comma-separated list such as `alice@acme.com,*@acme.com`. Cloudflare then asks guests for an email one-time PIN before the page loads. Leave it empty for now: Cloudflare's session for a guest lapses soon after the PIN, and the page's background requests can't renew it, so guests get stuck.
 
 A change reaches the next review you ask for, not one that's already running. `PRG_GITHUB_CLIENT_ID` and `PRG_ALLOWED_MAIL` in the environment still work when a setting is empty.
 
@@ -48,7 +48,7 @@ A small local server in `dashboard/` serves the page and passes messages between
 
 You can open a running review to teammates over a link, so they can read the guide, chat and see Claude's answers. Press Share in the page's header, or ask Claude. The dashboard starts a Cloudflare quick tunnel and shows a link to send them.
 
-- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. To also ask for an email one-time PIN before the page loads, fill in the allowed emails setting (see Configuration). That needs `cloudflared` 2026.11 or later.
+- Install [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/). It's free, and quick tunnels need no Cloudflare account. Its email one-time PIN (the allowed emails setting) doesn't work with the dashboard yet; see Configuration.
 - A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
 - Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in the plugin's settings (see Configuration). The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in.
 - Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.

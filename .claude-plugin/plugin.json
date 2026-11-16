@@ -22,7 +22,7 @@
     "allowed_mail": {
       "type": "string",
       "title": "Emails allowed into a shared review",
-      "description": "Optional comma-separated list, such as alice@acme.com,*@acme.com. Cloudflare then asks guests for an email one-time PIN before the page loads. Needs cloudflared 2026.11 or later.",
+      "description": "Optional comma-separated list, such as alice@acme.com,*@acme.com. Cloudflare then asks guests for an email one-time PIN before the page loads. Leave it empty for now: Cloudflare's session lapses soon after the PIN and guests get stuck.",
       "default": ""
     }
   }
