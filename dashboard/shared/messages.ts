@@ -221,11 +221,23 @@ export type Me = { role: Role; person: Person | null; sharing: boolean };
 // Where a guest's GitHub sign-in stands.
 export type SignInStatus =
   | { state: "pending"; userCode: string; verificationUri: string; expiresAt: string }
+  | { state: "waiting"; person: Person }
   | { state: "done"; person: Person }
-  | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "error" };
+  | { state: "failed"; reason: "expired" | "denied" | "not-collaborator" | "turned-away" | "error" };
+// A guest through GitHub who waits for the owner. id is a public handle, never the guest's sign-in id.
+export type WaitingGuest = { id: string; person: Person; country: string | null; browser: string | null; alreadyIn: boolean; at: string };
+export const guestAnswerSchema = z.object({ allow: z.boolean() });
 // unpushed: some layer's head isn't on GitHub, so guests would read code that is only on this machine.
 // blocked: why sharing can't start, from the checks that don't ask GitHub, or null.
-export type ShareInfo = { sharing: boolean; link: string | null; signedIn: Person[]; unpushed: boolean; blocked: string | null };
+// waiting: guests through GitHub that the owner hasn't answered, oldest first.
+export type ShareInfo = {
+  sharing: boolean;
+  link: string | null;
+  signedIn: Person[];
+  waiting: WaitingGuest[];
+  unpushed: boolean;
+  blocked: string | null;
+};
 
 export type NewMessage = z.infer<typeof newMessageSchema>;
 export type Reply = z.infer<typeof replySchema>;

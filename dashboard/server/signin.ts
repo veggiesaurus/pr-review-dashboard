@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { z } from "zod";
-import type { SignInStatus } from "../shared/messages";
+import type { SignInStatus, WaitingGuest } from "../shared/messages";
 import { REPO, type Runner } from "./comments";
 import { LOGIN } from "./github";
 
@@ -17,9 +17,32 @@ const deviceSchema = z.object({
 const answerSchema = z.object({ access_token: z.string().optional(), error: z.string().optional() });
 const userSchema = z.object({ id: z.number().int(), login: z.string().regex(LOGIN), name: z.string().nullable(), avatar_url: z.string() });
 
+const OS = [
+  [/iPhone|iPad/, "iOS"],
+  [/Android/, "Android"],
+  [/Windows/, "Windows"],
+  [/Mac OS X|Macintosh/, "macOS"],
+  [/Linux|X11/, "Linux"],
+] as const;
+const BROWSERS = [
+  [/Edg\//, "Edge"],
+  [/Firefox\/|FxiOS/, "Firefox"],
+  [/Chrome\/|CriOS/, "Chrome"],
+  [/Safari\//, "Safari"],
+] as const;
+
+export function browserOf(userAgent: string | undefined): string | null {
+  const os = OS.find(([pattern]) => pattern.test(userAgent ?? ""))?.[1];
+  const browser = BROWSERS.find(([pattern]) => pattern.test(userAgent ?? ""))?.[1];
+  return os && browser ? `${browser} on ${os}` : null;
+}
+
 // GitHub's device flow with no scope: the token only ever reads who signed in, and is dropped once it has.
+// A guest who passes it waits for the owner, so a code someone was tricked into entering lets nobody in.
 export class SignIn {
   private readonly statuses = new Map<string, { status: SignInStatus; at: number }>();
+  private readonly dropped = new Set<string>();
+  private readonly guests = new Map<string, Omit<WaitingGuest, "alreadyIn" | "person">>();
 
   constructor(
     private readonly opts: {
@@ -28,6 +51,7 @@ export class SignIn {
       runner: Runner;
       repo: () => string;
       sleep?: (ms: number) => Promise<void>;
+      onChange?: () => void;
     },
   ) {}
 
@@ -35,7 +59,7 @@ export class SignIn {
     return this.opts.clientId;
   }
 
-  async start(): Promise<{ id: string } & SignInStatus> {
+  async start(from?: { country: string | null; browser: string | null }): Promise<{ id: string } & SignInStatus> {
     for (const [id, kept] of this.statuses) {
       if (Date.now() - kept.at >= KEEP_MS) {
         this.statuses.delete(id);
@@ -50,15 +74,79 @@ export class SignIn {
     const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
     const pending = this.set(id, { state: "pending", userCode: user_code, verificationUri: verification_uri, expiresAt });
     void this.poll(device.data).then(
-      status => this.set(id, status),
-      () => this.set(id, { state: "failed", reason: "error" }),
+      status => {
+        if (this.dropped.delete(id)) {
+          return;
+        }
+        this.set(id, status);
+        if (status.state === "waiting") {
+          this.guests.set(id, {
+            id: randomBytes(12).toString("hex"),
+            country: from?.country ?? null,
+            browser: from?.browser ?? null,
+            at: new Date().toISOString(),
+          });
+          this.opts.onChange?.();
+        }
+      },
+      () => {
+        if (!this.dropped.delete(id)) {
+          this.set(id, { state: "failed", reason: "error" });
+        }
+      },
     );
     return { id, ...pending };
   }
 
   status(id: string) {
+    this.lapse();
     const kept = this.statuses.get(id);
     return kept && Date.now() - kept.at < KEEP_MS ? kept.status : null;
+  }
+
+  waiting(): Omit<WaitingGuest, "alreadyIn">[] {
+    this.lapse();
+    return [...this.guests].flatMap(([sid, guest]) => {
+      const status = this.statuses.get(sid)?.status;
+      return status?.state === "waiting" ? [{ ...guest, person: status.person }] : [];
+    });
+  }
+
+  answer(handle: string, allow: boolean) {
+    this.lapse();
+    const found = [...this.guests].find(([, guest]) => guest.id === handle);
+    const status = found && this.statuses.get(found[0])?.status;
+    if (!found || status?.state !== "waiting") {
+      return false;
+    }
+    this.guests.delete(found[0]);
+    this.set(found[0], allow ? { state: "done", person: status.person } : { state: "failed", reason: "turned-away" });
+    this.opts.onChange?.();
+    return true;
+  }
+
+  dropWaiting() {
+    for (const [sid, kept] of this.statuses) {
+      if (kept.status.state === "pending") {
+        this.dropped.add(sid);
+        this.set(sid, { state: "failed", reason: "expired" });
+      }
+    }
+    for (const sid of this.guests.keys()) {
+      this.set(sid, { state: "failed", reason: "expired" });
+    }
+    this.guests.clear();
+  }
+
+  private lapse() {
+    for (const sid of this.guests.keys()) {
+      const kept = this.statuses.get(sid);
+      if (!kept || Date.now() - kept.at >= KEEP_MS) {
+        this.guests.delete(sid);
+        this.set(sid, { state: "failed", reason: "expired" });
+        this.opts.onChange?.();
+      }
+    }
   }
 
   private set(id: string, status: SignInStatus) {
@@ -114,6 +202,6 @@ export class SignIn {
     if (checked.code !== 0) {
       return { state: "failed", reason: "not-collaborator" };
     }
-    return { state: "done", person: { id: user.id, login: user.login, name: user.name, avatar: user.avatar_url } };
+    return { state: "waiting", person: { id: user.id, login: user.login, name: user.name, avatar: user.avatar_url } };
   }
 }

@@ -5,16 +5,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
 import { Button } from "src/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { errorText } from "src/queries/messages.mutation";
-import { useShare, useStartShare, useStopShare } from "src/queries/share.query";
+import { useAnswerGuest, useShare, useStartShare, useStopShare } from "src/queries/share.query";
 
 // The owner's way to give the review to teammates over a Cloudflare quick tunnel.
 export function ShareButton() {
   const { data } = useShare();
   const start = useStartShare();
   const stop = useStopShare();
+  const answer = useAnswerGuest();
   const [copied, setCopied] = useState(false);
   const sharing = data?.sharing ?? false;
   const link = data?.link ?? "";
+  const waiting = data?.waiting ?? [];
   const unpushed = data?.unpushed && (
     <p className="rounded-md border border-warning/50 bg-warning/15 px-2 py-1.5 text-xs">
       Some of this review's code isn't on GitHub yet, so guests will be reading code that is only on this machine.
@@ -29,6 +31,9 @@ export function ShareButton() {
         >
           <Share2 className="size-4" />
           <span className="max-sm:hidden">Share</span>
+          {waiting.length > 0 && (
+            <span className="rounded-full bg-primary px-1.5 text-primary-foreground text-xs leading-4">{waiting.length}</span>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="grid w-96 gap-3">
@@ -55,6 +60,47 @@ export function ShareButton() {
             </div>
             <p className="text-muted-foreground text-xs">Guests will see every thread on this review.</p>
             {unpushed}
+            {waiting.length > 0 && (
+              <div className="grid gap-1.5">
+                <h3 className="font-medium text-xs">Waiting to join</h3>
+                <ul className="grid gap-2">
+                  {waiting.map(guest => {
+                    const where = [
+                      guest.country && new Intl.DisplayNames(undefined, { type: "region" }).of(guest.country),
+                      guest.browser,
+                      guest.alreadyIn && "already in from another browser",
+                    ].filter(Boolean);
+                    return (
+                      <li key={guest.id} className="grid gap-1 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Avatar size="xs">
+                            <AvatarImage src={`/api/github/avatar/${guest.person.login}`} alt="" />
+                            <AvatarFallback>{guest.person.login.slice(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          {guest.person.name ?? guest.person.login}
+                          {guest.person.name && <span className="text-muted-foreground">@{guest.person.login}</span>}
+                        </div>
+                        {where.length > 0 && <p className="text-muted-foreground">{where.join(" · ")}</p>}
+                        <div className="flex gap-2">
+                          <Button size="sm" disabled={answer.isPending} onClick={() => answer.mutate({ id: guest.id, allow: true })}>
+                            Let in
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={answer.isPending}
+                            onClick={() => answer.mutate({ id: guest.id, allow: false })}
+                          >
+                            Turn away
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {answer.isError && <p className="text-danger text-xs">{errorText(answer.error)}</p>}
+              </div>
+            )}
             <div className="grid gap-1.5">
               <h3 className="font-medium text-xs">Signed in</h3>
               {data?.signedIn.length ? (

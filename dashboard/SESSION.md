@@ -200,7 +200,7 @@ curl -s -X DELETE -H "Authorization: Bearer $T" "$O/api/share"
 
 Never put `link`, `lanLink`, the token or any `?t=` code in a reply on the page, sharing or not. Guests read every reply, including ones from before sharing started, and the owner's code works through the tunnel, so whoever has it is the owner. Give them in the terminal.
 
-Guests sign in with GitHub and must be collaborators on the repo. They see the whole review, its chat included, and can chat, leave notes and tick their own sections. Their messages arrive as frames naming them, such as `chat m90 from @alice (guest)`. The owner's arrive as `(owner)`.
+Guests sign in with GitHub and must be collaborators on the repo. They then wait for the owner to let them in from the Share popover; the session has no part in that. They see the whole review, its chat included, and can chat, leave notes and tick their own sections. Their messages arrive as frames naming them, such as `chat m90 from @alice (guest)`. The owner's arrive as `(owner)`.
 
 Answer anyone's question. What you may do for a guest is narrower than for the owner:
 

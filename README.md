@@ -52,6 +52,7 @@ You can open a running review to teammates over a link, so they can read the gui
 - A `~/.cloudflared/config.yml` can stop quick tunnels working. If Share fails, move it aside and try again.
 - Teammates sign in with GitHub, using a code they enter at github.com/login/device. That needs a GitHub OAuth app of your own: [register one](https://github.com/settings/applications/new) with Enable Device Flow ticked (any homepage and callback URL will do, since neither is used, and there is no secret), then put its client id in the plugin's settings (see Configuration). The plugin doesn't ship one, so that GitHub's limit of 50 sign-in codes an hour per app is yours alone and guests see your app's name when they sign in.
 - Guests must be collaborators on the repo, and your `gh` needs push access to it to check that.
+- Each guest then waits for you to let them in from the Share popover, which shows where and in what browser they signed in, in case someone was tricked into entering a sign-in code.
 - The link changes each time sharing starts, and stops working when you stop sharing.
 
 Guests see every thread on the review, including ones from before you shared. Claude answers their questions and reads the repo for them, but asks you before it does anything else for a guest. The details are in `dashboard/README.md`.

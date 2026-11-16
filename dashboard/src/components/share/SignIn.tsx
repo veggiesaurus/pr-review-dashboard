@@ -9,6 +9,7 @@ import { useSignInStatus, useStartSignIn } from "src/queries/share.query";
 const WHY = {
   expired: "That code ran out before it was used.",
   denied: "Sign-in was cancelled on GitHub.",
+  "turned-away": "The owner didn't let you in.",
   "not-collaborator": "You need access to this repository on GitHub.",
   error: "Something went wrong signing you in.",
 } as const;
@@ -60,6 +61,9 @@ export function SignIn() {
           </Button>
           <p className="text-muted-foreground text-sm">Waiting for you to approve it on GitHub…</p>
         </>
+      )}
+      {status?.state === "waiting" && (
+        <p className="text-muted-foreground text-sm">Signed in as @{status.person.login}. Waiting for the owner to let you in.</p>
       )}
       {status?.state === "done" && <p className="text-muted-foreground text-sm">Signed in. Opening the review…</p>}
       {(status?.state === "failed" || start.isError) && (

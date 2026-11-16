@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { createHash } from "node:crypto";
 
 import type { Runner } from "../server/comments";
-import { SignIn } from "../server/signin";
+import { browserOf, SignIn } from "../server/signin";
 import type { Person, Push } from "../shared/messages";
 import { GUEST, HOST, PORT, setup, TUNNEL } from "./helpers";
 
@@ -86,7 +86,7 @@ describe("GitHub sign-in", () => {
       verificationUri: "https://github.com/login/device",
       expiresAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
     });
-    expect(await settled(signIn, started.id)).toEqual({ state: "done", person: ALICE });
+    expect(await settled(signIn, started.id)).toEqual({ state: "waiting", person: ALICE });
     expect(sleeps).toEqual([5000, 5000, 5000]);
 
     const sent = (url: string) => github.requests.filter(request => request.url === url).map(request => request.init);
@@ -110,7 +110,7 @@ describe("GitHub sign-in", () => {
   test("slow_down adds five seconds to the interval", async () => {
     const { signIn, sleeps } = signingIn([{ error: "slow_down", interval: 10 }]);
     const { id } = await signIn.start();
-    expect(await settled(signIn, id)).toEqual({ state: "done", person: ALICE });
+    expect(await settled(signIn, id)).toEqual({ state: "waiting", person: ALICE });
     expect(sleeps).toEqual([5000, 10000]);
   });
 
@@ -136,6 +136,137 @@ describe("GitHub sign-in", () => {
     const started = await refused.start();
     expect(started).toEqual({ id: expect.any(String), state: "failed", reason: "error" });
     expect(refused.status(started.id)).toEqual({ state: "failed", reason: "error" });
+  });
+});
+
+describe("the owner letting guests in", () => {
+  async function waitingGuest(from = { country: "ZA", browser: "Safari on macOS" }) {
+    const context = signingIn();
+    const events: string[] = [];
+    const signIn = new SignIn({
+      clientId: "client-1",
+      fetcher: context.github.fetcher,
+      runner: context.gh.runner,
+      repo: () => "acme/shop",
+      sleep: async () => {},
+      onChange: () => events.push("change"),
+    });
+    const { id } = await signIn.start(from);
+    await settled(signIn, id);
+    await until(
+      () => signIn.waiting(),
+      list => list.length > 0,
+    );
+    return { signIn, id, events, handle: signIn.waiting()[0]?.id ?? "" };
+  }
+
+  test("a collaborator waits for the owner instead of signing in", async () => {
+    const { signIn, id, handle } = await waitingGuest();
+    expect(signIn.status(id)).toEqual({ state: "waiting", person: ALICE });
+    expect(signIn.waiting()).toEqual([
+      { id: handle, person: ALICE, country: "ZA", browser: "Safari on macOS", at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+    ]);
+    expect(handle).not.toBe(id);
+  });
+
+  test("letting a guest in finishes the sign-in", async () => {
+    const { signIn, id, handle } = await waitingGuest();
+    expect(signIn.answer(handle, true)).toBe(true);
+    expect(signIn.status(id)).toEqual({ state: "done", person: ALICE });
+    expect(signIn.waiting()).toEqual([]);
+  });
+
+  test("turning a guest away fails the sign-in", async () => {
+    const { signIn, id, handle } = await waitingGuest();
+    expect(signIn.answer(handle, false)).toBe(true);
+    expect(signIn.status(id)).toEqual({ state: "failed", reason: "turned-away" });
+  });
+
+  test("answering an unknown or finished sign-in does nothing", async () => {
+    const { signIn, handle } = await waitingGuest();
+    expect(signIn.answer("nope", true)).toBe(false);
+    expect(signIn.answer(handle, true)).toBe(true);
+    expect(signIn.answer(handle, true)).toBe(false);
+  });
+
+  test("a waiting sign-in lapses after 15 minutes", async () => {
+    const { signIn, id } = await waitingGuest();
+    try {
+      setSystemTime(Date.now() + 15 * 60_000 + 1);
+      expect(signIn.status(id)).toEqual({ state: "failed", reason: "expired" });
+      expect(signIn.waiting()).toEqual([]);
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test("a sign-in pending when waiting is dropped stays dropped", async () => {
+    const { signIn, github } = signingIn();
+    const release = Promise.withResolvers<void>();
+    const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url) === ACCESS_TOKEN) {
+        await release.promise;
+      }
+      return github.fetcher(url, init);
+    }) as typeof fetch;
+    const held = new SignIn({
+      clientId: "client-1",
+      fetcher,
+      runner: collaborator(0).runner,
+      repo: () => "acme/shop",
+      sleep: async () => {},
+    });
+    const { id } = await held.start();
+    held.dropWaiting();
+    release.resolve();
+    await Bun.sleep(20);
+    expect(held.waiting()).toEqual([]);
+    expect(held.status(id)).toEqual({ state: "failed", reason: "expired" });
+    expect(signIn.waiting()).toEqual([]);
+  });
+
+  test("dropWaiting empties the list", async () => {
+    const { signIn } = await waitingGuest();
+    signIn.dropWaiting();
+    expect(signIn.waiting()).toEqual([]);
+  });
+
+  test("onChange fires when a sign-in starts and stops waiting", async () => {
+    const { signIn, handle, events } = await waitingGuest();
+    expect(events).toEqual(["change"]);
+    signIn.answer(handle, true);
+    expect(events).toEqual(["change", "change"]);
+  });
+
+  test("browserOf names the common browsers", () => {
+    const cases = [
+      [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Safari on macOS",
+      ],
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Chrome on Windows",
+      ],
+      ["Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0", "Firefox on Linux"],
+      [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+        "Edge on Windows",
+      ],
+      [
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Safari on iOS",
+      ],
+      [
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Chrome on Android",
+      ],
+    ];
+    for (const [agent, name] of cases) {
+      expect(browserOf(agent), name).toBe(name ?? "");
+    }
+    expect(browserOf(undefined)).toBeNull();
+    expect(browserOf("curl/8.0")).toBeNull();
   });
 });
 
@@ -165,7 +296,9 @@ describe("signing in through the share link", () => {
   }
 
   test("the token is never kept or returned", async () => {
-    const { opened, link, visit, finished, people, signIn, store } = await shared({ polls: [{ error: "authorization_pending" }] });
+    const { opened, link, visit, finished, people, signIn, store, page, post } = await shared({
+      polls: [{ error: "authorization_pending" }],
+    });
     const pushes: Push[] = [];
     store.addPageSink(push => pushes.push(push));
     expect(opened.status).toBe(200);
@@ -182,7 +315,13 @@ describe("signing in through the share link", () => {
     const { id, state } = JSON.parse(startedText);
     expect(state).toBe("pending");
 
-    const { response, text } = await finished(id);
+    const waiting = await finished(id);
+    said.push(waiting.text);
+    expect(JSON.parse(waiting.text)).toEqual({ state: "waiting", person: ALICE });
+    const [guest] = signIn.waiting();
+    expect((await page(`/api/share/guests/${guest?.id}`, post({ allow: true }))).status).toBe(200);
+    const response = await visit(`/api/signin/${id}`);
+    const text = await response.text();
     said.push(text, JSON.stringify([...response.headers]));
     expect(JSON.parse(text)).toEqual({ state: "done", person: ALICE });
     const session = response.headers.get("set-cookie") ?? "";

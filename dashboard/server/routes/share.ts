@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import type { ShareInfo } from "../../shared/messages";
+import { guestAnswerSchema, type ShareInfo } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { reviewedRepo } from "../comments";
 import { run } from "../exec";
@@ -14,6 +14,7 @@ export function shareRoutes(deps: AppDeps) {
     sharing: share.link !== null,
     link: share.link,
     signedIn: people.signedIn(),
+    waiting: signIn.waiting().map(guest => ({ ...guest, alreadyIn: people.signedIn().some(person => person.id === guest.person.id) })),
     unpushed: review.response.layers.some(layer => !layer.meta.number || layer.meta.checks?.stale),
     blocked: blocked(),
   });
@@ -62,6 +63,18 @@ export function shareRoutes(deps: AppDeps) {
 
   app.delete("/share", only("owner", "session"), c => {
     share.stop();
+    return c.json(info());
+  });
+
+  app.post("/share/guests/:id", only("owner"), async c => {
+    const body = guestAnswerSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) {
+      return c.json({ error: "say whether to let them in" }, 400);
+    }
+    if (!signIn.answer(c.req.param("id"), body.data.allow)) {
+      return c.json({ error: "no guest is waiting with that id" }, 404);
+    }
+    deps.store.notify("session");
     return c.json(info());
   });
 

@@ -19,6 +19,14 @@ function useShareMutation(method: "post" | "delete") {
 export const useStartShare = () => useShareMutation("post");
 export const useStopShare = () => useShareMutation("delete");
 
+export function useAnswerGuest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, allow }: { id: string; allow: boolean }) => api.post(`share/guests/${id}`, { json: { allow } }).json<ShareInfo>(),
+    onSuccess: data => queryClient.setQueryData(["share"], data),
+  });
+}
+
 export const useStartSignIn = () => useMutation({ mutationFn: () => api.post("signin").json<{ id: string } & SignInStatus>() });
 
 // Asked every couple of seconds until the server has an answer: the server polls GitHub itself.
@@ -27,5 +35,5 @@ export const useSignInStatus = (id: string | undefined) =>
     queryKey: ["signin", id],
     queryFn: () => api.get(`signin/${id}`).json<SignInStatus>(),
     enabled: id !== undefined,
-    refetchInterval: query => (query.state.data?.state === "pending" ? 2000 : false),
+    refetchInterval: query => (query.state.data?.state === "pending" || query.state.data?.state === "waiting" ? 2000 : false),
   });

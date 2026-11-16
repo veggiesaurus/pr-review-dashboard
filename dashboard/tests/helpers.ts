@@ -122,7 +122,12 @@ export function setup(
     spawn: cloudflared.spawn,
     which: () => "/usr/local/bin/cloudflared",
     people,
-    onChange: () => store.notify("session"),
+    onChange: () => {
+      if (!share.link) {
+        signIn.dropWaiting();
+      }
+      store.notify("session");
+    },
   });
   const signIn = new SignIn({
     clientId: options.clientId ?? "client-1",
@@ -130,6 +135,7 @@ export function setup(
     runner: options.runner ?? run,
     repo: () => reviewedRepo(review) ?? "",
     sleep: async () => {},
+    onChange: () => store.notify("session"),
   });
   const app = createApp({
     store,

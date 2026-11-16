@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 
 import type { Runner } from "../server/comments";
 import { People } from "../server/people";
 import { Share, type Spawn } from "../server/share";
-import type { Push } from "../shared/messages";
-import { fakeCloudflared, GUEST, OWNER, PORT, rawReview, setup, TUNNEL } from "./helpers";
+import type { Push, ShareInfo } from "../shared/messages";
+import { COOKIE, fakeCloudflared, GUEST, HOST, LINK, ORIGIN, OWNER, PORT, rawReview, setup, TUNNEL } from "./helpers";
 
 const TUNNEL_CMD = ["cloudflared", "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:4321"];
 
@@ -166,6 +167,7 @@ describe("the share routes", () => {
       sharing: true,
       link: expect.stringContaining(`https://${TUNNEL}/?g=`),
       signedIn: [GUEST],
+      waiting: [],
       unpushed: false,
       blocked: null,
     });
@@ -176,11 +178,133 @@ describe("the share routes", () => {
 
     expect((await session("/api/share", { method: "DELETE" })).status).toBe(200);
     expect(people.signedIn()).toEqual([]);
-    expect(await (await page("/api/share")).json()).toEqual({ sharing: false, link: null, signedIn: [], unpushed: false, blocked: null });
+    expect(await (await page("/api/share")).json()).toEqual({
+      sharing: false,
+      link: null,
+      signedIn: [],
+      waiting: [],
+      unpushed: false,
+      blocked: null,
+    });
   });
 
   test("a branch with no pull request is unpushed", async () => {
     const { page } = setup({ raw: { ...rawReview, meta: { ...rawReview.meta, number: null } } });
     expect(await (await page("/api/share")).json()).toMatchObject({ unpushed: true });
+  });
+});
+
+describe("letting guests in", () => {
+  const ALICE = { id: 7, login: "alice", name: "Alice", avatar: "https://avatars.githubusercontent.com/u/7" };
+  const SAFARI = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+  const fetcher = (async (url: string | URL | Request) => {
+    switch (String(url)) {
+      case "https://github.com/login/device/code":
+        return Response.json({
+          device_code: "d",
+          user_code: "WDJB-MJHT",
+          verification_uri: "https://github.com/login/device",
+          expires_in: 900,
+          interval: 5,
+        });
+      case "https://github.com/login/oauth/access_token":
+        return Response.json({ access_token: "gho_x" });
+      default:
+        return Response.json({ id: 7, login: "alice", name: "Alice", avatar_url: ALICE.avatar });
+    }
+  }) as typeof fetch;
+  const runner: Runner = async () => ({ code: 0, stdout: "", stderr: "" });
+
+  async function shared(headers: Record<string, string> = {}) {
+    const context = setup({ fetcher, runner });
+    await context.page("/api/share", { method: "POST" });
+    const code = context.share.guestCode ?? "";
+    const opened = await context.app.request(`/?g=${code}`, { headers: { host: TUNNEL } });
+    const link = (opened.headers.get("set-cookie") ?? "").replace(/;.*/, "");
+    const visit = (path: string, init: RequestInit = {}) =>
+      context.app.request(path, {
+        ...init,
+        headers: { host: TUNNEL, origin: `https://${TUNNEL}`, cookie: link, "x-prg-key": code, ...headers },
+      });
+    const { id } = (await (await visit("/api/signin", { method: "POST" })).json()) as { id: string };
+    const waiting = async () => {
+      for (let tries = 0; tries < 50 && context.signIn.waiting().length === 0; tries++) {
+        await Bun.sleep(1);
+      }
+      return ((await (await context.page("/api/share")).json()) as ShareInfo).waiting;
+    };
+    return { ...context, visit, id, waiting };
+  }
+
+  test("the cookie is only issued once the owner lets the guest in", async () => {
+    const { visit, id, waiting, page, post } = await shared();
+    const [guest] = await waiting();
+    const before = await visit(`/api/signin/${id}`);
+    expect(await before.json()).toEqual({ state: "waiting", person: ALICE });
+    expect(before.headers.get("set-cookie")).toBeNull();
+
+    expect((await page(`/api/share/guests/${guest?.id}`, post({ allow: true }))).status).toBe(200);
+    const after = await visit(`/api/signin/${id}`);
+    expect(await after.json()).toEqual({ state: "done", person: ALICE });
+    expect(after.headers.get("set-cookie")).toStartWith(`prg_guest_${PORT}=`);
+  });
+
+  test("GET /api/share lists waiting guests with alreadyIn", async () => {
+    const { people, waiting } = await shared();
+    people.issue(ALICE);
+    expect(await waiting()).toEqual([
+      { id: expect.any(String), person: ALICE, country: null, browser: null, alreadyIn: true, at: expect.any(String) },
+    ]);
+  });
+
+  test("a guest can't answer a waiting sign-in", async () => {
+    const { app, people, post, waiting, signIn, share } = await shared();
+    const [waits] = await waiting();
+    const asGuest = await app.request(`/api/share/guests/${waits?.id}`, {
+      ...post({ allow: true }),
+      headers: {
+        host: TUNNEL,
+        origin: `https://${TUNNEL}`,
+        "content-type": "application/json",
+        cookie: `prg_link_${PORT}=${createHash("sha256")
+          .update(share.guestCode ?? "")
+          .digest("hex")}; prg_guest_${PORT}=${people.issue(GUEST)}`,
+        "x-prg-key": share.guestCode ?? "",
+      },
+    });
+    expect(asGuest.status).toBe(403);
+    expect(signIn.waiting()).toHaveLength(1);
+  });
+
+  test("answering an unknown waiting sign-in is 404", async () => {
+    const { page, post } = await shared();
+    expect((await page("/api/share/guests/nope", post({ allow: true }))).status).toBe(404);
+  });
+
+  test("stopping sharing drops waiting guests", async () => {
+    const { page, session, waiting } = await shared();
+    await waiting();
+    await session("/api/share", { method: "DELETE" });
+    await page("/api/share", { method: "POST" });
+    expect(((await (await page("/api/share")).json()) as ShareInfo).waiting).toEqual([]);
+  });
+
+  test("cf-ipcountry is ignored off the tunnel", async () => {
+    const { app, signIn, waiting } = await shared();
+    await waiting();
+    const started = await app.request("/api/signin", {
+      method: "POST",
+      headers: { host: HOST, origin: ORIGIN, cookie: `prg_${PORT}=${COOKIE}`, "x-prg-key": LINK, "cf-ipcountry": "ZA" },
+    });
+    expect(started.status).toBe(200);
+    for (let tries = 0; tries < 50 && signIn.waiting().length < 2; tries++) {
+      await Bun.sleep(1);
+    }
+    expect(signIn.waiting().map(guest => guest.country)).toEqual([null, null]);
+  });
+
+  test("the sign-in records the country and browser of the request that started it", async () => {
+    const { waiting } = await shared({ "cf-ipcountry": "ZA", "user-agent": SAFARI });
+    expect(await waiting()).toMatchObject([{ country: "ZA", browser: "Safari on macOS" }]);
   });
 });

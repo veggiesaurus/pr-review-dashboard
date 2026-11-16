@@ -119,6 +119,9 @@ const share = new Share({
   allowedMail,
   people,
   onChange: () => {
+    if (!share.link) {
+      signIn.dropWaiting();
+    }
     store.notify("session");
     writeState();
   },
@@ -129,6 +132,7 @@ const signIn = new SignIn({
   fetcher: fetch,
   runner: run,
   repo: () => reviewedRepo(review) ?? "",
+  onChange: () => store.notify("session"),
 });
 
 function shutdown(reason: string) {
