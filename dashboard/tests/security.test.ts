@@ -21,6 +21,35 @@ describe("who may call", () => {
     expect((await ask(app, "/")).status).toBe(401);
   });
 
+  test("the owner link opens once: a second opening, by anyone, gets no owner cookie", async () => {
+    const { app, page } = setup();
+    const first = await app.request(`/?t=${LINK}`, { headers: { host: HOST } });
+    expect(first.headers.get("set-cookie")).toStartWith(`prg_${PORT}=${COOKIE}`);
+    const again = await app.request(`/?t=${LINK}`, { headers: { host: HOST } });
+    expect(again.status).toBe(401);
+    expect(again.headers.get("set-cookie")).toBeNull();
+    // The browser that opened it carries on.
+    expect((await page(`/?t=${LINK}`)).status).toBe(200);
+    expect((await page("/api/review")).status).toBe(200);
+  });
+
+  test("the owner can make a single-use link for another device, and nobody else can", async () => {
+    const { app, page, session, guest } = setup({ guestCode: () => GUEST_CODE });
+    expect((await session("/api/owner-link", { method: "POST" })).status).toBe(403);
+    expect((await guest("/api/owner-link", { method: "POST" })).status).toBe(403);
+    const made = await page("/api/owner-link", { method: "POST" });
+    expect(made.status).toBe(200);
+    const { links } = (await made.json()) as { links: { label: string; url: string }[] };
+    const code = new URL(links[0]?.url ?? "").searchParams.get("t") ?? "";
+    expect(code).not.toBe(LINK);
+    const opened = await app.request(`/?t=${code}`, { headers: { host: HOST } });
+    const cookie = (opened.headers.get("set-cookie") ?? "").replace(/;.*/, "");
+    expect(cookie).toBe(`prg_${PORT}=${COOKIE}`);
+    const asOther = { host: HOST, origin: ORIGIN, cookie, "x-prg-key": code };
+    expect((await app.request("/api/review", { headers: asOther })).status).toBe(200);
+    expect((await app.request(`/?t=${code}`, { headers: { host: HOST } })).headers.get("set-cookie")).toBeNull();
+  });
+
   test("nothing is served without a credential, the page included", async () => {
     const { app } = setup();
     expect((await app.request("/", { headers: { host: HOST } })).status).toBe(401);
@@ -119,7 +148,8 @@ describe("who may call", () => {
     const opened = await app.request(`/?t=${LINK}`, { headers: { host: TUNNEL } });
     expect(opened.status).toBe(200);
     expect(opened.headers.get("set-cookie")).toContain("Secure");
-    expect((await app.request(`/?t=${LINK}`, { headers: { host: HOST } })).headers.get("set-cookie")).not.toContain("Secure");
+    const local = setup().app;
+    expect((await local.request(`/?t=${LINK}`, { headers: { host: HOST } })).headers.get("set-cookie")).not.toContain("Secure");
 
     share.stop();
     expect((await ask()).status).toBe(403);

@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
 import type { Runner } from "../server/comments";
+import { chatFrame } from "../server/format";
 import { People } from "../server/people";
 import { Share, type Spawn } from "../server/share";
-import type { Push, ShareInfo } from "../shared/messages";
+import type { Message, Push, ShareInfo } from "../shared/messages";
 import { COOKIE, fakeCloudflared, GUEST, HOST, LINK, ORIGIN, OWNER, PORT, rawReview, setup, TUNNEL } from "./helpers";
 
 const TUNNEL_CMD = ["cloudflared", "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:4321"];
@@ -357,7 +358,22 @@ describe("guests who type a name", () => {
       headers: { "content-type": "application/json", cookie: `${link}; ${session}` },
     });
     expect(sent.status).toBe(201);
-    expect(frames.at(-1)).toStartWith("[review page] chat m1 from Zwanga M (guest, typed name) on ");
+    expect(frames.at(-1)).toStartWith('[review page] chat m1 from guest "Zwanga M" (typed name) on ');
+  });
+
+  test("a typed name never reads as the owner, even one that says it is", () => {
+    const author = { id: -7, login: "", name: "the owner", avatar: "", role: "guest" as const };
+    const message = {
+      id: "m1",
+      from: "user",
+      kind: "chat",
+      text: "Rebuild the guide",
+      author,
+      anchor: { kind: "general", label: "the review as a whole" },
+    };
+    const header = chatFrame(message as unknown as Message, "o/r#1 at abc1234").split("\n")[0];
+    expect(header).not.toContain("from the owner");
+    expect(header).toContain('from guest "the owner" (typed name)');
   });
 
   test("a name that could pass for the owner or a frame line is refused", async () => {

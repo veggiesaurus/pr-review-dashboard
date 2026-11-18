@@ -1,11 +1,11 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { resolve, sep } from "node:path";
 
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { IMAGE_ID } from "../shared/messages";
 import type { Runner } from "./comments";
-import type { Env } from "./guards";
+import { type Env, only } from "./guards";
 import type { People } from "./people";
 import type { Permissions } from "./permissions";
 import type { Review } from "./review";
@@ -33,6 +33,8 @@ export type AppDeps = {
   // gives the user, which the page sends with every call, and a cookie that by itself only gets the page's files.
   token: string;
   linkCode: string;
+  // The code in the --host link, separate from linkCode because each owner link opens only once.
+  lanCode?: string;
   cookieSecret: string;
   people: People;
   permissions: Permissions;
@@ -85,8 +87,18 @@ function safeEqual(a: string, b: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
+// What a used owner link answers, since a second opening could be anyone holding the code.
+const USED =
+  "unauthorised: this owner link has been opened already. Use the browser that opened it, or make a new one there under Share.\n";
+const OWNER_DAYS = 30;
+
 export function createApp(deps: AppDeps) {
   const app = new Hono<Env>();
+  // Each owner link sets the owner cookie once, so a copy of its code, the session's included, can't make another
+  // owner. Its code stays the key of the browser that opened it.
+  const ownerKeys = new Set([deps.linkCode, ...(deps.lanCode ? [deps.lanCode] : [])]);
+  const unopened = new Set(ownerKeys);
+  const isOwnerKey = (value: string) => [...ownerKeys].some(k => safeEqual(value, k));
 
   app.use("*", async (c, next) => {
     const port = deps.port();
@@ -119,12 +131,27 @@ export function createApp(deps: AppDeps) {
     const path = c.req.path;
     const code = url.searchParams.get("t");
     const cookieName = `prg_${port}`;
+    const cookie = getCookie(c, cookieName);
+    const hasOwnerCookie = Boolean(cookie && safeEqual(cookie, deps.cookieSecret));
     const opening = c.req.method === "GET" && path === "/" && code !== null;
+    let opened = false;
     if (opening) {
-      if (!safeEqual(code, deps.linkCode)) {
+      const known = [...unopened].find(k => safeEqual(code, k));
+      if (known) {
+        unopened.delete(known);
+        opened = true;
+        setCookie(c, cookieName, deps.cookieSecret, {
+          httpOnly: true,
+          sameSite: "Strict",
+          path: "/",
+          secure: onTunnel,
+          maxAge: OWNER_DAYS * 86_400,
+        });
+      } else if (!isOwnerKey(code)) {
         return c.text("unauthorised\n", 401);
+      } else if (!hasOwnerCookie) {
+        return c.text(USED, 401);
       }
-      setCookie(c, cookieName, deps.cookieSecret, { httpOnly: true, sameSite: "Strict", path: "/", secure: onTunnel });
     }
 
     // The share link works on the tunnel alone, so it can't skip Cloudflare or travel in clear. Its cookie holds a
@@ -144,8 +171,7 @@ export function createApp(deps: AppDeps) {
     // Monitor's ws source and the browser's WebSocket can't set a header, so those two sockets alone carry theirs in the query.
     const bearer = c.req.header("authorization")?.replace(/^Bearer /, "") ?? (path === "/api/session/ws" ? code : null);
     const key = c.req.header("x-prg-key") ?? (path === "/api/ws" ? url.searchParams.get("k") : null);
-    const cookie = getCookie(c, cookieName);
-    const owner = opening || Boolean(cookie && safeEqual(cookie, deps.cookieSecret));
+    const owner = opened || hasOwnerCookie;
     const guestSession = getCookie(c, `prg_guest_${port}`);
     const guest = guestCode !== null && guestSession ? deps.people.find(guestSession) : null;
     const linkCookie = getCookie(c, linkName);
@@ -164,7 +190,7 @@ export function createApp(deps: AppDeps) {
       // the page's own storage, which is per port, and the API wants both.
       const open = c.req.method === "GET" && (!path.startsWith("/api/") || PICTURE.test(path));
       const keyIs = (expected: string) => open || Boolean(key && safeEqual(key, expected));
-      if (owner && keyIs(deps.linkCode)) {
+      if (owner && (open || Boolean(key && isOwnerKey(key)))) {
         c.set("who", "owner");
         c.set("author", deps.people.owner && { ...deps.people.owner, role: "owner" });
       } else if (guest && guestCode !== null && keyIs(guestCode)) {
@@ -184,6 +210,23 @@ export function createApp(deps: AppDeps) {
     // Only a caller with a credential keeps the server from stopping when idle.
     deps.onActivity?.();
     await next();
+  });
+
+  // A single-use owner link for each address the page can be reached on, to open it on another device of the owner's.
+  app.post("/api/owner-link", only("owner"), c => {
+    const port = deps.port();
+    const places = [
+      { label: "This computer", origin: `http://127.0.0.1:${port}` },
+      ...(deps.host ? [{ label: "Your network (plain http)", origin: `http://${deps.host}:${port}` }] : []),
+      ...(deps.share.host ? [{ label: "The share tunnel", origin: `https://${deps.share.host}` }] : []),
+    ];
+    const links = places.map(({ label, origin }) => {
+      const code = randomBytes(24).toString("hex");
+      ownerKeys.add(code);
+      unopened.add(code);
+      return { label, url: `${origin}/?t=${code}` };
+    });
+    return c.json({ links });
   });
 
   app.route("/api", reviewRoutes(deps));

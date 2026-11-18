@@ -10,7 +10,7 @@ import { MarkdownEditor } from "src/components/chat/MarkdownEditor";
 import { oneLine, STATE_TEXT, STATE_TONE } from "src/components/chat/notes";
 import { Screenshots, useScreenshots } from "src/components/chat/Screenshots";
 import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
-import { type ClaudeThread, type GithubThreadView, type Thread, unseenReply } from "src/components/chat/useThreads";
+import { type ClaudeThread, type GithubThreadView, mentionsOf, type Thread, unread, unseenReply } from "src/components/chat/useThreads";
 import { awaited, verbFor } from "src/components/chat/verbs";
 import { handleOf, PersonFace } from "src/components/links/Github";
 import { Markdown, MessageText } from "src/components/links/Markdown";
@@ -72,6 +72,9 @@ function Patch({ text }: { text: string }) {
 function Delivery({ message }: { message: Message }) {
   if (message.from === "claude") {
     return null;
+  }
+  if (message.kind === "post") {
+    return <span className="text-muted-foreground text-xs">Not sent to Claude</span>;
   }
   if (message.status === "sent") {
     return <Badge tone="outline">Waiting for a session</Badge>;
@@ -190,7 +193,7 @@ export function DraftNote({ message }: { message: Message }) {
       {editing ? (
         <DraftEditor message={message} onDone={() => setEditing(false)} />
       ) : (
-        <MessageText text={message.text} layer={layerOf(message, shown)} />
+        <MessageText text={message.text} layer={layerOf(message, shown)} mentions={message.mentions} />
       )}
       <Screenshots ids={message.images} />
     </div>
@@ -217,7 +220,7 @@ export function Bubble({ message }: { message: Message }) {
         </time>
         {mine && message.replyTo && <Delivery message={message} />}
       </div>
-      <MessageText text={message.text} layer={layer} className="mt-1" />
+      <MessageText text={message.text} layer={layer} mentions={message.mentions} className="mt-1" />
       {message.images && (
         <div className="mt-1.5">
           <Screenshots ids={message.images} />
@@ -229,21 +232,34 @@ export function Bubble({ message }: { message: Message }) {
 
 // A follow-up takes its thread's anchor; a new message from the drawer takes anchor. What is typed is kept as a
 // composer's is, so it outlives the thread folding or the drawer closing.
-export function ReplyBox({ replyTo, anchor, placeholder }: { replyTo?: string; anchor?: Anchor; placeholder: string }) {
+export function ReplyBox({
+  replyTo,
+  anchor,
+  placeholder,
+  rootKind,
+}: {
+  replyTo?: string;
+  anchor?: Anchor;
+  placeholder: string;
+  rootKind?: Message["kind"];
+}) {
   const key = replyTo ? replyKey(replyTo) : anchor ? anchorKey(anchor) : "";
   const [text, setText] = useState(() => draftText(key));
   const add = useAddMessage();
   const shots = useScreenshots();
+  // In a thread of posts, Enter keeps the reply between people; asking Claude is the deliberate second button.
+  const [main, other] = rootKind === "post" ? (["post", "chat"] as const) : (["chat", "post"] as const);
+  const title = { chat: "Goes to Claude now", post: "Everyone on the review sees it; Claude doesn't" };
 
   const update = (value: string) => {
     setText(value);
     saveDraftText(key, value);
   };
-  const submit = (event?: FormEvent) => {
+  const submit = (kind: "chat" | "post", event?: FormEvent) => {
     event?.preventDefault();
     if (text.trim() && !add.isPending && !shots.uploading) {
       add.mutate(
-        { kind: "chat", text, replyTo, anchor, ...(shots.images.length && { images: shots.images }) },
+        { kind, text, replyTo, anchor, ...(shots.images.length && { images: shots.images }) },
         {
           onSuccess: () => {
             update("");
@@ -255,21 +271,31 @@ export function ReplyBox({ replyTo, anchor, placeholder }: { replyTo?: string; a
   };
 
   return (
-    <form onSubmit={submit} className="grid grid-cols-[minmax(0,1fr)] gap-1" {...shots.handlers}>
+    <form onSubmit={event => submit(main, event)} className="grid grid-cols-[minmax(0,1fr)] gap-1" {...shots.handlers}>
       <Screenshots ids={shots.images} onRemove={shots.remove} />
       <div className="flex gap-2">
         <MarkdownEditor
           value={text}
           onChange={update}
-          onSend={() => submit()}
+          onSend={() => submit(main)}
           onFiles={shots.take}
           sendKey="enter"
           label={placeholder}
           placeholder={placeholder}
           className="flex-1"
         />
-        <Button type="submit" size="sm" variant="outline" disabled={!text.trim() || add.isPending || shots.uploading}>
-          Send
+        <Button type="submit" size="sm" variant="outline" disabled={!text.trim() || add.isPending || shots.uploading} title={title[main]}>
+          {main === "post" ? "Post" : "Send"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => submit(other)}
+          disabled={!text.trim() || add.isPending || shots.uploading}
+          title={title[other]}
+        >
+          {other === "post" ? "Post" : "Ask Claude"}
         </Button>
       </div>
       {shots.error && <span className="text-danger text-sm">{shots.error}</span>}
@@ -292,11 +318,12 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   const add = useAddMessage();
   const archive = useArchiveThread();
   const owner = useIsOwner();
-  // An answer counts as seen once its thread has been on screen, open, wherever on the page that is.
+  // An answer or a mention counts as seen once its thread has been on screen, open, wherever on the page that is.
   const box = useRef<HTMLDivElement>(null);
   const { mutate: markSeen } = useMarkSeen();
   const { data: session } = useSession();
-  const unseen = open ? unseenReply(thread)?.id : undefined;
+  const me = useMe()?.person?.id;
+  const unseen = open ? (unseenReply(thread) ?? mentionsOf(thread, me).findLast(m => unread(root, m)))?.id : undefined;
   useEffect(() => {
     if (!unseen || !box.current) {
       return;
@@ -346,7 +373,9 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             ? `Review ${root.review?.n} finding`
             : root.kind === "note"
               ? `Note to Claude${root.batch ? `, batch ${root.batch}` : ""}`
-              : "Chat with Claude"}
+              : root.kind === "post"
+                ? "Post"
+                : "Chat with Claude"}
           {root.anchor.kind === "line" && root.anchor.endLine && root.anchor.endLine !== root.anchor.line
             ? `, lines ${root.anchor.line} to ${root.anchor.endLine}`
             : ""}
@@ -419,7 +448,13 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
               </DropdownMenu>
             </div>
           )}
-          <ReplyBox replyTo={root.id} placeholder={root.resolved ? "Reopen it with a follow-up" : "Follow up with Claude"} />
+          <ReplyBox
+            replyTo={root.id}
+            rootKind={root.kind}
+            placeholder={
+              root.kind === "post" ? "Reply to the thread" : root.resolved ? "Reopen it with a follow-up" : "Follow up with Claude"
+            }
+          />
         </div>
       ) : (
         <button

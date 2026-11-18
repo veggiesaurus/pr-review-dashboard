@@ -57,6 +57,9 @@ export type StoreOptions = {
   activityMs?: number;
   // Where attached screenshots are kept, named in frames so the session can open them.
   attachments?: string;
+  // Nudges the session when messages have waited with nothing listening.
+  wake?: (waiting: number, scope: string) => void;
+  wakeMs?: number;
 };
 
 export class Store {
@@ -71,6 +74,8 @@ export class Store {
   private readonly waiters = new Set<(text: string) => void>();
   private activity: Activity | null = null;
   private activityTimer: ReturnType<typeof setTimeout> | undefined;
+  private wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  private woke = false;
   private readonly db: Database;
   // Every thread is kept with the PR it is about and, in a stack, the stack. A review shows the threads of its
   // PRs and of its stack, so they follow a PR into another review and stay with a stack whose layers change.
@@ -86,6 +91,7 @@ export class Store {
     const { stack } = review.response;
     this.stack = stack && options.stack ? `${stack.repo} stack ${options.stack}` : null;
     this.restore();
+    this.armWake();
     review.onChange(() => this.reanchorAll());
   }
 
@@ -145,6 +151,7 @@ export class Store {
   }
 
   addSessionSink(sink: (frame: string) => void) {
+    this.disarmWake();
     // A listener where there was none may be a new session: it gets what the last one never answered for.
     if (!this.listening) {
       this.requeue();
@@ -191,6 +198,7 @@ export class Store {
   wait(signal: AbortSignal): Promise<string> {
     // ponytail: coming back for more answers for the last poll, whoever polls; give polls a cursor if two sessions ever share one.
     this.heard();
+    this.disarmWake();
     return new Promise(resolve => {
       const waiter = (text: string) => {
         resolve(text);
@@ -222,7 +230,7 @@ export class Store {
     return author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
   }
 
-  addUserMessage(input: NewMessage, author: Author | null): Message | null | "owner-only" {
+  addUserMessage(input: NewMessage, author: Author | null, mentions: number[] = []): Message | null | "owner-only" {
     const parent = input.replyTo ? this.root(input.replyTo) : undefined;
     if (parent === null || parent?.status === "draft") {
       return null;
@@ -238,20 +246,20 @@ export class Store {
     if (ownerAnswer && guest) {
       return "owner-only";
     }
-    // A follow-up goes at once, and reopens a thread the session had settled.
-    const reopened = parent !== undefined && settled(parent.state);
+    const kind = parent ? (input.kind === "post" ? "post" : "chat") : input.kind;
+    // A follow-up goes at once, and reopens a thread the session had settled; a post is for people only.
+    const reopened = parent !== undefined && kind !== "post" && settled(parent.state);
     if (parent && reopened) {
       this.setState(parent, "open");
       this.log(parent, "note", "Reopened by a follow-up");
     }
     // Archiving and dismissing are the owner's, so a guest's follow-up leaves them as they are.
-    if (parent && !guest) {
+    if (parent && !guest && kind !== "post") {
       parent.archived = undefined;
       if (parent.review?.dismissed) {
         parent.review = { ...parent.review, dismissed: undefined };
       }
     }
-    const kind = parent ? "chat" : input.kind;
     const message = this.insert(
       {
         from: "user",
@@ -266,12 +274,19 @@ export class Store {
         resolved: false,
         ...(kind === "note" && input.intent && { intent: input.intent }),
         ...(input.images?.length && { images: input.images }),
+        ...(mentions.length && { mentions }),
         at: new Date().toISOString(),
       },
       parent,
     );
     if (kind === "chat") {
-      this.deliver([chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message), this.options.attachments)], [message.id]);
+      const thread = parent ? this.messages.filter(m => m.id === parent.id || m.replyTo === parent.id) : [];
+      const told = thread.findLastIndex(m => m !== message && (m.from === "claude" || m.kind !== "post"));
+      const posts = thread.slice(told + 1).filter(m => m.kind === "post" && m.from === "user");
+      this.deliver(
+        [chatFrame(message, scopeOf(this.review), reopened, this.findingOf(message), this.options.attachments, posts)],
+        [message.id],
+      );
     }
     this.notify("messages");
     return message;
@@ -448,6 +463,9 @@ export class Store {
 
   // The frames that ask the session for what one message of the user's wants.
   private framesFor(ask: Message) {
+    if (ask.kind === "post") {
+      return [];
+    }
     const scope = scopeOf(this.review);
     if (ask.batch !== undefined) {
       return notesFrames([ask], ask.batch, scope, this.options.attachments);
@@ -463,7 +481,7 @@ export class Store {
     for (const thread of left) {
       this.setState(thread, "open");
       this.log(thread, "note", "Offered again: the session working on it stopped listening");
-      const ask = this.messages.findLast(m => (m.id === thread.id || m.replyTo === thread.id) && m.from === "user");
+      const ask = this.messages.findLast(m => (m.id === thread.id || m.replyTo === thread.id) && m.from === "user" && m.kind !== "post");
       for (const frame of ask ? this.framesFor(ask) : []) {
         this.queue(`${frame}\n(offered again: it was being worked on when the session stopped listening; carry on if that was you)`, []);
       }
@@ -479,12 +497,13 @@ export class Store {
     return thread?.from === "claude" && thread.review ? thread : undefined;
   }
 
-  editDraft(id: string, text: string, author: Author | null) {
+  editDraft(id: string, text: string, author: Author | null, mentions: number[] = []) {
     const draft = this.messages.find(m => m.id === id && draftOf(m, author));
     if (!draft) {
       return null;
     }
     draft.text = text;
+    draft.mentions = mentions.length ? mentions : undefined;
     draft.edited = new Date().toISOString();
     this.notify("messages");
     return draft;
@@ -600,7 +619,7 @@ export class Store {
       message = this.insert(
         {
           from: "claude",
-          kind: parent?.kind ?? "chat",
+          kind: parent?.kind === "note" ? "note" : "chat",
           text: reply.text,
           anchor: parent?.anchor ?? { kind: "general", label: null, detail: null, path: null, code: null, loc: null, match: null },
           replyTo: parent?.id,
@@ -717,6 +736,7 @@ export class Store {
   // delivery: a message is delivered once the session is heard from.
   private flush() {
     if (this.pending.length === 0 || !this.listening) {
+      this.armWake();
       return;
     }
     const batch = this.pending;
@@ -735,6 +755,28 @@ export class Store {
         waiter(batch.map(p => p.frame).join("\n\n"));
       }
     }
+  }
+
+  private disarmWake() {
+    clearTimeout(this.wakeTimer);
+    this.wakeTimer = undefined;
+    this.woke = false;
+  }
+
+  // Once per lapse: messages waiting with nothing listening for wakeMs.
+  private armWake() {
+    const { wake, wakeMs = 30_000 } = this.options;
+    if (!wake || this.pending.length === 0 || this.listening || this.woke || this.wakeTimer) {
+      return;
+    }
+    this.wakeTimer = setTimeout(() => {
+      this.wakeTimer = undefined;
+      if (this.pending.length > 0 && !this.listening) {
+        this.woke = true;
+        wake(this.pending.length, scopeOf(this.review));
+      }
+    }, wakeMs);
+    this.wakeTimer.unref?.();
   }
 
   notify(type: Push["type"], layer?: number) {

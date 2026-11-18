@@ -9,7 +9,7 @@ import { copyText, jumpTo, onCode, oneLine, pageOrder, shortLabel } from "src/co
 import { PostDialog } from "src/components/chat/PostDialog";
 import { Screenshots } from "src/components/chat/Screenshots";
 import { ClaudeThreadBlock, DraftEditor, layerOf, StateBadge } from "src/components/chat/ThreadBlock";
-import { type ClaudeThread, useThreads } from "src/components/chat/useThreads";
+import { type ClaudeThread, mentionsOf, unread, useThreads } from "src/components/chat/useThreads";
 import { MessageText } from "src/components/links/Markdown";
 import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
@@ -25,7 +25,7 @@ import {
   TraceTitle,
 } from "src/components/ui/trace";
 import { useComments } from "src/queries/comments.query";
-import { useIsOwner } from "src/queries/me.query";
+import { useIsOwner, useMe } from "src/queries/me.query";
 import { errorText, useDeleteDraft, useSendDrafts } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useLayer, useReview } from "src/queries/review.query";
@@ -99,7 +99,7 @@ function DraftItem({ note, pick }: { note: Message; pick: boolean }) {
         <DraftEditor message={note} onDone={() => setEditing(false)} />
       ) : (
         <>
-          <MessageText text={note.text} layer={layerOf(note, shown)} />
+          <MessageText text={note.text} layer={layerOf(note, shown)} mentions={note.mentions} />
           <Screenshots ids={note.images} />
         </>
       )}
@@ -108,7 +108,7 @@ function DraftItem({ note, pick }: { note: Message; pick: boolean }) {
 }
 
 // A sent note, folded to one line once it is settled; opening it shows the thread and its follow-up box.
-function SentItem({ thread, pick }: { thread: ClaudeThread; pick: boolean }) {
+function SentItem({ thread, pick, dot }: { thread: ClaudeThread; pick: boolean; dot?: boolean }) {
   const { root, replies } = thread;
   const [open, setOpen] = useState(false);
   const picked = useChatStore(state => state.picked.includes(root.id));
@@ -126,6 +126,11 @@ function SentItem({ thread, pick }: { thread: ClaudeThread; pick: boolean }) {
         >
           <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
         </button>
+        {dot && (
+          <span className="size-2 shrink-0 rounded-full bg-primary">
+            <span className="sr-only">New</span>
+          </span>
+        )}
         {pick && (
           <input
             type="checkbox"
@@ -139,7 +144,7 @@ function SentItem({ thread, pick }: { thread: ClaudeThread; pick: boolean }) {
         <IntentBadge message={root} />
         {root.anchor.outdated && <Gone />}
         <StateBadge state={root.state} />
-        {root.status === "sent" && <Badge tone="outline">Waiting for a session</Badge>}
+        {root.status === "sent" && root.kind !== "post" && <Badge tone="outline">Waiting for a session</Badge>}
         {root.posted && <Badge tone="outline">{root.posted.pending ? "On GitHub, pending" : "On GitHub"}</Badge>}
         {!open && (
           <p className="min-w-0 basis-full truncate text-muted-foreground text-sm">
@@ -157,7 +162,19 @@ function SentItem({ thread, pick }: { thread: ClaudeThread; pick: boolean }) {
 }
 
 // Part of a batch, as a queue shows it: what is left, or what is done, folded once nothing in it needs a look.
-function Queue({ title, notes, pick, open }: { title: string; notes: ClaudeThread[]; pick: (m: Message) => boolean; open: boolean }) {
+function Queue({
+  title,
+  notes,
+  pick,
+  open,
+  dot,
+}: {
+  title: string;
+  notes: ClaudeThread[];
+  pick: (m: Message) => boolean;
+  open: boolean;
+  dot?: (thread: ClaudeThread) => boolean;
+}) {
   if (notes.length === 0) {
     return null;
   }
@@ -172,7 +189,7 @@ function Queue({ title, notes, pick, open }: { title: string; notes: ClaudeThrea
       <TraceCollapsibleContent className="pl-3">
         <ul className="grid grid-cols-1 gap-1.5">
           {notes.map(thread => (
-            <SentItem key={thread.root.id} thread={thread} pick={pick(thread.root)} />
+            <SentItem key={thread.root.id} thread={thread} pick={pick(thread.root)} dot={dot?.(thread)} />
           ))}
         </ul>
       </TraceCollapsibleContent>
@@ -266,7 +283,8 @@ function GithubElsewhere({ layer }: { layer: number }) {
 // The user's notes: drafts to read and change before they go anywhere, then each sent batch with how far Claude
 // has got, and GitHub's own threads that have no line here. Copy notes is the way out with no session listening.
 export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
-  const { notes } = useThreads();
+  const { threads, archived, notes, posts: allPosts } = useThreads();
+  const me = useMe()?.person?.id;
   const review = useReview().data;
   const layer = useViewStore(state => state.layer);
   const shown = useLayer(layer);
@@ -291,12 +309,20 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
     .sort(order);
   const sent = notes.filter(n => n.root.status !== "draft").sort((a, b) => order(a.root, b.root));
   const batches = [...new Set(sent.map(n => n.root.batch ?? 0))].sort((a, b) => b - a);
+  const posts = [...allPosts].sort((a, b) => Number(b.root.id.slice(1)) - Number(a.root.id.slice(1)));
   const nCopied = drafts.filter(d => copied[d.id] === d.text).length;
   const canPost = Boolean(comments?.canPost) && layer !== null && owner;
   const postable = (m: Message) =>
     canPost && !m.posted && !m.anchor.outdated && (m.anchor.kind === "line" || m.anchor.kind === "tell") && m.anchor.layer === layer;
   const pickedNow = picked.filter(id => notes.some(n => n.root.id === id && postable(n.root)));
   const listening = Boolean(session?.listening);
+  // Threads where someone else named me, the unread first, then the newest mention first.
+  const isNew = (t: ClaudeThread) => mentionsOf(t, me).some(m => unread(t.root, m));
+  const newest = (t: ClaudeThread) => Number(mentionsOf(t, me).at(-1)?.id.slice(1) ?? 0);
+  const mentioned = [...threads, ...archived]
+    .filter(t => t.root.status !== "draft" && mentionsOf(t, me).length > 0)
+    .sort((a, b) => Number(isNew(b)) - Number(isNew(a)) || newest(b) - newest(a));
+  const nNew = mentioned.filter(isNew).length;
 
   const sendAll = () =>
     send.mutate(undefined, {
@@ -376,6 +402,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
           </Button>
         </div>
       </div>
+      <Queue title={nNew ? `Mentions (${nNew} new)` : "Mentions"} notes={mentioned} pick={() => false} open dot={isNew} />
       {!listening && drafts.length > 0 && (
         <p className="text-muted-foreground text-sm">
           No Claude session is listening. Sent notes wait here until one connects, or copy them into the session.
@@ -398,7 +425,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
           className="w-full rounded-md border bg-background p-2 font-mono text-xs"
         />
       )}
-      {drafts.length === 0 && sent.length === 0 && (
+      {drafts.length === 0 && sent.length === 0 && posts.length === 0 && mentioned.length === 0 && (
         <Empty className="p-4">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -418,6 +445,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
           ))}
         </ul>
       )}
+      <Queue title="Posts" notes={posts} pick={() => false} open />
       {batches.map(batch => (
         <Batch key={batch} batch={batch} notes={sent.filter(n => (n.root.batch ?? 0) === batch)} pick={postable} />
       ))}

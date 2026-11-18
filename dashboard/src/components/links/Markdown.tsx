@@ -1,15 +1,18 @@
 import type { Element, ElementContent, Root, RootContent } from "hast";
 import { ImageIcon } from "lucide-react";
 import type { RootContent as MdContent, Nodes as MdNodes, Root as MdRoot, Paragraph, PhrasingContent } from "mdast";
-import { Fragment, useMemo } from "react";
+import { Children, Fragment, type ReactNode, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { splitMentions } from "shared/mentions";
 import { shortRef, splitRefs, urlRef } from "shared/refs";
 
 import { CodeText } from "src/components/diff/CodeText";
 import { useHighlighter } from "src/components/diff/hooks";
 import { LINK } from "src/components/links/Prose";
 import { RefLink } from "src/components/links/RefLink";
+import { useMe } from "src/queries/me.query";
+import { usePeople } from "src/queries/people.query";
 import { useLayer } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
 import { cn } from "src/utils/cn";
@@ -149,9 +152,47 @@ function rehypeRefs({ repo }: { repo: string | null }) {
   return (tree: Root) => visit(tree, false);
 }
 
+// The handles a message mentions, and mine among them, lower case.
+type Mentioned = { handles: string[]; mine: string | undefined };
+
+// Only text sitting straight in a paragraph or item is read, so code, links and references stay as they are.
+const withMentions = (children: ReactNode, mentioned: Mentioned | undefined) =>
+  mentioned
+    ? Children.map(children, child =>
+        typeof child === "string"
+          ? splitMentions(child, mentioned.handles).map((part, i) =>
+              i % 2 ? (
+                <span
+                  // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one string never reorder
+                  key={i}
+                  className={cn(
+                    "rounded-sm bg-primary/10 px-0.5 text-primary",
+                    part.toLowerCase() === mentioned.mine && "bg-primary/20 font-medium",
+                  )}
+                >
+                  @{part}
+                </span>
+              ) : (
+                part
+              ),
+            )
+          : child,
+      )
+    : children;
+
 // A PR or issue description: GitHub's markdown, with raw HTML reduced to its text, links only to https, pictures as links, and the
 // same references as Prose unfurled inside it.
-export function Markdown({ source, layer, className }: { source: string; layer: number; className?: string }) {
+export function Markdown({
+  source,
+  layer,
+  className,
+  mentioned,
+}: {
+  source: string;
+  layer: number;
+  className?: string;
+  mentioned?: Mentioned;
+}) {
   const repo = useLayer(layer)?.meta.repo || null;
   const goTo = useViewStore(state => state.goTo);
 
@@ -222,8 +263,11 @@ export function Markdown({ source, layer, className }: { source: string; layer: 
           {children}
         </ol>
       ),
+      p: ({ children }) => <p>{withMentions(children, mentioned)}</p>,
       li: ({ children, className }) => (
-        <li className={className === "task-list-item" ? "-ml-5 list-none [&>ul]:mt-1" : "pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1"}>{children}</li>
+        <li className={className === "task-list-item" ? "-ml-5 list-none [&>ul]:mt-1" : "pl-0.5 [&>ol]:mt-1 [&>ul]:mt-1"}>
+          {withMentions(children, mentioned)}
+        </li>
       ),
       blockquote: ({ children }) => <blockquote className="grid gap-2 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>,
       code: ({ children, className }) => {
@@ -256,7 +300,7 @@ export function Markdown({ source, layer, className }: { source: string; layer: 
       ),
       hr: () => <hr className="border-t" />,
     }),
-    [goTo, layer, repo],
+    [goTo, layer, repo, mentioned],
   );
 
   return (
@@ -284,8 +328,34 @@ function Highlighted({ text, language }: { text: string; language: string }) {
 }
 
 // A message typed in a chat box: markdown at the size of the thread, with a line break kept where it was typed.
-export function MessageText({ text, layer, className }: { text: string; layer: number; className?: string }) {
+export function MessageText({
+  text,
+  layer,
+  className,
+  mentions,
+}: {
+  text: string;
+  layer: number;
+  className?: string;
+  mentions?: number[];
+}) {
+  const people = usePeople();
+  const me = useMe()?.person?.id;
+  // Keyed on the ids, not the array, which is new on every refetch and would re-mount the message.
+  const ids = mentions?.join();
+  const mentioned = useMemo(() => {
+    const named = people.filter(p => (p.login || p.name) && ids?.split(",").includes(String(p.id)));
+    const mine = named.find(p => p.id === me);
+    return named.length
+      ? { handles: named.map(p => p.login || p.name || ""), mine: mine && (mine.login || mine.name || "").toLowerCase() }
+      : undefined;
+  }, [people, ids, me]);
   return (
-    <Markdown source={text} layer={layer} className={cn("text-sm leading-normal [&>*+*]:mt-2 [&_p]:whitespace-pre-wrap", className)} />
+    <Markdown
+      source={text}
+      layer={layer}
+      mentioned={mentioned}
+      className={cn("text-sm leading-normal [&>*+*]:mt-2 [&_p]:whitespace-pre-wrap", className)}
+    />
   );
 }

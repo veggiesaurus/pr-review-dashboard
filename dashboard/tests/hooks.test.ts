@@ -54,7 +54,10 @@ function stub(states: string[] = ["allow"], token = "tok") {
   });
   const made: Stub = { calls, origin: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
   stubs.push(made);
-  writeFileSync(join(home, ".cache", "prg", `${server.port}.json`), JSON.stringify({ session: SESSION, origin: made.origin, token }));
+  writeFileSync(
+    join(home, ".cache", "prg", `${server.port}.json`),
+    JSON.stringify({ session: SESSION, origin: made.origin, token, pid: process.pid }),
+  );
   return made;
 }
 
@@ -165,6 +168,17 @@ describe("permission.mjs", () => {
     }
   });
 
+  test("ignores a state file left by a dashboard that has died, whatever now answers on its port", async () => {
+    const gone = Bun.spawn(["true"]);
+    await gone.exited;
+    const squatter = stub();
+    const file = join(home, ".cache", "prg", `${new URL(squatter.origin).port}.json`);
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), pid: gone.pid }));
+    const result = await permission(bash);
+    expect(result.out).toBe("");
+    expect(squatter.calls).toEqual([]);
+  });
+
   test("writes its marker line before the request is posted", async () => {
     const seen = Promise.withResolvers<string | null>();
     const server = Bun.serve({
@@ -176,7 +190,7 @@ describe("permission.mjs", () => {
     });
     writeFileSync(
       join(home, ".cache", "prg", "x.json"),
-      JSON.stringify({ session: SESSION, origin: `http://127.0.0.1:${server.port}`, token: "t" }),
+      JSON.stringify({ session: SESSION, origin: `http://127.0.0.1:${server.port}`, token: "t", pid: process.pid }),
     );
     await permission(bash);
     server.stop(true);

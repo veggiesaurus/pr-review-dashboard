@@ -19,6 +19,10 @@ function useShareMutation(method: "post" | "delete") {
 export const useStartShare = () => useShareMutation("post");
 export const useStopShare = () => useShareMutation("delete");
 
+// Single-use owner links, one for each address the page can be opened on.
+export const useOwnerLink = () =>
+  useMutation({ mutationFn: () => api.post("owner-link").json<{ links: { label: string; url: string }[] }>() });
+
 export function useAnswerGuest() {
   const queryClient = useQueryClient();
   return useMutation({

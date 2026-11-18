@@ -76,8 +76,21 @@ async function stop({ child, origin, token }) {
   await exited;
 }
 
+// The owner link opens once, so every owner page after the first is another tab in the browser that opened it.
+const owners = new Map();
+async function ownerPage(link, viewport = { width: 1400, height: 900 }) {
+  const first = !owners.has(link);
+  if (first) {
+    owners.set(link, await browser.newContext({ viewport }));
+  }
+  const tab = await owners.get(link).newPage();
+  await tab.setViewportSize(viewport);
+  return { tab, url: first ? link : `${new URL(link).origin}/` };
+}
+
 async function open(link, hash = "", viewport = { width: 1400, height: 900 }) {
-  page = await browser.newPage({ viewport });
+  const owned = await ownerPage(link, viewport);
+  page = owned.tab;
   await page.addInitScript(() => {
     document.addEventListener("securitypolicyviolation", event => {
       console.error(`CSP violation: ${event.violatedDirective} blocked ${event.blockedURI}`);
@@ -89,7 +102,7 @@ async function open(link, hash = "", viewport = { width: 1400, height: 900 }) {
       problems.push(`console: ${message.text()}`);
     }
   });
-  await page.goto(`${link}${hash}`);
+  await page.goto(`${owned.url}${hash}`);
   await page.waitForSelector("[role=tablist]");
 }
 
@@ -761,8 +774,9 @@ try {
   await open(work.link);
   await tab("Guide");
   await page.waitForSelector(SECTION);
-  const second = await browser.newPage();
-  await second.goto(work.link);
+  const other = await ownerPage(work.link);
+  const second = other.tab;
+  await second.goto(other.url);
   await second.waitForSelector("[role=tablist]");
   await page.waitForTimeout(1200);
   await check(
@@ -812,11 +826,29 @@ try {
     link => /^https:\/\/quiet-river-1234\.trycloudflare\.com\/\?g=[0-9a-f]+$/.test(link),
   );
   await check("and says guests see every thread", () => page.getByText("Guests will see every thread on this review").count());
+  await page.getByRole("button", { name: "Make a link" }).click();
+  await check(
+    "Make a link gives a new single-use owner link here and on the tunnel",
+    async () => [
+      await page.getByRole("textbox", { name: "This computer" }).inputValue(),
+      await page.getByRole("textbox", { name: "The share tunnel" }).inputValue(),
+    ],
+    ([here, tunnel]) => /\/\?t=[0-9a-f]{48}$/.test(here) && !here.endsWith(new URL(stack.link).search) && tunnel.startsWith("https://"),
+  );
   await page.getByRole("button", { name: "Stop sharing" }).click();
   await check(
     "Stop sharing clears the link",
     () => page.getByRole("textbox", { name: "Share link" }).count(),
     n => n === 0,
+  );
+  await page.close();
+
+  // The owner link has been opened, so a browser that never opened it gets no owner cookie from it.
+  page = await browser.newPage();
+  const reused = await page.goto(work.link);
+  await check(
+    "an owner link opened a second time gets 401 and says why",
+    async () => reused.status() === 401 && (await page.content()).includes("opened already"),
   );
   await page.close();
 
@@ -844,9 +876,10 @@ try {
     person: { id: 2, login: "gus", name: null, avatar: "https://avatars.githubusercontent.com/u/2" },
     sharing: true,
   };
-  page = await browser.newPage();
+  const asOwner = await ownerPage(work.link);
+  page = asOwner.tab;
   await page.route("**/api/me", route => route.fulfill({ json: asGuest }));
-  await page.goto(work.link);
+  await page.goto(asOwner.url);
   await page.waitForSelector("[role=tablist]");
   await check(
     "a guest has no Rebuild or Share button",

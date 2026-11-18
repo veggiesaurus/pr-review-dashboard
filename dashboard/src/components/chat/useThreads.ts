@@ -15,11 +15,18 @@ export type Thread = ClaudeThread | GithubThreadView;
 const NONE: Message[] = [];
 const number = (message: Message) => Number(message.id.slice(1));
 
+// Whether a message came after anything the reader has had on screen in its thread.
+export const unread = (root: Message, message: Message) => number(message) > Number(root.seen?.slice(1) ?? 0);
+
 // Claude's last answer in a thread, when it came after anything the user has had on screen there.
 export function unseenReply({ root, replies }: ClaudeThread): Message | undefined {
   const answer = replies.findLast(m => m.from === "claude");
-  return answer && number(answer) > Number(root.seen?.slice(1) ?? 0) ? answer : undefined;
+  return answer && unread(root, answer) ? answer : undefined;
 }
+
+// The messages in a thread that mention me, written by someone else.
+export const mentionsOf = ({ root, replies }: ClaudeThread, me: number | undefined) =>
+  me === undefined ? NONE : [root, ...replies].filter(m => m.mentions?.includes(me) && m.author?.id !== me);
 
 function useThreadList() {
   const { data: messages = NONE } = useMessages();
@@ -96,6 +103,7 @@ export function useThreads() {
       // Not under a line: about something else, or about a line a rebuild took away.
       unplaced: threads.filter(thread => thread.root.anchor.outdated || !["line", "tell"].includes(thread.root.anchor.kind)),
       notes: threads.filter(thread => thread.root.kind === "note"),
+      posts: threads.filter(thread => thread.root.kind === "post"),
       drafts: messages.filter(m => m.status === "draft").length,
       // Claude's newest answer the user hasn't had on screen, in a thread they haven't put away.
       latestReply: threads

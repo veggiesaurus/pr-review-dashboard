@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { openDb } from "../server/db";
 import { Store } from "../server/store";
+import { wakeSession } from "../server/wake";
 import { addedLine, loaded, rawReview, setup } from "./helpers";
 
 function listen(store: Store) {
@@ -92,4 +97,91 @@ test("a fix or a re-check too long for one frame comes in parts that leave no fi
   await page("/api/reviews/1/fix", { method: "POST" });
   expect(frames[before + 1]).toStartWith("[review page] fix of review 1, part 2 of");
   expect(named(before)).toEqual(ids);
+});
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+function waking() {
+  const { review } = setup();
+  const calls: number[] = [];
+  const store = new Store(review, { wake: n => calls.push(n), wakeMs: 20 });
+  return { store, calls };
+}
+
+test("a lapsed listener with messages waiting wakes the session once", async () => {
+  const { store, calls } = waking();
+  store.addUserMessage({ kind: "chat", text: "one" }, null);
+  await sleep(40);
+  expect(calls).toEqual([1]);
+  store.addUserMessage({ kind: "chat", text: "two" }, null);
+  await sleep(40);
+  expect(calls).toEqual([1]);
+});
+
+test("nothing listening and nothing waiting doesn't wake the session", async () => {
+  const { store, calls } = waking();
+  listen(store).stop();
+  await sleep(40);
+  expect(calls).toEqual([]);
+});
+
+test("a listener arriving resets the wake", async () => {
+  const { store, calls } = waking();
+  store.addUserMessage({ kind: "chat", text: "one" }, null);
+  const first = listen(store);
+  await sleep(40);
+  expect(calls).toEqual([]);
+  first.stop();
+  await sleep(40);
+  expect(calls).toHaveLength(1);
+  listen(store).stop();
+  store.addUserMessage({ kind: "chat", text: "two" }, null);
+  await sleep(40);
+  expect(calls).toHaveLength(2);
+});
+
+test("a long-poll arriving cancels a pending wake, so the next message waits its full time", async () => {
+  const { review } = setup();
+  const calls: number[] = [];
+  const store = new Store(review, { wake: n => calls.push(n), wakeMs: 100 });
+  store.addUserMessage({ kind: "chat", text: "one" }, null);
+  await sleep(50);
+  await store.wait(new AbortController().signal);
+  store.addUserMessage({ kind: "chat", text: "two" }, null);
+  await sleep(80);
+  expect(calls).toEqual([]);
+  await sleep(80);
+  expect(calls).toEqual([1]);
+});
+
+test("frames kept from before a restart wake the session when nobody listens", async () => {
+  const { review } = setup();
+  const db = openDb();
+  new Store(review, { db }).addUserMessage({ kind: "chat", text: "one" }, null);
+  const calls: number[] = [];
+  new Store(review, { db, wake: n => calls.push(n), wakeMs: 20 });
+  await sleep(40);
+  expect(calls).toEqual([1]);
+});
+
+test("wakeSession sends the auth line then the message, one JSON per line", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "wake-"));
+  const path = join(dir, "s.sock");
+  const got = Promise.withResolvers<string>();
+  const server = createServer(conn => {
+    let data = "";
+    conn.on("data", chunk => {
+      data += chunk;
+    });
+    conn.on("end", () => got.resolve(data));
+  }).listen(path);
+  wakeSession(path, "tok", "hi");
+  const lines = (await got.promise).split("\n");
+  server.close();
+  rmSync(dir, { recursive: true });
+  expect(lines.map(l => (l ? JSON.parse(l) : l))).toEqual([
+    { type: "auth", token: "tok" },
+    { type: "user", message: { role: "user", content: "hi" } },
+    "",
+  ]);
 });

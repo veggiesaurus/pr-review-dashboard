@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { ChatDock } from "src/components/chat/ChatDock";
+import { MentionCard } from "src/components/chat/MentionCard";
 import { RebuildButton } from "src/components/chat/RebuildButton";
 import { DiffTab } from "src/components/guide/DiffTab";
 import { Guide } from "src/components/guide/Guide";
@@ -92,6 +93,7 @@ export function App() {
       </main>
       {shown && <JumpTo layer={shown.id} />}
       <ChatDock connected={connected} />
+      <MentionCard />
     </div>
   );
 }
