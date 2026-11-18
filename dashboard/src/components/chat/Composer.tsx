@@ -33,7 +33,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
     saveComposerText(anchor, "");
     close();
   };
-  const submit = (kind: "note" | "chat") => {
+  const submit = (kind: "note" | "chat" | "post") => {
     if (!empty && !add.isPending && !shots.uploading) {
       add.mutate(
         { kind, text, anchor, ...(kind === "note" && intent && { intent }), ...(shots.images.length && { images: shots.images }) },
@@ -77,6 +77,15 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
           title="Kept as a draft until you send your notes (⌘↵)"
         >
           Add note
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => submit("post")}
+          disabled={empty || add.isPending || shots.uploading}
+          title="Everyone on the review sees it; Claude doesn't"
+        >
+          Post
         </Button>
         <Button
           size="sm"

@@ -5,6 +5,16 @@ import { join } from "node:path";
 
 export const cacheDir = () => join(homedir(), ".cache", "prg");
 
+// A dashboard that died leaves its file; whatever binds its port later must not get the token or answer prompts.
+const alive = pid => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export function dashboardsFor(session) {
   const dir = cacheDir();
   let names = [];
@@ -17,7 +27,7 @@ export function dashboardsFor(session) {
   for (const name of names.filter(n => n.endsWith(".json"))) {
     try {
       const state = JSON.parse(readFileSync(join(dir, name), "utf8"));
-      if (state.session === session && state.origin && state.token) {
+      if (state.session === session && state.origin && state.token && Number.isInteger(state.pid) && alive(state.pid)) {
         found.push({ origin: state.origin, token: state.token });
       }
     } catch {

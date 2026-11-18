@@ -5,6 +5,7 @@ import { upgradeWebSocket } from "hono/bun";
 import { activitySchema, archiveSchema, attentionSchema, editSchema, newMessageSchema, replySchema } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { type Env, only, small } from "../guards";
+import { mentionsIn } from "../people";
 import { parseWhere } from "../presence";
 import { hasAttachment } from "./attachments";
 
@@ -38,7 +39,7 @@ export function messagesRoutes(deps: AppDeps) {
     if (input.images?.some(id => !hasAttachment(deps.attachments, id))) {
       return c.json({ error: "an attached screenshot isn't on the server; attach it again" }, 400);
     }
-    const message = store.addUserMessage(input, c.get("author"));
+    const message = store.addUserMessage(input, c.get("author"), mentionsIn(input.text, deps.people.known()));
     if (message === "owner-only") {
       return c.json({ error: "only the owner may do this" }, 403);
     }
@@ -48,7 +49,8 @@ export function messagesRoutes(deps: AppDeps) {
   app.post("/messages/send", only("owner", "guest"), c => c.json({ sent: store.sendDrafts(c.get("author")), listening: store.listening }));
 
   app.patch("/messages/:id", only("owner", "guest"), small, zValidator("json", editSchema), c => {
-    const draft = store.editDraft(c.req.param("id"), c.req.valid("json").text, c.get("author"));
+    const { text } = c.req.valid("json");
+    const draft = store.editDraft(c.req.param("id"), text, c.get("author"), mentionsIn(text, deps.people.known()));
     return draft ? c.json(draft) : c.json({ error: "no such draft" }, 404);
   });
 
@@ -132,6 +134,8 @@ export function messagesRoutes(deps: AppDeps) {
       };
     }),
   );
+
+  app.get("/people", only("owner", "guest"), c => c.json(deps.people.known()));
 
   app.get("/presence", only("owner", "guest"), c => c.json(store.presence.list()));
 

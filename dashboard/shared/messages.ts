@@ -98,7 +98,7 @@ export type Message = {
   // On a follow-up: the owner answering an owner-only question.
   answer?: boolean;
   // A note is held as a draft until the batch is sent; chat goes at once.
-  kind: "chat" | "note";
+  kind: "chat" | "note" | "post";
   text: string;
   // A reply and a follow-up carry their thread's anchor.
   anchor: ResolvedAnchor;
@@ -136,6 +136,8 @@ export type Message = {
   intent?: NoteIntent;
   // Screenshots the user attached, by id under GET /api/attachments/<id>.
   images?: string[];
+  // Ids of the people the text mentions.
+  mentions?: number[];
   // Which send took this note, from 1, and when.
   batch?: number;
   sentAt?: string;
@@ -150,7 +152,7 @@ export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", webp: "image/w
 export const IMAGE_ID = new RegExp(`^[0-9a-f]{64}\\.(?:${Object.keys(IMAGE_TYPES).join("|")})$`);
 
 export const newMessageSchema = z.object({
-  kind: z.enum(["chat", "note"]),
+  kind: z.enum(["chat", "note", "post"]),
   // The editor stops at 4,000 characters; its markdown escapes can make the stored text longer.
   text: z.string().trim().min(1).max(8000),
   // Left out means general; ignored on a follow-up, which takes its thread's.

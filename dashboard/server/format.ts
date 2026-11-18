@@ -35,14 +35,15 @@ const shots = (message: Message, dir?: string) =>
     ? [indent(`screenshots attached, open each with Read: ${message.images.map(id => join(dir, id)).join(" ")}`)]
     : [];
 
-// A message without an author is the owner's, as every message was before guests.
+// A message without an author is the owner's, as every message was before guests. A typed name is quoted after its
+// role, so whatever someone types can't read as "from the owner".
 const from = (author?: Author) => {
   if (!author) {
     return "from the owner";
   }
   return author.login
     ? `from @${flat(author.login)} (${author.role})`
-    : `from ${flat(author.name ?? "a guest")} (${author.role}, typed name)`;
+    : `from ${author.role} "${flat(author.name ?? "unnamed")}" (typed name)`;
 };
 
 // A line of its own in every frame a guest's message makes, so the rule is there whichever part arrives.
@@ -51,15 +52,20 @@ const byGuest = (author?: Author) => author?.role === "guest";
 
 // One frame is one notification in the session, so each carries the ids Claude needs to answer.
 // finding is the review finding a follow-up answers, quoted so the session needn't remember what it wrote.
-export function chatFrame(message: Message, scope: string, reopened = false, finding?: Message, dir?: string) {
+export function chatFrame(message: Message, scope: string, reopened = false, finding?: Message, dir?: string, posts: Message[] = []) {
   const follow = message.replyTo ? `, following up on ${message.replyTo}${reopened ? " (reopened)" : ""}` : "";
   const answer = message.answer ? ", the owner answering your question" : "";
   const lines = [
     `[review page] chat ${message.id} ${from(message.author)} on ${flat(scope)}${follow}${answer}`,
-    ...(byGuest(message.author) ? [GUEST_RULE] : []),
+    ...(byGuest(message.author) || posts.some(post => byGuest(post.author)) ? [GUEST_RULE] : []),
     about(message),
     ...(finding ? [indent(`the finding: ${clip(finding.text, 1200)}`, "    "), ...patchOf(finding, "its proposed patch")] : []),
     ...shots(message, dir),
+    // One line each, deeper than the user's text, so no line of a post can pass for the sender's words.
+    ...posts.map(
+      post =>
+        `    between people, not sent to you before: ${from(post.author).replace(/^from /, "")}: ${flat(clip(typedText(post.text), 600))}`,
+    ),
     indent(typedText(message.text)),
     `(answer with POST /api/replies {"replyTo":"${message.id}","text":"…"})`,
   ];

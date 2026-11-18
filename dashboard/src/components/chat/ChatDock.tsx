@@ -57,7 +57,7 @@ function ThreadItem({ thread, active }: { thread: ClaudeThread; active: boolean 
           </span>
         </span>
         <span className="truncate text-muted-foreground text-xs">
-          {root.kind === "note" ? "Note: " : ""}
+          {root.kind === "note" ? "Note: " : root.kind === "post" ? "Post: " : ""}
           {oneLine(root.text)}
           {replies.length ? ` (${replies.length})` : ""}
         </span>

@@ -7,7 +7,7 @@ import { handleOf, PersonFace } from "src/components/links/Github";
 import { Button } from "src/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { errorText } from "src/queries/messages.mutation";
-import { useAnswerGuest, useShare, useStartShare, useStopShare } from "src/queries/share.query";
+import { useAnswerGuest, useOwnerLink, useShare, useStartShare, useStopShare } from "src/queries/share.query";
 
 function Who({ person }: { person: Person }) {
   return (
@@ -16,6 +16,57 @@ function Who({ person }: { person: Person }) {
       {person.name ?? person.login}
       {person.name && person.login && <span className="text-muted-foreground">@{person.login}</span>}
       {!person.login && <span className="text-muted-foreground">(typed name)</span>}
+    </div>
+  );
+}
+
+function CopyLink({ label, url }: { label: string; url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex gap-2">
+      <input
+        readOnly
+        value={url}
+        aria-label={label}
+        onFocus={event => event.currentTarget.select()}
+        className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs"
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          void navigator.clipboard?.writeText(url).then(() => setCopied(true));
+        }}
+      >
+        {copied ? <Check /> : <Copy />}
+        {copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  );
+}
+
+// The owner's link opens once, so a phone or a second browser gets a link of its own from here.
+function AnotherDevice() {
+  const make = useOwnerLink();
+  return (
+    <div className="grid gap-1.5 border-t pt-3">
+      <h3 className="font-medium text-xs">Open on another device</h3>
+      <p className="text-muted-foreground text-xs">Each link works once and makes that browser the owner, so keep it to yourself.</p>
+      {make.data ? (
+        <ul className="grid gap-2">
+          {make.data.links.map(link => (
+            <li key={link.url} className="grid gap-1 text-xs">
+              {link.label}
+              <CopyLink label={link.label} url={link.url} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <Button size="sm" variant="outline" className="w-fit" disabled={make.isPending} onClick={() => make.mutate()}>
+          Make a link
+        </Button>
+      )}
+      {make.isError && <p className="text-danger text-xs">{errorText(make.error)}</p>}
     </div>
   );
 }
@@ -157,6 +208,7 @@ export function ShareButton() {
             {start.isError && <p className="text-danger text-xs">{errorText(start.error)}</p>}
           </>
         )}
+        <AnotherDevice />
       </PopoverContent>
     </Popover>
   );

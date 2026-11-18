@@ -94,6 +94,8 @@ export function commentsRoutes(deps: AppDeps) {
       login,
       head: read.head,
       pendingReviews: read.pendingReviews,
+      // A guest who has left is still named on their own messages.
+      people: [...deps.people.known(), ...deps.store.messages.flatMap(m => m.author ?? [])],
     });
     return typeof built === "string" ? { status: 409 as const, error: built } : { status: 200 as const, preview: built };
   };

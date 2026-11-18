@@ -16,6 +16,7 @@ import { Review } from "./review";
 import { Share } from "./share";
 import { SignIn } from "./signin";
 import { Store } from "./store";
+import { wakeSession } from "./wake";
 
 const { values } = parseArgs({
   options: {
@@ -93,11 +94,22 @@ async function readOwner() {
 const [stack, owner] = await Promise.all([stackNumber(), readOwner()]);
 // Messages and ticks outlive a restart in one database beside the state file, shared by every review kept there.
 const attachments = resolve(dirname(statePath), "attachments");
+const messagingSocket = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
+const messagingToken = process.env.CLAUDE_CODE_MESSAGING_TOKEN;
 const store = new Store(review, {
   db: openDb(resolve(dirname(statePath), "prg.db")),
   attachments,
   stack,
   repo: resolve(values.repo),
+  wake:
+    messagingSocket && messagingToken
+      ? (n, scope) =>
+          wakeSession(
+            messagingSocket,
+            messagingToken,
+            `[review page] ${n} message(s) waiting on the review page for ${scope}, and nothing is listening (automatic, from the review dashboard server, not a request from a person). Re-arm the listener as SESSION.md says, with the state file ${statePath}.`,
+          )
+      : undefined,
 });
 const people = new People();
 people.owner = owner;
@@ -105,6 +117,7 @@ people.owner = owner;
 const secret = () => randomBytes(24).toString("hex");
 const token = secret();
 const linkCode = secret();
+const lanCode = host ? secret() : undefined;
 let lastActivity = Date.now();
 
 // The skill passes the plugin's settings as flags. An unset one can arrive as the literal "${user_config.…}".
@@ -150,6 +163,7 @@ const app = createApp({
   review,
   token,
   linkCode,
+  lanCode,
   cookieSecret: secret(),
   people,
   permissions,
@@ -204,7 +218,7 @@ if (host) {
 }
 
 const origin = `http://127.0.0.1:${server.port}`;
-const lanLink = host ? `http://${host}:${server.port}/?t=${linkCode}` : undefined;
+const lanLink = host ? `http://${host}:${server.port}/?t=${lanCode}` : undefined;
 function writeState() {
   writeFileSync(
     statePath,
@@ -235,7 +249,11 @@ setInterval(() => {
   }
 }, 30_000);
 
-// However the server ends, cloudflared ends with it.
-process.on("exit", () => share.stop());
+// However the server ends, cloudflared and the state file go with it; a SIGKILL can't be caught, so hooks check the pid too.
+process.on("exit", () => {
+  share.stop();
+  rmSync(statePath, { force: true });
+});
 process.on("SIGINT", () => shutdown("interrupted"));
 process.on("SIGTERM", () => shutdown("terminated"));
+process.on("SIGHUP", () => shutdown("hung up"));

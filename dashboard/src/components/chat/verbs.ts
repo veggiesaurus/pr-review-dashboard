@@ -199,6 +199,6 @@ export const verbFor = (id: string) =>
 
 // The message Claude owes an answer to, if any: the user spoke last, the session has it, and the thread isn't settled.
 export function awaited(root: Message, replies: Message[]): Message | null {
-  const last = replies.at(-1) ?? root;
+  const last = replies.findLast(reply => reply.kind !== "post") ?? root;
   return last.from === "user" && last.status === "delivered" && !root.resolved ? last : null;
 }

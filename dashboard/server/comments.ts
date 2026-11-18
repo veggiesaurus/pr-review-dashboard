@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { GithubThread, PostMode, PostPreview, ReviewComment, ThreadPlace } from "../shared/comments";
-import type { LineAnchor, Message } from "../shared/messages";
+import { mentionPattern } from "../shared/mentions";
+import type { LineAnchor, Message, Person } from "../shared/messages";
 import type { Layer } from "../shared/payload";
 import { resolveAnchor } from "./anchors";
 import { parseJson, type RunResult } from "./exec";
@@ -191,7 +192,21 @@ export async function githubLogin(run: Runner, cwd: string) {
 }
 
 // A note as an inline comment, only on a line of this layer's diff as the server finds it now.
-function toComment(review: Review, layer: Layer, note: Message | undefined): ReviewComment | string {
+// A typed name is no GitHub account, so its @ would ping whoever has that login; GitHub logins keep theirs.
+function unping(text: string, mentions: number[] = [], people: Person[] = []) {
+  const typed = people.filter(p => p.id < 0 && p.name && mentions.includes(p.id)).map(p => p.name as string);
+  return typed.length
+    ? text.replace(
+        mentionPattern(
+          typed.sort((a, b) => b.length - a.length),
+          "giu",
+        ),
+        "$1",
+      )
+    : text;
+}
+
+function toComment(review: Review, layer: Layer, note: Message | undefined, people: Person[]): ReviewComment | string {
   if (note?.from !== "user" || note.kind !== "note" || note.replyTo) {
     return "not one of your notes";
   }
@@ -239,7 +254,7 @@ function toComment(review: Review, layer: Layer, note: Message | undefined): Rev
     side,
     ...(end !== line.line && { startLine: line.line, startSide: side }),
     // A nit and a question say so, as reviewers write them; a fix is what a review comment asks for anyway.
-    body: note.intent && note.intent !== "fix" ? `${note.intent}: ${note.text}` : note.text,
+    body: unping(note.intent && note.intent !== "fix" ? `${note.intent}: ${note.text}` : note.text, note.mentions, people),
   };
 }
 
@@ -264,7 +279,7 @@ export function buildPreview(
   layer: Layer,
   notes: (id: string) => Message | undefined,
   request: { ids: string[]; mode: PostMode; summary: string },
-  context: { login: string; head: string | null; pendingReviews: number },
+  context: { login: string; head: string | null; pendingReviews: number; people?: Person[] },
 ): PostPreview | string {
   const repo = repoOf(layer);
   const number = layer.meta.number;
@@ -278,7 +293,7 @@ export function buildPreview(
   const comments: ReviewComment[] = [];
   const refused: PostPreview["refused"] = [];
   for (const id of new Set(request.ids)) {
-    const comment = toComment(review, layer, notes(id));
+    const comment = toComment(review, layer, notes(id), context.people ?? []);
     if (typeof comment === "string") {
       refused.push({ id, reason: comment });
     } else {

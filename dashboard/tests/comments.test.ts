@@ -156,6 +156,14 @@ describe("posting notes as a review", () => {
     expect(shown.comments.map(comment => comment.body)).toEqual(["nit: rename this", "question: rename this", "rename this"]);
   });
 
+  test("a typed-name guest's mention goes without its @, so GitHub pings no one; a GitHub login keeps it", async () => {
+    const { page, post, people } = await withNotes();
+    people.issue({ id: -5, login: "", name: "Alex Smith", avatar: "" });
+    await page("/api/messages", post({ kind: "note", text: "@Alex Smith and @gus, see", anchor: addedLine }));
+    const shown = (await (await preview(page, post, { ids: ["m5"], mode: "pending" })).json()) as PostPreview;
+    expect(shown.comments.map(comment => comment.body)).toEqual(["Alex Smith and @gus, see"]);
+  });
+
   test("posts exactly what was shown, as a pending review by default, and marks the notes", async () => {
     const { page, post, store, calls, posts } = await withNotes();
     const shown = (await (await preview(page, post, { ids: ["m1", "m2"], mode: "pending" })).json()) as PostPreview;
