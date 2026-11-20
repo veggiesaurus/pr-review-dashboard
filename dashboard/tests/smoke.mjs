@@ -339,15 +339,15 @@ try {
   );
   await page.getByRole("button", { name: "Show everything" }).click();
   const primary = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--primary"));
-  const claude = await primary();
+  const own = await primary();
   await page.getByRole("button", { name: /^Theme: / }).click({ modifiers: ["Shift"] });
   await page.getByRole("radio", { name: "Twitter" }).click();
   await check(
     "shift-click on the theme button lists the palettes, and picking one recolours the page",
-    async () => (await primary()) !== claude,
+    async () => (await primary()) !== own,
   );
-  await page.getByRole("radio", { name: "Claude" }).click();
-  await check("picking Claude again puts the page's own colours back", async () => (await primary()) === claude);
+  await page.getByRole("radio", { name: "Modern Minimal" }).click();
+  await check("picking Modern Minimal again puts the page's own colours back", async () => (await primary()) === own);
   await page.keyboard.press("Escape");
   await page.keyboard.press("u");
   await page.getByRole("textbox", { name: "Identifier to search for" }).fill("slugify");

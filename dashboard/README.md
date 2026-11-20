@@ -2,7 +2,7 @@
 
 A small Bun server that serves the review page and reads GitHub, Linear and the local clone on the page's behalf. It also passes notes and chat between the page and the Claude Code session that started it. The skill starts it when Bun is installed; `SESSION.md` is what the session follows.
 
-Built with Bun, Hono, zod, React, Vite, Tailwind 4, TanStack Query, ky, zustand and Biome, and styled with the tweakcn Claude theme.
+Built with Bun, Hono, zod, React, Vite, Tailwind 4, TanStack Query, ky, zustand and Biome, and styled with tweakcn's Modern Minimal theme, whose blue keeps clear of the red, amber and green the page gives a meaning to.
 
 ## Running it
 
