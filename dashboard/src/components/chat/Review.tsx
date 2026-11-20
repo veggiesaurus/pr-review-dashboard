@@ -107,6 +107,15 @@ export function ReviewBlock({ layer }: { layer: number }) {
   const toFix = findings.filter(t => t.root.review?.recommended && fixable(t.root, t.replies)).length;
   return (
     <Block
+      tone={
+        findings.some(t => standing(t.root) === "open" && t.root.review?.severity === "high")
+          ? "bad"
+          : findings.some(t => standing(t.root) === "open")
+            ? "warn"
+            : answer
+              ? "good"
+              : "quiet"
+      }
       title={`Claude's review${answer ? ` (${findings.length})` : ""}`}
       note={
         <>

@@ -171,6 +171,22 @@ export function recheckFrames(findings: Message[], scope: string) {
   return inParts(intro, findings.map(findingItem), "re-check");
 }
 
+// The steps the user asked to have tried by hand, each answered with how it went and what shows it.
+export function tryFrames(asks: Message[], scope: string) {
+  const intro =
+    `[review page] try ${asks.length} ${asks.length === 1 ? "step" : "steps"} by hand on ${flat(scope)}. ` +
+    "Do each as a person would: run it, start the app or call the endpoint, and look at what happens. Change no code, whatever you find. " +
+    'For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then ' +
+    '{"replyTo":"<id>","tried":"passed"|"failed"|"blocked","text":"what you did and what happened, with the output that shows it","images":["<id>"]}. ' +
+    '"blocked" is a step you can\'t do from here; say what stops you. ' +
+    "A screenshot goes up first, as the body of POST /api/attachments, which answers its id; leave images out when there is none.";
+  return inParts(
+    intro,
+    asks.map(ask => `${ask.id} ${about(ask)}`),
+    "steps to try",
+  );
+}
+
 // The findings the user asked to have fixed in one go, answered one by one as a batch of notes is.
 export function fixFrames(findings: Message[], n: number, scope: string) {
   const intro =

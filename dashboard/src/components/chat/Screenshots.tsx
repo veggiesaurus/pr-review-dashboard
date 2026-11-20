@@ -3,6 +3,7 @@ import { type ClipboardEvent, type DragEvent, useState } from "react";
 
 import { api } from "src/queries/api";
 import { errorText } from "src/queries/messages.mutation";
+import { cn } from "src/utils/cn";
 
 const MAX = 6;
 
@@ -56,8 +57,9 @@ export function useScreenshots() {
   };
 }
 
-// Thumbnails that open the full image; with onRemove, each has a button to take it off again.
-export function Screenshots({ ids, onRemove }: { ids?: string[]; onRemove?: (id: string) => void }) {
+// Thumbnails that open the full image; with onRemove, each has a button to take it off again. large shows each big
+// enough to read where it is, for a screenshot that is the point of the message.
+export function Screenshots({ ids, onRemove, large }: { ids?: string[]; onRemove?: (id: string) => void; large?: boolean }) {
   if (!ids?.length) {
     return null;
   }
@@ -66,7 +68,11 @@ export function Screenshots({ ids, onRemove }: { ids?: string[]; onRemove?: (id:
       {ids.map(id => (
         <span key={id} className="relative">
           <a href={`/api/attachments/${id}`} target="_blank" rel="noreferrer" title="Open the full screenshot">
-            <img src={`/api/attachments/${id}`} alt="Attached screenshot" className="h-16 max-w-40 rounded-md border object-cover" />
+            <img
+              src={`/api/attachments/${id}`}
+              alt="Attached screenshot"
+              className={cn("rounded-md border", large ? "max-h-80 max-w-full object-contain" : "h-16 max-w-40 object-cover")}
+            />
           </a>
           {onRemove && (
             <button

@@ -1,14 +1,22 @@
+import { FlaskConical } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Anchor } from "shared/messages";
 import type { Annotation, Tell } from "shared/payload";
 import { prKey, TICK_PREFIX } from "shared/ticks";
-
 import { AskClaude } from "src/components/chat/AskClaude";
 import { ReviewBlock, ReviewButton } from "src/components/chat/Review";
 import { Prose } from "src/components/links/Prose";
-import { BLOCK, BLOCK_LIST, BLOCK_TITLE, Block, Summary } from "src/components/ui/disclosure";
+import { TriedAnswer } from "src/components/ready/Tried";
+import { stepEvidence } from "src/components/ready/tries";
+import { Badge } from "src/components/ui/badge";
+import { Button } from "src/components/ui/button";
+import { BLOCK, BLOCK_LIST, BLOCK_TITLE, BLOCKS, Block, Summary, ToneDot } from "src/components/ui/disclosure";
+import { useMe } from "src/queries/me.query";
+import { errorText, useRequestTries } from "src/queries/messages.mutation";
+import { useMessages, useSession } from "src/queries/messages.query";
 import { useLayer } from "src/queries/review.query";
-import { useSetTicks, useTicks } from "src/queries/ticks.query";
+import { useOthersTicks, useSetTicks, useTicks } from "src/queries/ticks.query";
+import { namesOf, reviewedBy, sectionTickKeys } from "src/store/ticks.store";
 import { useViewStore } from "src/store/view.store";
 import { formatHash } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
@@ -56,6 +64,12 @@ export function ReadyCheck({ layer }: { layer: number }) {
   const goTo = useViewStore(state => state.goTo);
   const ticked = useTicks();
   const setTicks = useSetTicks();
+  const others = useOthersTicks();
+  const role = useMe()?.role;
+  const { data: messages = [] } = useMessages();
+  const askTries = useRequestTries();
+  // A request waits on the server while no session listens, and the page says so rather than that Claude is at work.
+  const listening = Boolean(useSession().data?.listening);
   if (!shown) {
     return null;
   }
@@ -91,6 +105,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
   const unsupported = desc?.unsupported ?? [];
   const missing = desc?.missing ?? [];
   const issueAsks = desc?.issue ?? [];
+  const annotationTone = annotations.some(note => note.level === "failure") ? "bad" : "warn";
   const risky = sections.flatMap((section, index) => (section.kind === "guide" && section.risk ? [{ section, index }] : []));
   // A real link: it wraps like the text around it, where a button wraps as a block, and it opens in a new tab.
   const sectionLink = (n: number) => (
@@ -110,7 +125,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
   const blocks: ReactNode[] = [];
   if (tells.length) {
     blocks.push(
-      <Block key="tells" title="Flagged lines">
+      <Block key="tells" title="Flagged lines" tone="warn">
         {byFile<Tell>(tells).map(([file, list]) => (
           <li key={file}>
             <code className="mr-2 font-mono text-xs">{path(file)}</code>
@@ -131,8 +146,12 @@ export function ReadyCheck({ layer }: { layer: number }) {
   }
   if (annotations.length) {
     blocks.push(
-      <details key="annotations" open className={BLOCK}>
-        <Summary className={BLOCK_TITLE}>CI annotations</Summary>
+      // The chip's own rule, so the row and its chip are the same colour.
+      <details key="annotations" open data-tone={annotationTone} className={BLOCK}>
+        <Summary className={BLOCK_TITLE}>
+          <ToneDot tone={annotationTone} />
+          CI annotations
+        </Summary>
         {placed.length > 0 && (
           <ul className={BLOCK_LIST}>
             {byFile<Annotation & { index: number }>(placed).map(([file, list]) => (
@@ -176,7 +195,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
   // Only where the description or the linked issue and the diff disagree; what the diff does carry out comes last, folded.
   if (unsupported.length || missing.length) {
     blocks.push(
-      <Block key="description" title="Description vs diff">
+      <Block key="description" title="Description vs diff" tone="warn">
         {unsupported.map((row, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: findings have no id and keep their order
           <li key={`u${index}`}>
@@ -198,7 +217,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
   }
   if (issueAsks.length) {
     blocks.push(
-      <Block key="issue" title="Linked issue vs diff">
+      <Block key="issue" title="Linked issue vs diff" tone="warn">
         {issueAsks.map((row, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: findings have no id and keep their order
           <li key={`i${index}`}>
@@ -211,36 +230,100 @@ export function ReadyCheck({ layer }: { layer: number }) {
     );
   }
   if (risky.length) {
+    const guides = sections.flatMap((section, index) => (section.kind === "guide" ? [index] : []));
+    const ownerRead = guides.filter(index => reviewedBy(others, sectionTickKeys(shown, index)).some(by => by.role === "owner")).length;
     blocks.push(
-      <Block key="risky" title="Needs a careful read">
-        {risky.map(({ section, index }) => (
-          <li key={index}>
-            {sectionLink(index + 1)}: {section.kind === "guide" && section.risk}
-            <AskClaude anchor={{ kind: "section", layer, index }} className="ml-1 align-middle" />
-          </li>
-        ))}
+      <Block
+        key="risky"
+        tone="warn"
+        // A guest is here for a second look, so the block says where one counts and what the owner has already read.
+        title={role === "guest" ? "Where a second look matters" : "Needs a careful read"}
+        note={
+          role === "guest" && (
+            <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+              The owner has reviewed {ownerRead} of {guides.length} sections. What they reviewed starts folded, apart from the sections
+              listed here.
+            </p>
+          )
+        }
+      >
+        {risky.map(({ section, index }) => {
+          const by = reviewedBy(others, sectionTickKeys(shown, index));
+          return (
+            <li key={index}>
+              {sectionLink(index + 1)}: {section.kind === "guide" && section.risk}
+              {by.length > 0 && (
+                <Muted>
+                  {" "}
+                  {namesOf(by)} {by.length === 1 ? "has" : "have"} reviewed it.
+                </Muted>
+              )}
+              <AskClaude anchor={{ kind: "section", layer, index }} className="ml-1 align-middle" />
+            </li>
+          );
+        })}
       </Block>,
     );
   }
   if (shown.try.length) {
+    const evidence = shown.try.map((_, index) => stepEvidence(messages, layer, index));
+    // Steps with nothing asked of them at this head. One being tried says so itself, so the button is only for these.
+    const untried = evidence.filter(step => !step.waiting && step.answer?.tried?.head !== shown.meta.headSha).length;
     blocks.push(
-      <Block key="try" title={`Try by hand (${shown.try.filter(step => ticked(tryKey(step))).length} of ${shown.try.length})`}>
-        {shown.try.map((step, index) => (
-          <li key={step} className="-ml-5 flex list-none items-start gap-2">
-            <input
-              type="checkbox"
-              data-tick="try"
-              checked={ticked(tryKey(step))}
-              onChange={event => setTicks([tryKey(step)], event.target.checked)}
-              aria-label={`Tried step ${index + 1}`}
-              className="motion-tick mt-1 accent-primary"
-            />
-            <span className={cn(ticked(tryKey(step)) && "text-muted-foreground")}>
-              <Prose text={step} layer={layer} />
-              <AskClaude anchor={{ kind: "try", layer, index }} className="ml-1 align-middle" />
-            </span>
-          </li>
-        ))}
+      <Block
+        key="try"
+        tone={
+          evidence.some(step => step.answer?.tried?.outcome === "failed" && step.answer.tried.head === shown.meta.headSha)
+            ? "bad"
+            : shown.try.every(step => ticked(tryKey(step)))
+              ? "good"
+              : "quiet"
+        }
+        title={`Try by hand (${shown.try.filter(step => ticked(tryKey(step))).length} of ${shown.try.length})`}
+        note={
+          role === "owner" &&
+          untried > 0 && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" disabled={askTries.isPending} onClick={() => askTries.mutate(layer)}>
+                <FlaskConical />
+                {evidence.some(step => step.answer) ? "Have Claude try them again" : "Have Claude try them"}
+              </Button>
+              {askTries.isError && <span className="text-danger text-sm">{errorText(askTries.error, "That didn't send.")}</span>}
+            </p>
+          )
+        }
+      >
+        {shown.try.map((step, index) => {
+          const { answer, waiting } = evidence[index] ?? {};
+          return (
+            <li key={step} className="-ml-5 flex list-none items-start gap-2">
+              <input
+                type="checkbox"
+                data-tick="try"
+                checked={ticked(tryKey(step))}
+                onChange={event => setTicks([tryKey(step)], event.target.checked)}
+                aria-label={`Tried step ${index + 1}`}
+                className="motion-tick mt-1 accent-primary"
+              />
+              <div className="min-w-0">
+                <span className={cn(ticked(tryKey(step)) && "text-muted-foreground")}>
+                  <Prose text={step} layer={layer} />
+                  <AskClaude anchor={{ kind: "try", layer, index }} className="ml-1 align-middle" />
+                </span>
+                {answer?.tried ? (
+                  // A step that didn't pass is what the reviewer came for, so it opens by itself.
+                  <TriedAnswer answer={answer} layer={layer} head={shown.meta.headSha} open={answer.tried.outcome !== "passed"} />
+                ) : (
+                  waiting && (
+                    <p className="mt-1">
+                      <Badge>{listening ? "Claude is trying this…" : "Waiting for a session to try this"}</Badge>
+                    </p>
+                  )
+                )}
+              </div>
+            </li>
+          );
+        })}
       </Block>,
     );
   }
@@ -248,6 +331,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
     blocks.push(
       <Block
         key="split"
+        tone="quiet"
         title={`Could be ${split.prs.length} PRs`}
         note={split.note && <p className="mt-1.5 text-[13.5px] text-muted-foreground">{split.note}</p>}
       >
@@ -268,7 +352,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
   }
   if (carried.length) {
     blocks.push(
-      <Block key="carried" title={`What the diff carries out (${carried.length})`} open={false}>
+      <Block key="carried" title={`What the diff carries out (${carried.length})`} open={false} tone="good">
         {carried.map((row, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: findings have no id and keep their order
           <li key={index}>
@@ -288,8 +372,11 @@ export function ReadyCheck({ layer }: { layer: number }) {
         <h2 className="font-serif text-xl">Before you mark it ready</h2>
         <ReviewButton layer={layer} />
       </div>
-      <ReviewBlock layer={layer} />
-      {blocks.length ? blocks : <p className="text-muted-foreground text-sm">Nothing more to settle than the chips above say.</p>}
+      <div className={BLOCKS}>
+        <ReviewBlock layer={layer} />
+        {blocks}
+      </div>
+      {!blocks.length && <p className="text-muted-foreground text-sm">Nothing more to settle than the chips above say.</p>}
     </section>
   );
 }

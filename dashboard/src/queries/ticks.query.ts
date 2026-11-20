@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { PersonTicks } from "shared/messages";
 import { TICK_PREFIX } from "shared/ticks";
 import { api } from "src/queries/api";
 import { create } from "zustand";
@@ -34,6 +35,13 @@ const usePending = create<Record<string, boolean>>(() => ({}));
 // Every tick the server holds for this review's pull requests, those of code that has since changed among them.
 export const useSavedTicks = (): ReadonlySet<string> =>
   useQuery({ queryKey: KEY, queryFn: fetchTicks, select: (keys: string[]) => new Set(keys) }).data ?? NONE;
+
+export type OthersTicks = Omit<PersonTicks, "keys"> & { keys: ReadonlySet<string> };
+const asSets = (list: PersonTicks[]): OthersTicks[] => list.map(other => ({ ...other, keys: new Set(other.keys) }));
+
+// What everyone else on the review has ticked; undefined until the server has said.
+export const useOthersTicks = () =>
+  useQuery({ queryKey: [...KEY, "people"], queryFn: () => api.get("ticks/people").json<PersonTicks[]>(), select: asSets }).data;
 
 // Whether a key is ticked. The server keeps the ticks, so they follow the review to another browser or device.
 export function useTicks() {

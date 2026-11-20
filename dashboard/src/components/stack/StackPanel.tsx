@@ -6,7 +6,7 @@ import { plain } from "src/components/guide/visible";
 import { Prose } from "src/components/links/Prose";
 import { useChecks, useConflicts } from "src/components/ready/checks";
 import { ChipRow, layerChips } from "src/components/ready/ReadyChips";
-import { Block, Summary } from "src/components/ui/disclosure";
+import { Block, CARD, Summary } from "src/components/ui/disclosure";
 import { useReview } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
 import { cn } from "src/utils/cn";
@@ -107,7 +107,7 @@ export function StackPanel() {
             </li>
           </ol>
           {issues.length > 0 && (
-            <Block title="Across the stack">
+            <Block title="Across the stack" className={CARD}>
               {issues.map((issue, index) => {
                 // The problem and the fix name their PRs as they go; only a layer they leave out is listed.
                 const said = `${issue.problem} ${issue.fix ?? ""}`;

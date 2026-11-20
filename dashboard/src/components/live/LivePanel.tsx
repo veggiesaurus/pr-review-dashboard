@@ -329,7 +329,7 @@ export function LivePanel({ layer }: { layer: number }) {
 
       {!github && <p className="text-muted-foreground text-sm">This review has no pull request behind it.</p>}
       {github && isPending && <p className="motion-loading text-muted-foreground text-sm">Asking GitHub…</p>}
-      {live?.error && <p className="text-danger text-sm">{live.error}</p>}
+      {live?.error && <p className="text-danger text-sm">Couldn't read this from GitHub: {live.error}</p>}
 
       {pr && (
         <>

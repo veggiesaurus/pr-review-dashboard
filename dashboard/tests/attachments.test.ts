@@ -7,11 +7,10 @@ import { addedLine, COOKIE, HOST, PORT, setup } from "./helpers";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
-test("a screenshot is kept by its content, reaches the session as a path it can read, and only the page can add one", async () => {
+test("a screenshot is kept by its content, reaches the session as a path it can read, and only an image can be added", async () => {
   const { page, session, post, attachments, app } = setup();
   const upload = (who: typeof page, body: Uint8Array | string) => who("/api/attachments", { method: "POST", body });
 
-  expect((await upload(session, PNG)).status).toBe(403);
   expect((await upload(page, "<svg onload=alert(1)>")).status).toBe(415);
   const { id } = (await (await upload(page, PNG)).json()) as { id: string };
   expect(id).toMatch(/^[0-9a-f]{64}\.png$/);

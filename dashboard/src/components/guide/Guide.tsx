@@ -1,3 +1,4 @@
+import { FlaskConical } from "lucide-react";
 import { useMemo } from "react";
 
 import { AskClaude } from "src/components/chat/AskClaude";
@@ -6,8 +7,12 @@ import { FileItem } from "src/components/guide/FileItem";
 import { ReviewedTick } from "src/components/guide/ReviewedTick";
 import { pad2, type ShownSection, shownSections } from "src/components/guide/visible";
 import { Prose } from "src/components/links/Prose";
+import { TriedAnswer } from "src/components/ready/Tried";
+import { stepEvidence, stepsFor } from "src/components/ready/tries";
+import { useMessages } from "src/queries/messages.query";
 import { useLayer } from "src/queries/review.query";
-import { tickKey } from "src/store/ticks.store";
+import { useOthersTicks } from "src/queries/ticks.query";
+import { namesOf, reviewedBy, sectionTickKeys, tickKey } from "src/store/ticks.store";
 import { useViewStore } from "src/store/view.store";
 import { sectionElementId } from "src/utils/anchors";
 import { indexLayer } from "src/utils/payload";
@@ -33,10 +38,19 @@ export const SIDE =
 
 function SectionView({ layer, shown, count }: { layer: number; shown: ShownSection; count: number }) {
   const review = useLayer(layer);
+  const others = useOthersTicks();
+  const { data: messages = [] } = useMessages();
   const { index, section, parts } = shown;
   if (!review) {
     return null;
   }
+  // The things to try that exercise this section's code, so what Claude found when it tried them sits beside that code.
+  const steps = stepsFor(review.try ?? [], section.files).map(at => ({
+    at,
+    step: review.try[at] ?? "",
+    ...stepEvidence(messages, layer, at),
+  }));
+  const reviewers = reviewedBy(others, sectionTickKeys(review, index));
   const files = indexLayer(review).files;
   const text = section.kind === "guide" ? section : { ...CLOSING[section.kind], risk: "" };
   return (
@@ -50,6 +64,11 @@ function SectionView({ layer, shown, count }: { layer: number; shown: ShownSecti
           )}
           <ReviewedTick layer={layer} section={index} />
           <AskClaude anchor={{ kind: "section", layer, index }} label="Ask Claude" />
+          {reviewers.length > 0 && (
+            <span className="basis-full">
+              {namesOf(reviewers)} {reviewers.length === 1 ? "has" : "have"} reviewed this
+            </span>
+          )}
         </div>
         <h2 className="text-balance font-serif text-2xl leading-tight tracking-tight">{section.title}</h2>
         {text.risk && (
@@ -58,6 +77,19 @@ function SectionView({ layer, shown, count }: { layer: number; shown: ShownSecti
             {text.risk}
           </p>
         )}
+        {steps.map(({ step, at, answer }) => (
+          <div key={at} data-step={at} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-md border px-3 py-2 text-[13.5px]">
+            <FlaskConical aria-hidden className="mt-0.5 size-4 text-muted-foreground" />
+            <div className="min-w-0">
+              <p>
+                <span className="font-medium">Try by hand: </span>
+                <Prose text={step} layer={layer} section={index} />
+              </p>
+              {/* Folded here whatever it found: the column is narrow, and the Overview is where it opens by itself. */}
+              {answer && <TriedAnswer answer={answer} layer={layer} head={review.meta.headSha} />}
+            </div>
+          </div>
+        ))}
         <p className="text-[15px] leading-relaxed">
           <Prose text={text.why} layer={layer} section={index} />
         </p>

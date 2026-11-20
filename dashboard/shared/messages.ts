@@ -3,6 +3,7 @@ import { z } from "zod";
 import { NOTE_INTENTS, type NoteIntent } from "./intents";
 import { DISMISS_REASONS, type DismissReason, REVIEW_EFFORTS, type ReviewEffort, SEVERITIES, type Severity } from "./reviews";
 import { TABS, type Tab } from "./tabs";
+import { TRIED, type Tried } from "./tries";
 
 const layer = z.number().int().min(0).max(999_999_999);
 const fileId = z.string().regex(/^f\d{1,6}$/);
@@ -134,8 +135,10 @@ export type Message = {
   };
   // On a note, when the user said what it asks for.
   intent?: NoteIntent;
-  // Screenshots the user attached, by id under GET /api/attachments/<id>.
+  // Screenshots the user or Claude attached, by id under GET /api/attachments/<id>.
   images?: string[];
+  // On Claude's answer to a step it tried by hand: how it went, and the head it was tried at.
+  tried?: { outcome: Tried; head: string };
   // Ids of the people the text mentions.
   mentions?: number[];
   // Which send took this note, from 1, and when.
@@ -169,6 +172,7 @@ export const editSchema = z.object({ text: z.string().trim().min(1).max(8000) })
 // reason says why a review finding is being put away.
 export const archiveSchema = z.object({ archived: z.boolean(), reason: z.enum(DISMISS_REASONS).optional() });
 export const reviewRequestSchema = z.object({ layer, effort: z.enum(REVIEW_EFFORTS) });
+export const triesRequestSchema = z.object({ layer });
 // What the code-review skill reports for each finding, plus whether Claude says to act on it.
 export const findingsSchema = z.object({
   findings: z
@@ -199,8 +203,13 @@ export const replySchema = z
     state: z.enum(NOTE_STATES).optional(),
     resolved: z.boolean().optional(),
     ask: z.array(questionSchema).min(1).max(4).optional(),
+    // On the answer to a step tried by hand: how it went, and screenshots that show it.
+    tried: z.enum(TRIED).optional(),
+    images: z.array(z.string().regex(IMAGE_ID)).max(6).optional(),
   })
   .refine(r => r.ask === undefined || (r.text !== undefined && r.replyTo !== undefined), "questions need text and replyTo")
+  .refine(r => r.tried === undefined || (r.text !== undefined && r.replyTo !== undefined), "a tried step needs text and replyTo")
+  .refine(r => r.images === undefined || r.text !== undefined, "images need text")
   .refine(r => r.text !== undefined || r.state !== undefined || r.resolved !== undefined, "send text, a state or both")
   .refine(r => (r.state === undefined && r.resolved === undefined) || r.replyTo !== undefined, "a state needs replyTo")
   .refine(r => r.state !== "declined" || r.text !== undefined, "say why in text when declining");
@@ -219,6 +228,8 @@ export type SessionInfo = { listening: boolean; activity: Activity | null; atten
 export type Person = { id: number; login: string; name: string | null; avatar: string };
 export type Role = "owner" | "guest";
 export type Author = Person & { role: Role };
+// Someone else's reviewed ticks. person is null for an owner gh couldn't name, or a guest who has since left.
+export type PersonTicks = { role: Role; person: Person | null; keys: string[] };
 // sharing: whether the share link works right now.
 export type Me = { role: Role; person: Person | null; sharing: boolean };
 // Where a guest's sign-in stands. code is what the owner sees beside them, to check it is really them.

@@ -184,6 +184,23 @@ try {
     await check(`ready check has "${want}"`, async () => ready.includes(want));
   }
   await check("the description and issue sections list only where they and the diff disagree", async () => !ready.includes("In the diff:"));
+  // Each row of the ready check is marked by how much it needs the reader, as its chip in the header is coloured.
+  const toneOf = title =>
+    page
+      .getByRole("region", { name: "Before you mark it ready" })
+      .locator("details[data-tone]", { hasText: title })
+      .first()
+      .getAttribute("data-tone");
+  await check(
+    "the ready check marks a failing annotation as wrong, flagged lines to look at, and what the diff carries out as settled",
+    async () => [await toneOf("CI annotations"), await toneOf("Flagged lines"), await toneOf("What the diff carries out")],
+    tones => tones.join() === "bad,warn,good",
+  );
+  await check(
+    "and a step nobody has tried yet as neither",
+    () => toneOf("Try by hand"),
+    tone => tone === "quiet",
+  );
   await check(
     'the header chips have "new since"',
     () => page.locator("header").first().textContent(),
@@ -195,7 +212,8 @@ try {
   const tried = () => tryBlock.locator("summary").textContent();
   await tryBlock.getByRole("checkbox").check();
   await page.reload();
-  await check("a ticked step to try stays ticked after a reload", tried, text => text === "Try by hand (1 of 1)");
+  // The title starts with the words a screen reader gets for its mark.
+  await check("a ticked step to try stays ticked after a reload", tried, text => text.endsWith("Try by hand (1 of 1)"));
   await tryBlock.locator("button[data-ask]").click();
   await page.getByRole("textbox", { name: /^Note or question about a thing to try by hand/ }).fill("The old link 404s.");
   await page.getByRole("group", { name: "What the note asks for" }).getByRole("button", { name: "Nit" }).click();
@@ -238,7 +256,7 @@ try {
   // A reload puts the drawer back on the review as a whole, where the checks below expect it.
   await page.reload();
   await tryBlock.getByRole("checkbox").uncheck();
-  await check("and the step unticks", tried, text => text === "Try by hand (0 of 1)");
+  await check("and the step unticks", tried, text => text.endsWith("Try by hand (0 of 1)"));
 
   // The template is one page; here the sections are the Guide tab.
   await tab("Guide");
@@ -955,6 +973,106 @@ try {
   await check("and the page is live again once the socket is back", () => status("Not listening"));
   await page.close();
   console.log("phone page ok");
+
+  {
+    // Claude tries a step when the owner asks, and what it found shows under the step.
+    await open(work.link);
+    const tryList = page.getByRole("region", { name: "Before you mark it ready" }).locator("details", { hasText: "Try by hand" }).first();
+    await tryList.getByRole("button", { name: "Have Claude try them" }).click();
+    await check("with no session listening, a step asked for says it waits for one", () =>
+      tryList.getByText("Waiting for a session to try this").count(),
+    );
+    await check(
+      "and the button goes, since the step says it itself",
+      () => tryList.getByRole("button", { name: /Have Claude try/ }).count(),
+      n => n === 0,
+    );
+    const asked = (await said()).findLast(m => m.text === "Try this and show what happened.");
+    const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+    const shot = await (
+      await fetch(`${work.origin}/api/attachments`, { method: "POST", headers: { Authorization: auth.Authorization }, body: pixel })
+    ).json();
+    await asSession("replies", { replyTo: asked.id, tried: "failed", text: "The old link gives a 404.", images: [shot.id] });
+    const found = tryList.locator("details[data-tried='failed']");
+    await check(
+      "a step that failed marks Try by hand as wrong",
+      () => tryList.getAttribute("data-tone"),
+      tone => tone === "bad",
+    );
+    await check("what Claude found shows under the step", () => found.getByText("Claude tried it: failed").count());
+    await check(
+      "a step that failed opens by itself, with what Claude did and its screenshot",
+      async () => [
+        await found.getByText("The old link gives a 404.").isVisible(),
+        await found.locator("img[alt='Attached screenshot']").count(),
+      ],
+      ([text, images]) => text && images === 1,
+    );
+    await check(
+      "and a step tried at this head isn't offered again",
+      () => tryList.getByRole("button", { name: /Have Claude try/ }).count(),
+      n => n === 0,
+    );
+
+    // The owner ticks the routine section. A guest can't reach a tunnel host from here, so the owner's page is told it
+    // is a guest whose own ticks are none and who sees the owner's.
+    await tab("Guide");
+    await page.waitForSelector(SECTION);
+    const inSection = page.locator("section[data-section='0'] [data-step]");
+    await check(
+      "the step shows in the section its link points into, with what Claude found folded under it",
+      async () => [
+        await inSection.getByText("Try by hand:").count(),
+        await inSection.locator("details[data-tried='failed']:not([open])").getByText("Claude tried it: failed").count(),
+      ],
+      ([step, tried]) => step === 1 && tried === 1,
+    );
+    await check(
+      "and in no other section",
+      () => page.locator("section[data-section='1'] [data-step]").count(),
+      n => n === 0,
+    );
+    await page.locator("section[data-section='1'] input[data-tick='section']").check();
+    const ownTicks = await (await fetch(`${work.origin}/api/ticks`, { headers: auth })).json();
+    await page.close();
+    const guestView = await ownerPage(work.link);
+    page = guestView.tab;
+    const owner = { id: 1, login: "owner", name: "Owner", avatar: "" };
+    await page.route("**/api/me", route =>
+      route.fulfill({ json: { role: "guest", person: { id: 2, login: "gus", name: null, avatar: "" }, sharing: true } }),
+    );
+    await page.route("**/api/ticks/people", route => route.fulfill({ json: [{ role: "owner", person: owner, keys: ownTicks }] }));
+    await page.route("**/api/ticks", route => (route.request().method() === "GET" ? route.fulfill({ json: [] }) : route.continue()));
+    await page.goto(guestView.url);
+    await page.waitForSelector("[role=tablist]");
+    const look = page
+      .getByRole("region", { name: "Before you mark it ready" })
+      .locator("details", { hasText: "Where a second look matters" });
+    await check("a guest is told where a second look matters", () => look.getByText("Old /posts links stop resolving.").count());
+    await check("and how much the owner has reviewed", () =>
+      look.getByText("The owner has reviewed 1 of 2 sections.", { exact: false }).count(),
+    );
+    await tab("Guide");
+    await page.waitForSelector(SECTION);
+    const routine = page.locator("section[data-section='1']");
+    await check("a routine section says who reviewed it", () => routine.getByText("@owner (owner) has reviewed this").count());
+    await check(
+      "and its cards start folded for a guest, saying why",
+      async () => [
+        await routine.locator(`${CARD} > details[open]`).count(),
+        await routine.getByText("The owner has reviewed this.", { exact: true }).count(),
+      ],
+      ([open, why]) => open === 0 && why >= 1,
+    );
+    await check(
+      "while the section that needs a careful read stays open",
+      () => page.locator(`section[data-section='0'] ${CARD} > details[open]`).count(),
+      n => n >= 1,
+    );
+    await page.unroute("**/api/me");
+    await page.close();
+  }
+  console.log("evidence and second look ok");
 
   await open(stack.link);
   await check("the stack opens on its top layer", h1, title => title === "layer 12");

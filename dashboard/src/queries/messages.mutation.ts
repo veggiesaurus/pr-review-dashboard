@@ -33,6 +33,9 @@ export const useMarkSeen = () => useMessagesMutation((id: string) => api.post(`m
 export const useRequestReview = () =>
   useMessagesMutation((request: { layer: number; effort: ReviewEffort }) => api.post("reviews", { json: request }).json<Message>());
 
+export const useRequestTries = () =>
+  useMessagesMutation((layer: number) => api.post("tries", { json: { layer } }).json<{ sent: number }>());
+
 export const useArchiveReview = () => useMessagesMutation((n: number) => api.post(`reviews/${n}/archive`).json());
 
 export const useFixRecommended = () => useMessagesMutation((n: number) => api.post(`reviews/${n}/fix`).json<{ sent: number }>());

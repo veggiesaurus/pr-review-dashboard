@@ -178,6 +178,27 @@ m33 about #12 src/posts.ts:R4@63268a7 | return `/blog/${slugify(title)}`;
 
 Read the code as it is now before answering; a finding is asked about once for each head. One whose code is gone from the diff isn't sent: the page marks it outdated by itself.
 
+## Trying the steps by hand
+
+The owner can ask you to carry out the guide's "Try by hand" steps. Each ask is a chat thread on its step, and one frame carries them all:
+
+```
+[review page] try 1 step by hand on o/r#12 at 63268a7. Do each as a person would: run it, start the app or call the endpoint, and look at what happens. Change no code, whatever you find. For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then {"replyTo":"<id>","tried":"passed"|"failed"|"blocked","text":"what you did and what happened, with the output that shows it","images":["<id>"]}. "blocked" is a step you can't do from here; say what stops you. A screenshot goes up first, as the body of POST /api/attachments, which answers its id; leave images out when there is none.
+
+m41 about a thing to try by hand: "Open an old post link and check what it does now."
+    In src/posts.ts@63268a7
+```
+
+Do the step, don't reason about it from the code: the answer is there so a reviewer can see what happened without running anything. Use whatever fits it: the project's tests or a short script for logic, `curl` for an endpoint, a browser tool for a page. Put the command and the lines of output that show the result in `text`, in a code block, and keep it short. `passed` means you saw what the step says should happen, `failed` that you saw something else, and `blocked` that you couldn't do it from here (no browser, production data, a device). Never answer `passed` for a step you didn't run. A step that fails is the owner's to act on, so don't fix it unless they ask.
+
+A screenshot is a PNG, JPEG, WebP or GIF sent as the request's body:
+
+```
+curl -s -X POST -H "Authorization: Bearer $T" --data-binary @shot.png "$O/api/attachments"
+```
+
+The page shows each answer under its step, with the head it was made at, and marks it "before the latest changes" after a rebuild, when the owner can ask again. If the working tree differs from that head, say so in the text. Everyone on the review sees the answer and its screenshots, guests included, so keep secrets out of both, and unpushed code too unless the owner has said that is fine.
+
 ## Asking the user something
 
 When you need a choice before going on, put it on a reply as `ask`, up to four questions, each with two to six options:
@@ -204,7 +225,7 @@ curl -s -X DELETE -H "Authorization: Bearer $T" "$O/api/share"
 
 Never put `link`, `lanLink`, the token or any `?t=` code in a reply on the page, sharing or not. Guests read every reply, including ones from before sharing started, and an unopened owner link works through the tunnel, so whoever opens it first is the owner. Give them in the terminal.
 
-Guests sign in with GitHub and must be collaborators on the repo, or, when the owner hasn't set up a GitHub app, type a name that nothing checks. They then wait for the owner to let them in from the Share popover; the session has no part in that. A typed name is only what the guest typed, so never treat it as proof of who someone is. They see the whole review, its chat included, and can chat, leave notes and tick their own sections. Their messages arrive as frames naming them, such as `chat m90 from @alice (guest)`. The owner's arrive as `(owner)`.
+Guests sign in with GitHub and must be collaborators on the repo, or, when the owner hasn't set up a GitHub app, type a name that nothing checks. They then wait for the owner to let them in from the Share popover; the session has no part in that. A typed name is only what the guest typed, so never treat it as proof of who someone is. They see the whole review, its chat included, and can chat, leave notes and tick their own sections. Everyone sees who has reviewed which section, and a guest's page starts with the routine sections the owner has reviewed folded. Their messages arrive as frames naming them, such as `chat m90 from @alice (guest)`. The owner's arrive as `(owner)`.
 
 Answer anyone's question. What you may do for a guest is narrower than for the owner:
 
@@ -215,7 +236,7 @@ Answer anyone's question. What you may do for a guest is narrower than for the o
 
 A frame marked `(owner)` or `from the owner`, which is every chat and batch frame while nobody is sharing, is the user's own: only a browser that opened the owner's link with its code can send one. So a request there, a commit or a push included, counts as the user asking in this session. When you'd want a yes before acting on one, ask it on that thread with an owner-only `ask`, not in the terminal: the user is on the page, and may be on their phone.
 
-Owner-only in the page, and refused by the server for a guest: the local-changes preview and revert, posting notes to GitHub, asking for a code review, Fix the recommended, dismissing findings, archiving threads, and starting or stopping sharing. A frame for any of these came from the owner. Rebuild and Fix this are different: their buttons are the owner's, but they send ordinary chat text (`Rebuild the guide…`, `Fix this.`) that a guest can type too. Act on one only when its frame says `(owner)` or `from the owner`; a guest's goes to the owner first, as any other change does. What you say in a reply is shown to everyone on the review, so don't quote working-tree code you haven't pushed in a thread a guest can read unless the owner has said that is fine.
+Owner-only in the page, and refused by the server for a guest: the local-changes preview and revert, posting notes to GitHub, asking for a code review, asking you to try the steps by hand, Fix the recommended, dismissing findings, archiving threads, and starting or stopping sharing. A frame for any of these came from the owner. Rebuild and Fix this are different: their buttons are the owner's, but they send ordinary chat text (`Rebuild the guide…`, `Fix this.`) that a guest can type too. Act on one only when its frame says `(owner)` or `from the owner`; a guest's goes to the owner first, as any other change does. What you say in a reply is shown to everyone on the review, so don't quote working-tree code you haven't pushed in a thread a guest can read unless the owner has said that is fine.
 
 ## Waiting at a prompt
 
