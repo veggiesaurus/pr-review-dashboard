@@ -263,7 +263,7 @@ export function LineExtras({
       <LocalRows edits={local.shown.get(at)} />
       {annotations.get(at)?.map(({ annotation, index }) => (
         <FullRow key={`a${index}`} className="border-y bg-card py-1.5 pr-3 pl-3 text-[13px] sm:pl-[4.6rem]">
-          <Badge tone={annotation.level === "failure" ? "danger" : "warning"} className="mr-2 uppercase tracking-wide">
+          <Badge tone={annotation.level === "failure" ? "danger" : "warning"} className="mr-2 capitalize">
             {annotation.level}
           </Badge>
           {annotation.title && <b className="mr-1 font-semibold">{annotation.title}</b>}

@@ -1,7 +1,7 @@
 import type { Layer } from "shared/payload";
 import { formattingOnly } from "src/components/guide/visible";
 import { useLayer } from "src/queries/review.query";
-import { useSavedTicks, useTicks } from "src/queries/ticks.query";
+import { type OthersTicks, useSavedTicks, useTicks } from "src/queries/ticks.query";
 import { useViewStore } from "src/store/view.store";
 import { changedSinceTick, tickKey } from "src/utils/ticks";
 
@@ -37,6 +37,19 @@ export function progressKeys(layer: Layer) {
   }
   return layer.files.filter(file => !file.noise && !formattingOnly(file)).map(file => tickKey(layer, file.id));
 }
+
+// Who else has ticked every one of these keys.
+export const reviewedBy = (others: OthersTicks[] | undefined, keys: string[]) =>
+  keys.length ? (others ?? []).filter(other => keys.every(key => other.keys.has(key))) : [];
+
+// "@olive (owner), @gus": the people behind a list of ticks, the owner marked.
+export const namesOf = (people: Pick<OthersTicks, "role" | "person">[]) =>
+  people
+    .map(({ role, person }) => {
+      const name = person?.login ? `@${person.login}` : person?.name;
+      return role === "owner" ? (name ? `${name} (owner)` : "the owner") : (name ?? "a guest");
+    })
+    .join(", ");
 
 // How many of these keys are ticked.
 export function useTickedCount(keys: string[]) {

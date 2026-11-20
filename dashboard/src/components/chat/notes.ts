@@ -46,6 +46,8 @@ export function shortLabel(anchor: ResolvedAnchor) {
 
 // Claude's text on one line, for a folded thread: no backticks, and a [phrase](f3h1) link as its phrase.
 export const oneLine = (text: string) => text.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replaceAll("`", "");
+// A message's opening line, for a place with room for one: a code block further down would only run into it.
+export const firstLine = (text: string) => oneLine(text.trim().split("\n")[0] ?? "");
 
 // What the page shows for an anchor nobody has written about yet, worked out from the payload.
 export function describe(anchor: Anchor, review: ReviewResponse | undefined): string {

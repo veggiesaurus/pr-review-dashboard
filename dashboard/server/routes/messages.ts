@@ -73,7 +73,11 @@ export function messagesRoutes(deps: AppDeps) {
   app.post("/replies", only("session"), small, zValidator("json", replySchema), c => {
     store.heard();
     store.setAttention("");
-    const result = store.addReply(c.req.valid("json"));
+    const reply = c.req.valid("json");
+    if (reply.images?.some(id => !hasAttachment(deps.attachments, id))) {
+      return c.json({ error: "an image isn't on the server; send it to POST /api/attachments first" }, 400);
+    }
+    const result = store.addReply(reply);
     if (!result) {
       return c.json({ error: "no message with that id" }, 404);
     }

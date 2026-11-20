@@ -370,7 +370,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
         >
           <Toggle className="size-3.5" />
           {finding
-            ? `Review ${root.review?.n} finding`
+            ? `Finding from review ${root.review?.n}`
             : root.kind === "note"
               ? `Note to Claude${root.batch ? `, batch ${root.batch}` : ""}`
               : root.kind === "post"

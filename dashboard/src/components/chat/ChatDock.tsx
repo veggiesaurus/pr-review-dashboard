@@ -4,7 +4,7 @@ import type { Anchor, PermissionsInfo } from "shared/messages";
 import { Composer } from "src/components/chat/Composer";
 import { type Focus, useChatStore } from "src/components/chat/chat.store";
 import { NotesPanel } from "src/components/chat/NotesPanel";
-import { describe, GROUPS, jumpTo, onCode, oneLine, shortLabel } from "src/components/chat/notes";
+import { describe, firstLine, GROUPS, jumpTo, onCode, oneLine, shortLabel } from "src/components/chat/notes";
 import { ClaudeThreadBlock, ReplyBox, StateBadge, Thinking } from "src/components/chat/ThreadBlock";
 import { type ClaudeThread, useThreads } from "src/components/chat/useThreads";
 import { awaited, verbFor } from "src/components/chat/verbs";
@@ -434,11 +434,12 @@ export function ChatDock({ connected }: { connected: boolean }) {
               type="button"
               onClick={() => openThread(latestReply.replyTo ?? latestReply.id)}
               className={cn(
-                "min-w-0 max-w-md flex-1 cursor-pointer truncate text-left text-primary text-sm hover:underline",
+                // A phone has room for a few letters of it, which say nothing; the Chat button's count is there instead.
+                "min-w-0 max-w-md flex-1 cursor-pointer truncate text-left text-primary text-sm hover:underline max-sm:hidden",
                 arrived(latestReply.at) && "motion-swap",
               )}
             >
-              Claude: {oneLine(latestReply.text)}
+              Claude: {firstLine(latestReply.text)}
             </button>
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">

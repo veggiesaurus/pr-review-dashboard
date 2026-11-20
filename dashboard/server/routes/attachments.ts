@@ -33,12 +33,12 @@ export const hasAttachment = (dir: string, id: string) => {
   return path !== null && existsSync(path);
 };
 
-// Screenshots the user drops into the chat, kept beside the database. Each is named by its content, so the name
-// can't be guessed and the same image is kept once.
+// Screenshots the user drops into the chat, or the session attaches to a step it tried, kept beside the database.
+// Each is named by its content, so the name can't be guessed and the same image is kept once.
 export function attachmentsRoutes(deps: AppDeps) {
   const app = new Hono<Env>();
 
-  app.post("/attachments", only("owner", "guest"), bodyLimit({ maxSize: 10 * 1024 * 1024 }), async c => {
+  app.post("/attachments", only("owner", "guest", "session"), bodyLimit({ maxSize: 10 * 1024 * 1024 }), async c => {
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     const kind = imageKind(bytes);
     if (!kind) {

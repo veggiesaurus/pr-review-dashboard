@@ -14,7 +14,7 @@ export type Palette = {
 
 const KEY = "prg:palette";
 const STYLE = "prg-palette";
-export const DEFAULT_PALETTE = "claude";
+export const DEFAULT_PALETTE = "modern-minimal";
 
 const block = (vars: Record<string, string>) =>
   Object.entries(vars)

@@ -17,9 +17,10 @@ import {
 import { noteOrder } from "../shared/order";
 import { DISMISS_TEXT, type DismissReason, fixable, type ReviewEffort } from "../shared/reviews";
 import { prKey, TICK_PREFIX } from "../shared/ticks";
+import { awaitsTry, TRY_TEXT } from "../shared/tries";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
-import { chatFrame, fixFrames, notesFrames, recheckFrames, reviewFrame } from "./format";
+import { chatFrame, fixFrames, notesFrames, recheckFrames, reviewFrame, tryFrames } from "./format";
 import { Presence } from "./presence";
 import type { Review } from "./review";
 
@@ -449,6 +450,32 @@ export class Store {
     return findings.length;
   }
 
+  // The user asks Claude to try the guide's steps by hand. Each ask is a thread on its step, and one frame carries
+  // them all. A step is left out while an ask waits on it, and once it has been tried at this head.
+  requestTries(layerId: number) {
+    const layer = this.review.layer(layerId);
+    if (!layer) {
+      return null;
+    }
+    const at = new Date().toISOString();
+    const asks = (layer.try ?? []).flatMap((_, index) => {
+      const anchor = resolveAnchor(this.review, { kind: "try", layer: layerId, index });
+      const onStep = this.messages.filter(m => m.anchor.kind === "try" && m.anchor.layer === layerId && m.anchor.index === index);
+      if (!anchor || onStep.some(awaitsTry) || onStep.some(m => m.tried?.head === layer.meta.headSha)) {
+        return [];
+      }
+      return [this.insert({ from: "user", kind: "chat", text: TRY_TEXT, anchor, status: "sent", state: "open", resolved: false, at })];
+    });
+    if (asks.length > 0) {
+      this.deliver(
+        tryFrames(asks, scopeOf(this.review)),
+        asks.map(ask => ask.id),
+      );
+      this.notify("messages");
+    }
+    return asks.length;
+  }
+
   // At a new head every finding still open goes back to the session once: its fix may be anywhere in the PR.
   private recheck() {
     const stale = this.openFindings().filter(m => m.review?.seen !== this.layerOf(m.anchor)?.meta.headSha);
@@ -536,6 +563,26 @@ export class Store {
     return this.ticksFor(author);
   }
 
+  // Everyone else's ticks for this review's PRs, by who made them: null for the owner, else a guest's id.
+  ticksOfOthers(author: Author | null): { guest: number | null; keys: string[] }[] {
+    const mine = this.tickScopes();
+    const own = this.tickPrefix(author);
+    const by = new Map<string, string[]>();
+    for (const { key } of this.db.query<{ key: string }, []>("select key from ticks").all()) {
+      const prefix = /^g-?\d+:/.exec(key)?.[0] ?? "";
+      const bare = key.slice(prefix.length);
+      if (prefix !== own && mine.some(scope => bare.startsWith(scope))) {
+        by.set(prefix, [...(by.get(prefix) ?? []), bare]);
+      }
+    }
+    return [...by].map(([prefix, keys]) => ({ guest: prefix ? Number(prefix.slice(1, -1)) : null, keys }));
+  }
+
+  // A guest who has left is still named by what they wrote here.
+  authorOf(id: number) {
+    return this.messages.find(m => m.author?.id === id)?.author ?? null;
+  }
+
   private tickPrefix(author: Author | null) {
     return author?.role === "guest" ? `g${author.id}:` : "";
   }
@@ -609,7 +656,9 @@ export class Store {
     if (parent === null) {
       return null;
     }
-    const state: NoteState | undefined = reply.state ?? (reply.resolved === undefined ? undefined : reply.resolved ? "done" : "open");
+    // A step that was tried is answered however it went; how it went is on the message.
+    const given: NoteState | undefined = reply.state ?? (reply.tried && "answered");
+    const state = given ?? (reply.resolved === undefined ? undefined : reply.resolved ? "done" : "open");
     const became = parent && state && parent.state !== state ? STATE_NOTES[state] : undefined;
     if (parent && state) {
       this.setState(parent, state);
@@ -627,6 +676,8 @@ export class Store {
           state: "open",
           resolved: false,
           ask: reply.ask,
+          ...(reply.images?.length && { images: reply.images }),
+          ...(reply.tried && parent && { tried: { outcome: reply.tried, head: this.layerOf(parent.anchor)?.meta.headSha ?? "" } }),
           at: new Date().toISOString(),
         },
         parent,

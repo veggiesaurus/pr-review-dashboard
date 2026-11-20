@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 
-import { findingsSchema, reviewRequestSchema } from "../../shared/messages";
+import { findingsSchema, reviewRequestSchema, triesRequestSchema } from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { type Env, only, small } from "../guards";
 
@@ -33,6 +33,12 @@ export function reviewsRoutes({ store }: AppDeps) {
   app.post("/reviews/:n/archive", only("owner"), c => {
     const archived = store.archiveReview(number(c.req.param("n")));
     return archived ? c.json({ archived }) : c.json({ error: "no review with that number" }, 404);
+  });
+
+  // The user asks Claude to try the guide's steps by hand; what happened comes back as replies on each step's thread.
+  app.post("/tries", only("owner"), small, zValidator("json", triesRequestSchema), c => {
+    const sent = store.requestTries(c.req.valid("json").layer);
+    return sent === null ? c.json({ error: "that pull request isn't in this review" }, 400) : c.json({ sent });
   });
 
   return app;

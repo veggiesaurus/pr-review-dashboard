@@ -6,8 +6,10 @@ import { DiffTable } from "src/components/diff/DiffTable";
 import { ReviewedTick } from "src/components/guide/ReviewedTick";
 import { formattingOnly } from "src/components/guide/visible";
 import { Button } from "src/components/ui/button";
+import { useMe } from "src/queries/me.query";
 import { useLayer } from "src/queries/review.query";
-import { useCardDone, useChangedSinceTick } from "src/store/ticks.store";
+import { useOthersTicks } from "src/queries/ticks.query";
+import { cardTickKeys, reviewedBy, useCardDone, useChangedSinceTick } from "src/store/ticks.store";
 import { useViewStore } from "src/store/view.store";
 import { cardDataAttribute, cardElementId } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
@@ -19,7 +21,7 @@ function Tag({ title, className, children }: { title?: string; className?: strin
     <span
       title={title}
       className={cn(
-        "whitespace-nowrap rounded-full border px-2 py-px text-[11px] text-muted-foreground uppercase tracking-wide",
+        "inline-block whitespace-nowrap rounded-full border px-2 py-px text-[11px] text-muted-foreground first-letter:uppercase",
         className,
       )}
     >
@@ -29,6 +31,7 @@ function Tag({ title, className, children }: { title?: string; className?: strin
 }
 
 const FORMATTING_HIDDEN = "Only formatting changes here, hidden while Formatting is off.";
+const SKIM = "The owner has reviewed this.";
 
 function Note({ children }: { children: ReactNode }) {
   return <div className="grid justify-items-center gap-2 px-3 py-5 text-center text-muted-foreground text-sm">{children}</div>;
@@ -62,6 +65,24 @@ export function FileCard({
   const [noiseShown, setNoiseShown] = useState(false);
   const wasTicked = useRef(ticked);
   const wasFolded = useRef(folded);
+  // For a guest, a card the owner has reviewed in a section with no careful-read note starts folded: it needs a skim.
+  const me = useMe();
+  const others = useOthersTicks();
+  const shownIn = section === undefined ? undefined : layer?.sections[section];
+  const routine = shownIn?.kind === "guide" && !shownIn.risk;
+  const ownerDone = reviewedBy(others, layer ? cardTickKeys(layer, fileId, hunkIds, formatting) : []).some(by => by.role === "owner");
+  const skim = me?.role === "guest" && routine && ownerDone;
+  const skimDecided = useRef(false);
+
+  // Once, when the page knows who is looking and what the owner ticked: a later tick of theirs mustn't fold what is being read.
+  useEffect(() => {
+    if (!skimDecided.current && me && others) {
+      skimDecided.current = true;
+      if (skim) {
+        setOpen(false);
+      }
+    }
+  }, [me, others, skim]);
 
   useEffect(() => {
     if (wasTicked.current !== ticked) {
@@ -191,6 +212,7 @@ export function FileCard({
         </span>
         <ReviewedTick layer={layer.id} file={file.id} hunkIds={hunkIds} />
         {folded && !open && <p className="basis-full pl-8 text-[12.5px] text-muted-foreground">{FORMATTING_HIDDEN}</p>}
+        {skim && !ticked && !folded && !open && <p className="basis-full pl-8 text-[12.5px] text-muted-foreground">{SKIM}</p>}
       </header>
       <details open={open} onToggle={event => setOpen(event.currentTarget.open)} className="motion-expand">
         <summary hidden />
