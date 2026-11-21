@@ -12,8 +12,10 @@ const LANGUAGES: Record<string, string> = {
   mjs: "javascript",
   cjs: "javascript",
   py: "python",
+  pyi: "python",
   go: "go",
   json: "json",
+  jsonc: "json",
   yml: "yaml",
   yaml: "yaml",
   css: "css",
@@ -22,27 +24,50 @@ const LANGUAGES: Record<string, string> = {
   sql: "sql",
   sh: "bash",
   bash: "bash",
+  zsh: "bash",
   md: "markdown",
+  mdx: "markdown",
   html: "xml",
   xml: "xml",
   svg: "xml",
   rs: "rust",
   java: "java",
   cs: "csharp",
+  c: "c",
+  h: "cpp",
+  cc: "cpp",
+  cpp: "cpp",
+  cxx: "cpp",
+  hh: "cpp",
+  hpp: "cpp",
+  hxx: "cpp",
+  tcc: "cpp",
+  tpp: "cpp",
+  ipp: "cpp",
+  inl: "cpp",
   kt: "kotlin",
   rb: "ruby",
   php: "php",
   toml: "ini",
   ini: "ini",
   graphql: "graphql",
+  lua: "lua",
+  proto: "protobuf",
+  cmake: "cmake",
+  dockerfile: "dockerfile",
+  mk: "makefile",
   bru: "bru",
 };
 
+// Files known by their name, whatever follows the last dot.
+const NAMED: [RegExp, string][] = [
+  [/(^|\/)(GNU)?[Mm]akefile$/, "makefile"],
+  [/(^|\/)(Dockerfile|Containerfile)(\.[\w-]+)?$/, "dockerfile"],
+  [/(^|\/)CMakeLists\.txt$/, "cmake"],
+];
+
 export function languageOf(path: string): string | null {
-  if (/(^|\/)Makefile$/.test(path)) {
-    return "makefile";
-  }
-  return LANGUAGES[path.split(".").pop()?.toLowerCase() ?? ""] ?? null;
+  return NAMED.find(([name]) => name.test(path))?.[1] ?? LANGUAGES[path.split(".").pop()?.toLowerCase() ?? ""] ?? null;
 }
 
 const PROSE_OR_DATA = new Set(["markdown", "json", "yaml", "ini"]);
