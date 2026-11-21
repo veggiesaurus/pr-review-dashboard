@@ -4,7 +4,7 @@ Read this when the user asks why a line was flagged, hidden as formatting or sho
 
 ## Size
 
-The reviewable lines are the changed lines left once formatting, lock and generated files and the removed side of moved code are taken out. With the guide, up to 800 fits one sitting and over 2,000 is too many; the bands are `SIZE_BANDS` in `collect.py`, and from the second one the guide suggests a split.
+The reviewable lines are the changed lines left once formatting, lock and generated files and the removed side of moved code are taken out. The size is judged on the ones outside test files, so thorough tests never argue for a split; a change that is only tests is judged on those. With the guide, up to 500 fits one sitting and over 1,200 is too many; the bands are `SIZE_BANDS` in `collect.py`, and from the second one the guide suggests a split.
 
 ## What gets flagged
 

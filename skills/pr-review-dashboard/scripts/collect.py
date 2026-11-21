@@ -1001,7 +1001,8 @@ def reviewable_text(data):
         out += ["# Formatting-only hunks, kept out of the sections:", *("#   " + x for x in noise_hunks)]
     if noise_files:
         out += ["# Lock and generated files, kept out of the sections:", *("#   " + x for x in noise_files)]
-    out[2] = f"# reviewable changed lines: {count} ({size_band(count)[0]})"
+    sized, _files, tests = sized_lines(chunks)
+    out[2] = f"# reviewable changed lines: {count}{f', {sized} outside tests' if tests else ''} ({size_band(sized)[0]})"
     return "\n".join(out) + "\n", chunks, count
 
 
@@ -1015,10 +1016,18 @@ def description_text(m):
     return "\n".join(out) + "\n"
 
 
-# Reviewable lines per band. Unguided review studies put one sitting at about 400 lines; the guide splits the
-# change into sections and drops the noise, so a sitting holds more. A split is suggested from the second band.
-SIZE_BANDS = ((800, "fits one sitting", "good"), (2000, "long for one review", "warn"),
+# Reviewable lines outside tests per band. Unguided studies put a sitting at about 400 lines with tests; the guide
+# splits the change and drops the noise, so a sitting holds more. A split is suggested from the second band.
+SIZE_BANDS = ((500, "fits one sitting", "good"), (1200, "long for one review", "warn"),
               (float("inf"), "too big for one review", "bad"))
+
+
+def sized_lines(chunks):
+    """The lines and files the size is judged on, and the test lines read beside them. Tests don't decide the size,
+    so thorough tests never argue for a split; a change that is only tests is sized by them."""
+    counts = [(f["category"] == "test", n) for f, _lines, n in chunks if n]
+    sized = [n for test, n in counts if not test] or [n for _test, n in counts]
+    return sum(sized), len(sized), sum(n for _test, n in counts) - sum(sized)
 
 
 def size_band(count):
@@ -1026,12 +1035,12 @@ def size_band(count):
     return next((label, tone) for top, label, tone in SIZE_BANDS if count <= top)
 
 
-def ready_check(data, count):
+def ready_check(data, chunks):
     impl = data["stats"]["categories"].get("implementation", {})
     tests = data["stats"]["categories"].get("test", {})
-    files = sum(1 for f in data["files"] if not f["noise"] and any(not h["noise"] for h in f["hunks"]))
-    band, tone = size_band(count)
-    return {"lines": count, "files": files, "band": band, "tone": tone,
+    lines, files, beside = sized_lines(chunks)
+    band, tone = size_band(lines)
+    return {"lines": lines, "files": files, "tests": beside, "band": band, "tone": tone,
             "implChanged": bool(impl.get("add") or impl.get("del")),
             "testsChanged": bool(tests.get("add") or tests.get("del")),
             "checks": data["meta"].get("checks")}
@@ -1041,7 +1050,10 @@ def write(data, out_dir):
     os.makedirs(os.path.join(out_dir, "batches"), exist_ok=True)
     text, chunks, count = reviewable_text(data)
     data["stats"]["reviewable"] = count
-    data["ready"] = ready_check(data, count)
+    # Changed lines the size leaves out: the removed side of moved code and the rest of a long deleted file.
+    rows = sum(v["add"] + v["del"] for cat, v in data["stats"]["categories"].items() if cat not in NOISE)
+    data["stats"]["skipped"] = max(rows - count, 0)
+    data["ready"] = ready_check(data, chunks)
     issue_text = data["meta"].pop("issueText", "")
     issue_path = os.path.join(out_dir, "issue.md")
     if issue_text:
@@ -1244,7 +1256,14 @@ def self_test():
     assert risk_hints("migrations/0042_add_index.py") == ["migration"]
     assert risk_hints("src/store/auth/tokenChannel.ts") == ["auth"] and risk_hints("web/package.json") == ["dependencies"]
     assert risk_hints("src/components/Button.tsx") == []
-    assert ready_check({"stats": {"categories": {"implementation": {"add": 5, "del": 0}}}, "files": [], "meta": {}}, 2500)["band"] == "too big for one review"
+    # Tests are read beside the size, not counted in it; alone, they are the size.
+    src, tst = ({"category": "implementation"}, [], 400), ({"category": "test"}, [], 900)
+    blank = {"stats": {"categories": {}}, "files": [], "meta": {}}
+    r = ready_check(blank, [src, tst])
+    assert (r["lines"], r["files"], r["tests"], r["band"]) == (400, 1, 900, "fits one sitting"), r
+    r = ready_check(blank, [tst])
+    assert (r["lines"], r["tests"], r["band"]) == (900, 0, "long for one review"), r
+    assert ready_check(blank, [({"category": "implementation"}, [], 2500)])["band"] == "too big for one review"
     d = description_text({"title": "t", "url": "", "body": "", "commits": ["abc123 adds x\nwhy it matters\n"]})
     assert "(none)" in d and "- abc123 adds x" in d and "  why it matters" in d
     got, text = linked_issues("/nonexistent", "o/r", {"closingIssuesReferences": [
@@ -1329,7 +1348,9 @@ def main():
     for cat, v in sorted(s["categories"].items()):
         print(f"  {cat:15} {v['files']:3} files  +{v['add']} -{v['del']}")
     print(f"  {'formatting':15}       +{s['noise']['add']} -{s['noise']['del']}")
-    print(f"reviewable changed lines: {count} ({data['ready']['band']}), batches: {nbatches}")
+    r = data["ready"]
+    outside = f", {r['lines']} outside tests" if r["tests"] else ""
+    print(f"reviewable changed lines: {count}{outside} ({r['band']}), batches: {nbatches}")
     if s["moved"]:
         print(f"moved unchanged: {s['moved']} lines")
     hunkless = sum(1 for f in data["files"] if not f["noise"] and not f["hunks"])

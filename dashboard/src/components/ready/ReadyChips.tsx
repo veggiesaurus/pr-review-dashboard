@@ -41,7 +41,8 @@ export function readyChips(layer: Layer, checks: Checks | null = layer.ready?.ch
   const { ready, meta, tells, annotations, descriptionCheck } = layer;
   const chips: Chip[] = [];
   if (ready) {
-    chips.push({ tone: ready.tone, label: `${ready.lines} lines in ${plural(ready.files, "file")}: ${ready.band}` });
+    const tests = ready.tests ? `, plus ${ready.tests} in tests` : "";
+    chips.push({ tone: ready.tone, label: `${ready.lines} lines in ${plural(ready.files, "file")}${tests}: ${ready.band}` });
   }
   if (checks) {
     chips.push(ciChip(checks));

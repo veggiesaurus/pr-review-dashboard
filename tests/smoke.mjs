@@ -19,6 +19,10 @@ const visible = sel => page.locator(sel).filter({ visible: true }).count();
 await open(process.argv[2]);
 await page.waitForSelector(".sec");
 check(await visible(".sec") === 2, "two sections, with the formatting one hidden");
+check(
+  (await page.locator(".chip").allTextContents()).includes("15 lines in 4 files, plus 9 in tests: fits one sitting"),
+  "the size chip counts the lines outside tests and names the test lines beside them",
+);
 check(await count("td.noise") === 0, "formatting lines inside a hunk show once, as context");
 await page.check(".fmtchk input");
 check(await visible(".sec") === 3 && await count("td.noise") > 0, "the formatting switch shows them, dimmed, and their section");

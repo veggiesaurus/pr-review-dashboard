@@ -130,8 +130,10 @@ export type Stats = {
   total: LineCount & { files: number };
   // Added lines that only moved, counted where they landed.
   moved: number;
-  // Implementation and test lines without formatting noise: the headline number.
+  // Changed lines a reviewer reads: no formatting, lock or generated files, and moved code once.
   reviewable: number;
+  // Changed lines of the rows above that the size leaves out: the removed side of moved code, the rest of a deleted file.
+  skipped?: number;
 };
 
 // A line collect.py flags. kind is one of skip, focus, debug, silenced, any, todo, commented-code, test-removed,
@@ -154,8 +156,11 @@ export type Annotation = {
 };
 
 export type Ready = {
+  // What the band is judged on: reviewable lines outside tests, and the files they are in.
   lines: number;
   files: number;
+  // Reviewable test lines, read beside those. Absent from a folder collected while tests still counted in lines.
+  tests?: number;
   band: string;
   tone: "good" | "warn" | "bad";
   implChanged: boolean;

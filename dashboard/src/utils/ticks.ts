@@ -11,6 +11,17 @@ export function tickKey(layer: Layer, fileId: string, hunkIds?: string[]) {
   return `${TICK_PREFIX}${prKey(layer.meta)}:${file?.path ?? fileId}:${ids.map(id => index.hunks.get(id)?.hunk.sig || id).join(",")}`;
 }
 
+// Each file's cards across the guide sections, as tick keys: a file split between sections is still one file.
+export function guideFileKeys(layer: Layer): string[][] {
+  const byFile = new Map<string, string[]>();
+  for (const section of layer.sections) {
+    for (const part of section.kind === "guide" ? section.files : []) {
+      byFile.set(part.id, [...(byFile.get(part.id) ?? []), tickKey(layer, part.id, part.hunks)]);
+    }
+  }
+  return [...byFile.values()];
+}
+
 // The hunks of a card that are new since it was ticked: a tick of this file names code the diff no longer has,
 // so what was reviewed changed. Empty when the card is ticked now, was never ticked, or only lost hunks.
 export function changedSinceTick(

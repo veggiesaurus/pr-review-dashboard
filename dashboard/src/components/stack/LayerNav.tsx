@@ -35,7 +35,7 @@ export function LayerNav() {
                 {layers.length - index} of {layers.length}
                 {index === 0 ? ", the top" : index === layers.length - 1 ? `, on ${item.meta.base}` : ""}
               </span>
-              {item.ready && <span>{item.ready.lines} lines to review</span>}
+              {item.ready && <span>{item.ready.lines + (item.ready.tests ?? 0)} lines to review</span>}
             </span>
           </SelectItem>
         ))}

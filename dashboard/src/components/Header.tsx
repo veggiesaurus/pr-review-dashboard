@@ -12,7 +12,7 @@ import { LayerNav } from "src/components/stack/LayerNav";
 import { useGithub } from "src/queries/live.query";
 import { usePresenceList } from "src/queries/presence.query";
 import { useLayer, useReview } from "src/queries/review.query";
-import { progressKeys, useTickedCount } from "src/store/ticks.store";
+import { progressFiles, useReviewedCount } from "src/store/ticks.store";
 import { useViewStore } from "src/store/view.store";
 import { TABS, type Tab } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
@@ -76,11 +76,11 @@ function Crumbs({ layer }: { layer: Layer }) {
 }
 
 function Progress({ layer }: { layer: Layer }) {
-  const keys = progressKeys(layer);
-  const done = useTickedCount(keys);
+  const files = progressFiles(layer);
+  const done = useReviewedCount(files);
   return (
     <span className="whitespace-nowrap">
-      {keys.length ? `${done} of ${keys.length} files reviewed` : "Nothing to review beyond formatting and generated files"}
+      {files.length ? `${done} of ${files.length} files reviewed` : "Nothing to review beyond formatting and generated files"}
     </span>
   );
 }

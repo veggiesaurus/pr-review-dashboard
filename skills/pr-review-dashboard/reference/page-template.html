@@ -879,7 +879,8 @@ tr.xref code { color: var(--foreground); }
       meta.innerHTML = `<span>${esc(M.author)}</span>`
         + `<span class="loc-wrap"><button class="loc" type="button" aria-expanded="false"><span class="num">${counts(impl.add, impl.del)}</span>${differs ? `<span class="star">(*)</span>` : ""}</button>`
         + `<div class="loc-pop" hidden><table>${rows.join("")}</table><p class="note">The headline counts implementation lines, leaving out tests, docs, generated files and formatting-only changes.`
-        + `${S.moved ? ` ${S.moved} added lines only moved, unchanged, and are counted where they landed.` : ""}</p></div></span>`
+        + `${S.moved ? ` ${S.moved} added lines only moved, unchanged, and are counted where they landed.` : ""}`
+        + `${S.skipped ? ` The size leaves out ${S.skipped} lines: moved code counts once, and a long deleted file by its opening lines.` : ""}</p></div></span>`
         + `<span class="progress" id="${P}progress"></span>`
         + `<span class="view">${opts.length > 1 ? `<select class="pick" id="${P}pick" aria-label="Which part of the change to show">${opts.join("")}</select>` : ""}`
         + `<span class="seg" role="group" aria-label="Diff layout"><button type="button" data-view="unified">Unified</button><button type="button" data-view="split">Split</button></span>`
@@ -961,11 +962,12 @@ tr.xref code { color: var(--foreground); }
     }
 
     function refreshTicks() {
-      let done = 0, total = 0;
+      // By file id: a file split between guide sections is one file, reviewed once every part is ticked.
+      const reviewed = new Map();
       D.sections.forEach((sec, i) => {
         const keys = sec.files.map(tickKey);
         const n = keys.filter(isDone).length;
-        if (sec.kind === "guide") { done += n; total += keys.length; }
+        if (sec.kind === "guide") sec.files.forEach(x => reviewed.set(x.id, reviewed.get(x.id) !== false && isDone(tickKey(x))));
         const s = $(`s${i + 1}`);
         const chk = s.querySelector(".secchk");
         chk.checked = n === keys.length && n > 0;
@@ -974,7 +976,8 @@ tr.xref code { color: var(--foreground); }
         const a = $("index").querySelector(`a[data-sec="${i}"]`);
         if (a) a.classList.toggle("done", chk.checked);
       });
-      $("progress").textContent = total ? `${done} of ${total} files reviewed` : "Nothing to review beyond formatting and generated files";
+      const done = [...reviewed.values()].filter(Boolean).length;
+      $("progress").textContent = reviewed.size ? `${done} of ${reviewed.size} files reviewed` : "Nothing to review beyond formatting and generated files";
     }
 
     // Hides what the chosen part of the change doesn't touch: whole cards and sections, and dims the other hunks
@@ -1052,7 +1055,7 @@ tr.xref code { color: var(--foreground); }
       const R = D.ready || {}, tells = D.tells || [], desc = D.descriptionCheck, split = D.split, anns = D.annotations || [];
       const chip = (tone, label, title) => `<span class="chip ${tone}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
       const chips = [];
-      if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines in ${R.files} files: ${R.band}`));
+      if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines in ${R.files} files${R.tests ? `, plus ${R.tests} in tests` : ""}: ${R.band}`));
       const C = R.checks;
       if (C) chips.push(ciChip(chip, C), ...(C.stale ? [chip("warn", "CI ran on the pushed head, not this one")] : []));
       const placed = anns.filter(a => a.row);
