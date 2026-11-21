@@ -66,7 +66,17 @@ function ThreadItem({ thread, active }: { thread: ClaudeThread; active: boolean 
   );
 }
 
-function ThreadList({ threads, archived, focus }: { threads: ClaudeThread[]; archived: ClaudeThread[]; focus: Focus }) {
+function ThreadList({
+  threads,
+  archived,
+  yours,
+  focus,
+}: {
+  threads: ClaudeThread[];
+  archived: ClaudeThread[];
+  yours: ClaudeThread[];
+  focus: Focus;
+}) {
   const setFocus = useChatStore(state => state.setFocus);
   const active = focus?.kind === "thread" ? focus.id : null;
   const archiveReview = useArchiveReview();
@@ -94,6 +104,16 @@ function ThreadList({ threads, archived, focus }: { threads: ClaudeThread[]; arc
             <EmptyDescription>Click a line's number, or Ask Claude on a section, flag, claim or check.</EmptyDescription>
           </EmptyHeader>
         </Empty>
+      )}
+      {yours.length > 0 && (
+        <div>
+          <h3 className="px-2 font-medium text-primary text-xs">Waiting on you ({yours.length})</h3>
+          <ul className="mt-1 grid gap-0.5">
+            {yours.map(thread => (
+              <ThreadItem key={thread.root.id} thread={thread} active={active === thread.root.id} />
+            ))}
+          </ul>
+        </div>
       )}
       {reviews.map(n => {
         const mine = threads.filter(t => t.root.review?.n === n);
@@ -294,7 +314,7 @@ function PermissionBar({ info }: { info: PermissionsInfo }) {
 }
 
 export function ChatDock({ connected }: { connected: boolean }) {
-  const { threads, archived, drafts, latestReply } = useThreads();
+  const { threads, archived, yours, drafts, latestReply } = useThreads();
   const { data: session } = useSession();
   const send = useSendDrafts();
   const archive = useArchiveThread();
@@ -392,7 +412,7 @@ export function ChatDock({ connected }: { connected: boolean }) {
                 // The list and the open thread scroll apart, so the thread can follow Claude's answers as they come.
                 <div className="motion-fade mt-1 grid gap-4 md:grid-cols-[17rem_minmax(0,1fr)]">
                   <div className={cn(DRAWER_SCROLL, "mt-0", focus && "max-md:hidden")}>
-                    <ThreadList threads={threads} archived={archived} focus={focus} />
+                    <ThreadList threads={threads} archived={archived} yours={yours} focus={focus} />
                   </div>
                   <MessageScrollerProvider autoScroll defaultScrollPosition="end">
                     <MessageScroller className={cn("h-auto min-w-0", !focus && "max-md:hidden")}>
@@ -451,6 +471,14 @@ export function ChatDock({ connected }: { connected: boolean }) {
             >
               <MessageCircle />
               Chat{open ? ` (${open})` : ""}
+              {yours.length > 0 && (
+                <span
+                  title={`${yours.length} waiting on you`}
+                  className={cn("size-2 rounded-full", chatOpen && drawer === "chat" ? "bg-primary-foreground" : "bg-primary")}
+                >
+                  <span className="sr-only">, {yours.length} waiting on you</span>
+                </span>
+              )}
             </Button>
             <Button
               size="sm"

@@ -10,6 +10,7 @@ import { MarkdownEditor } from "src/components/chat/MarkdownEditor";
 import { oneLine, STATE_TEXT, STATE_TONE } from "src/components/chat/notes";
 import { Screenshots, useScreenshots } from "src/components/chat/Screenshots";
 import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
+import { FixNote, TurnBadge } from "src/components/chat/Turn";
 import { type ClaudeThread, type GithubThreadView, mentionsOf, type Thread, unread, unseenReply } from "src/components/chat/useThreads";
 import { awaited, verbFor } from "src/components/chat/verbs";
 import { handleOf, PersonFace } from "src/components/links/Github";
@@ -221,6 +222,7 @@ export function Bubble({ message }: { message: Message }) {
         {mine && message.replyTo && <Delivery message={message} />}
       </div>
       <MessageText text={message.text} layer={layer} mentions={message.mentions} className="mt-1" />
+      <FixNote message={message} layer={layer} />
       {message.images && (
         <div className="mt-1.5">
           <Screenshots ids={message.images} />
@@ -350,7 +352,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   // The session is saying what it's doing for this thread right now.
   const live = Boolean(session?.listening && session.activity?.thread === root.id);
   // Questions stand until the user has said something after them.
-  const last = replies.at(-1);
+  const last = replies.findLast(m => m.kind !== "post");
   const asking = last?.from === "claude" && last.ask?.length && !root.archived ? last : undefined;
   return (
     <div
@@ -384,6 +386,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
         <SeverityBadge message={root} />
         {finding && root.review?.recommended && !root.resolved && !gone && <Badge tone="primary">Act on this</Badge>}
         <StateBadge state={root.state} />
+        <TurnBadge thread={thread} />
         {finding && <FindingBadges message={root} />}
         <Delivery message={root} />
         <Posted message={root} />

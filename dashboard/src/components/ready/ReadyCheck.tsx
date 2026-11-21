@@ -6,6 +6,7 @@ import { prKey, TICK_PREFIX } from "shared/ticks";
 import { AskClaude } from "src/components/chat/AskClaude";
 import { ReviewBlock, ReviewButton } from "src/components/chat/Review";
 import { Prose } from "src/components/links/Prose";
+import { QuizBlock, QuizButton } from "src/components/ready/Quiz";
 import { TriedAnswer } from "src/components/ready/Tried";
 import { stepEvidence } from "src/components/ready/tries";
 import { Badge } from "src/components/ui/badge";
@@ -370,11 +371,15 @@ export function ReadyCheck({ layer }: { layer: number }) {
     <section className="grid gap-2.5" aria-label="Before you mark it ready">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 className="font-serif text-xl">Before you mark it ready</h2>
-        <ReviewButton layer={layer} />
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          <QuizButton layer={layer} />
+          <ReviewButton layer={layer} />
+        </span>
       </div>
       <div className={BLOCKS}>
         <ReviewBlock layer={layer} />
         {blocks}
+        <QuizBlock layer={layer} />
       </div>
       {!blocks.length && <p className="text-muted-foreground text-sm">Nothing more to settle than the chips above say.</p>}
     </section>

@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 
 import {
   type Activity,
+  type AnchorKind,
   type Attention,
   type Author,
   type Finding,
@@ -9,6 +10,7 @@ import {
   type NewMessage,
   type NoteState,
   type Push,
+  type QuizQuestion,
   type Reply,
   type SessionInfo,
   settled,
@@ -18,9 +20,20 @@ import { noteOrder } from "../shared/order";
 import { DISMISS_TEXT, type DismissReason, fixable, type ReviewEffort } from "../shared/reviews";
 import { prKey, TICK_PREFIX } from "../shared/ticks";
 import { awaitsTry, TRY_TEXT } from "../shared/tries";
+import { leftOpen, openNote } from "../shared/turn";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
-import { chatFrame, fixFrames, notesFrames, recheckFrames, reviewFrame, tryFrames } from "./format";
+import {
+  chatFrame,
+  fixFrames,
+  fixNotesFrames,
+  notesFrames,
+  quizFrame,
+  recheckFrames,
+  recheckThreadFrames,
+  reviewFrame,
+  tryFrames,
+} from "./format";
 import { Presence } from "./presence";
 import type { Review } from "./review";
 
@@ -28,6 +41,9 @@ import type { Review } from "./review";
 type Pending = { n: number; frame: string; ids: string[] };
 // What a thread notes when the session settles it; starting work and answering show as steps and messages already.
 const STATE_NOTES: Partial<Record<NoteState, string>> = { done: "Marked done", declined: "Declined" };
+
+// What a thread has to be about for a new head to be able to deal with it: something in the change itself.
+const ON_THE_CHANGE: AnchorKind[] = ["line", "hunk", "file", "section", "tell", "annotation", "claim"];
 
 // A draft is its author's alone. No author is the owner, who sent every message before there were guests.
 const whose = (author?: Author | null) => (author?.role === "guest" ? author.id : "owner");
@@ -225,10 +241,21 @@ export class Store {
     return this.messages.filter(m => m.status !== "draft" || draftOf(m, author)).map(m => this.viewFor(m, author));
   }
 
-  // A thread's seen mark is the reader's own; other people's marks stay off the wire.
+  // A thread's seen mark is the reader's own; other people's marks stay off the wire. So do a quiz question's
+  // answer, until the reader has picked it, and what anyone else picked.
   viewFor(message: Message, author: Author | null): Message {
     const { seenBy, ...rest } = message;
-    return author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
+    const seen = author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
+    if (!rest.quiz?.options) {
+      return seen;
+    }
+    const { answer, why, picks = {}, ...quiz } = rest.quiz;
+    const me = String(whose(author));
+    const has = (picked: number[] = []) => answer !== undefined && picked.includes(answer);
+    const solvers = Object.keys(picks)
+      .filter(who => who !== me && has(picks[who]))
+      .map(who => (who === "owner" ? who : Number(who)));
+    return { ...seen, quiz: { ...quiz, picked: picks[me] ?? [], solvers, ...(has(picks[me]) && { answer, why }) } };
   }
 
   addUserMessage(input: NewMessage, author: Author | null, mentions: number[] = []): Message | null | "owner-only" {
@@ -261,6 +288,7 @@ export class Store {
         parent.review = { ...parent.review, dismissed: undefined };
       }
     }
+    const head = parent ? undefined : this.layerOf(anchor)?.meta.headSha;
     const message = this.insert(
       {
         from: "user",
@@ -276,6 +304,7 @@ export class Store {
         ...(kind === "note" && input.intent && { intent: input.intent }),
         ...(input.images?.length && { images: input.images }),
         ...(mentions.length && { mentions }),
+        ...(head && { head }),
         at: new Date().toISOString(),
       },
       parent,
@@ -476,16 +505,148 @@ export class Store {
     return asks.length;
   }
 
+  // The owner asks Claude for a quiz on one PR. The request is a chat thread, as a review's is, and each question
+  // comes back as a thread of its own, which the page shows as the quiz and nowhere else.
+  requestQuiz(layerId: number): Message | null {
+    const layer = this.review.layer(layerId);
+    const anchor = resolveAnchor(this.review, { kind: "general", layer: layerId });
+    if (!layer || !anchor) {
+      return null;
+    }
+    const last = this.db.query<{ n: number | null }, []>("select max(body ->> '$.quiz.n') as n from messages").get();
+    const message = this.insert({
+      from: "user",
+      kind: "chat",
+      text: "Write a quiz on this pull request.",
+      anchor,
+      status: "sent",
+      state: "open",
+      resolved: false,
+      quiz: { n: (last?.n ?? 0) + 1 },
+      at: new Date().toISOString(),
+    });
+    const risks = layer.sections.flatMap(section =>
+      section.kind === "guide" && section.risk ? [`${section.title}: ${section.risk}`] : [],
+    );
+    const open = this.openFindings().filter(m => this.layerOf(m.anchor) === layer);
+    const target = layer.meta.url ?? (layer.meta.number ? `#${layer.meta.number}` : layer.meta.head);
+    this.deliver([quizFrame(message, scopeOf(this.review), target, this.options.repo, { risks, open })], [message.id]);
+    this.notify("messages");
+    return message;
+  }
+
+  // Each question is kept on the hunk its code is in, so it lapses when that code changes. The options are shuffled
+  // here, since a model tends to put the right one in the same place.
+  addQuestions(n: number, questions: QuizQuestion[]): Message[] | null {
+    const request = this.messages.find(m => m.quiz?.n === n && m.from === "user" && !m.replyTo);
+    const layer = request && "layer" in request.anchor ? request.anchor.layer : undefined;
+    if (!request || layer === undefined) {
+      return null;
+    }
+    const threads = questions.flatMap(question => {
+      const line = Number.parseInt(String(question.line ?? ""), 10);
+      const at = question.file ? findingAnchor(this.review, layer, question.file, line > 0 ? line : undefined) : request.anchor;
+      const anchor = at?.kind === "line" ? resolveAnchor(this.review, { kind: "hunk", layer, file: at.file, hunk: at.hunk }) : at;
+      if (!anchor) {
+        return [];
+      }
+      const right = question.options[question.answer];
+      const options = question.options
+        .map(option => ({ option, order: Math.random() }))
+        .sort((a, b) => a.order - b.order)
+        .map(({ option }) => option);
+      return this.insert({
+        from: "claude",
+        kind: "chat",
+        text: question.question,
+        anchor,
+        status: "delivered",
+        state: "open",
+        resolved: false,
+        quiz: { n, options, answer: options.indexOf(right as string), why: question.why },
+        at: new Date().toISOString(),
+      });
+    });
+    this.notify("messages");
+    return threads;
+  }
+
+  // One person's pick on a question, kept in the order they made them. Nothing more is taken once they have it right.
+  pick(id: string, choice: number, author: Author | null): Message | null {
+    const question = this.messages.find(m => m.id === id && !m.replyTo);
+    const quiz = question?.quiz;
+    if (!question || !quiz?.options || choice >= quiz.options.length) {
+      return null;
+    }
+    const me = String(whose(author));
+    const mine = quiz.picks?.[me] ?? [];
+    if (!mine.includes(choice) && !mine.includes(quiz.answer ?? -1)) {
+      question.quiz = { ...quiz, picks: { ...quiz.picks, [me]: [...mine, choice] } };
+      this.notify("messages");
+    }
+    return this.viewFor(question, author);
+  }
+
   // At a new head every finding still open goes back to the session once: its fix may be anywhere in the PR.
+  // So does every thread a person left open on the change, which the new head may have dealt with.
   private recheck() {
-    const stale = this.openFindings().filter(m => m.review?.seen !== this.layerOf(m.anchor)?.meta.headSha);
+    const head = (m: Message) => this.layerOf(m.anchor)?.meta.headSha;
+    const stale = this.openFindings().filter(m => m.review?.seen !== head(m));
     for (const finding of stale) {
-      finding.review = { n: 0, ...finding.review, seen: this.layerOf(finding.anchor)?.meta.headSha };
-      this.log(finding, "note", "Sent back to Claude after a rebuild");
+      finding.review = { n: 0, ...finding.review, seen: head(finding) };
+    }
+    const open = this.messages.filter(m => !m.replyTo && ON_THE_CHANGE.includes(m.anchor.kind) && leftOpen(m, this.repliesTo(m)));
+    // A thread from before heads were kept has none, and only takes this one.
+    const moved = open.filter(m => m.head !== undefined && m.head !== head(m));
+    for (const thread of open) {
+      thread.head = head(thread);
+    }
+    for (const thread of [...stale, ...moved]) {
+      this.log(thread, "note", "Sent back to Claude after a rebuild");
     }
     if (stale.length > 0) {
       this.deliver(recheckFrames(stale, scopeOf(this.review)), []);
     }
+    if (moved.length > 0) {
+      this.deliver(recheckThreadFrames(moved, scopeOf(this.review)), []);
+    }
+  }
+
+  private repliesTo(root: Message) {
+    return this.messages.filter(m => m.replyTo === root.id);
+  }
+
+  // The owner asks for every note left open to be fixed, a guest's among them; they go to the session in one frame.
+  fixOpenNotes() {
+    const notes = this.messages
+      .filter(m => !m.replyTo && openNote(m, this.repliesTo(m)))
+      .sort(this.pageOrder())
+      .map(note => ({ note, last: this.repliesTo(note).findLast(m => m.from === "claude") }));
+    if (notes.length > 0) {
+      const at = new Date().toISOString();
+      const asks = notes.map(({ note }) =>
+        this.insert(
+          {
+            from: "user",
+            kind: "chat",
+            text: "Fix this.",
+            anchor: note.anchor,
+            replyTo: note.id,
+            status: "sent",
+            state: "open",
+            resolved: false,
+            at,
+          },
+          note,
+        ),
+      );
+      this.deliver(
+        fixNotesFrames(notes, scopeOf(this.review)),
+        asks.map(ask => ask.id),
+      );
+      this.notify("messages");
+    }
+    return notes.length;
   }
 
   // The frames that ask the session for what one message of the user's wants.
@@ -678,6 +839,8 @@ export class Store {
           ask: reply.ask,
           ...(reply.images?.length && { images: reply.images }),
           ...(reply.tried && parent && { tried: { outcome: reply.tried, head: this.layerOf(parent.anchor)?.meta.headSha ?? "" } }),
+          ...(reply.fix && { fix: reply.fix }),
+          ...(reply.checks && { checks: reply.checks }),
           at: new Date().toISOString(),
         },
         parent,

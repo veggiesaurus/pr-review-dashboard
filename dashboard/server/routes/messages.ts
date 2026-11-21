@@ -48,6 +48,9 @@ export function messagesRoutes(deps: AppDeps) {
 
   app.post("/messages/send", only("owner", "guest"), c => c.json({ sent: store.sendDrafts(c.get("author")), listening: store.listening }));
 
+  // The owner asks for every note left open to be fixed; for a guest's note, that is the owner's yes to the change.
+  app.post("/messages/fix", only("owner"), c => c.json({ sent: store.fixOpenNotes() }));
+
   app.patch("/messages/:id", only("owner", "guest"), small, zValidator("json", editSchema), c => {
     const { text } = c.req.valid("json");
     const draft = store.editDraft(c.req.param("id"), text, c.get("author"), mentionsIn(text, deps.people.known()));

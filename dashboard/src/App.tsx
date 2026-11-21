@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChatDock } from "src/components/chat/ChatDock";
 import { MentionCard } from "src/components/chat/MentionCard";
 import { RebuildButton } from "src/components/chat/RebuildButton";
+import { useThreads } from "src/components/chat/useThreads";
 import { DiffTab } from "src/components/guide/DiffTab";
 import { Guide } from "src/components/guide/Guide";
 import { JumpTo } from "src/components/guide/JumpTo";
@@ -53,11 +54,13 @@ export function App() {
   const sections = useMemo(() => (shown ? shownSections(shown, show, formatting) : []), [shown, show, formatting]);
   usePresence(connected, layer, tab, useCurrentSection(sections));
 
+  // The tab says how many threads wait on its reader, so a page left open needn't be looked at to know.
+  const waiting = useThreads().yours.length;
   useEffect(() => {
     if (data && shown) {
-      document.title = pageTitle(data, shown);
+      document.title = `${waiting ? `(${waiting}) ` : ""}${pageTitle(data, shown)}`;
     }
-  }, [data, shown]);
+  }, [data, shown, waiting]);
 
   // A guest who has opened the share link but not signed in is told so by every call.
   if (isError && errorText(error, "") === "sign in") {

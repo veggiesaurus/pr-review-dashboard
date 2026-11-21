@@ -137,8 +137,25 @@ export type Message = {
   intent?: NoteIntent;
   // Screenshots the user or Claude attached, by id under GET /api/attachments/<id>.
   images?: string[];
+  // On the threads of a quiz the owner asked Claude for: its number, on the request and on each question.
+  quiz?: {
+    n: number;
+    // On a question: its choices, which one is right and why, and what each person picked, by "owner" or guest id.
+    options?: string[];
+    answer?: number;
+    why?: string;
+    picks?: Record<string, number[]>;
+    // What a reader gets in place of picks: their own, and who else has the right one. answer and why come with theirs.
+    picked?: number[];
+    solvers?: Solver[];
+  };
   // On Claude's answer to a step it tried by hand: how it went, and the head it was tried at.
   tried?: { outcome: Tried; head: string };
+  // On Claude's answer that a thread is dealt with: where the change is, and what it ran to check it.
+  fix?: Fix;
+  checks?: Check[];
+  // On a thread a person started about the change: the head it was last looked at against.
+  head?: string;
   // Ids of the people the text mentions.
   mentions?: number[];
   // Which send took this note, from 1, and when.
@@ -173,6 +190,31 @@ export const editSchema = z.object({ text: z.string().trim().min(1).max(8000) })
 export const archiveSchema = z.object({ archived: z.boolean(), reason: z.enum(DISMISS_REASONS).optional() });
 export const reviewRequestSchema = z.object({ layer, effort: z.enum(REVIEW_EFFORTS) });
 export const triesRequestSchema = z.object({ layer });
+export const quizRequestSchema = z.object({ layer });
+// Someone who has a quiz question right: the owner, or a guest by id.
+export type Solver = "owner" | number;
+// What the session writes for a quiz: each question with where its code is, its choices, the right one and why.
+export const questionsSchema = z.object({
+  questions: z
+    .array(
+      z
+        .object({
+          file: z.string().trim().min(1).max(500).nullish(),
+          line: z.union([z.number(), z.string()]).nullish(),
+          question: z.string().trim().min(1).max(600),
+          options: z.array(z.string().trim().min(1).max(300)).min(2).max(5),
+          // The place of the right option, from 0.
+          answer: z.number().int().min(0),
+          why: z.string().trim().min(1).max(1200),
+        })
+        .refine(q => q.answer < q.options.length, "answer is the place of the right option, from 0")
+        .refine(q => new Set(q.options).size === q.options.length, "each option is different"),
+    )
+    .min(1)
+    .max(8),
+});
+export type QuizQuestion = z.infer<typeof questionsSchema>["questions"][number];
+export const pickSchema = z.object({ choice: z.number().int().min(0).max(4) });
 // What the code-review skill reports for each finding, plus whether Claude says to act on it.
 export const findingsSchema = z.object({
   findings: z
@@ -195,6 +237,21 @@ export type Finding = z.infer<typeof findingsSchema>["findings"][number];
 // Reviewed ticks, by the page's own keys.
 export const ticksSchema = z.object({ keys: z.array(z.string().min(1).max(1000)).max(500), done: z.boolean() });
 
+// One line each, so neither can start a line of its own where the page or a frame quotes it.
+const oneLine = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(max)
+    .regex(/^[^\p{Cc}]+$/u);
+// Where a change is: a path from the repo's root, and a line of the new file when one line says it.
+export const fixSchema = z.object({ file: oneLine(500), line: lineNo.optional() });
+export type Fix = z.infer<typeof fixSchema>;
+// A command Claude ran to check a change, and whether it passed.
+export const checkSchema = z.object({ run: oneLine(300), passed: z.boolean() });
+export type Check = z.infer<typeof checkSchema>;
+
 // Text, a state, or both. A state needs replyTo, and declining needs the reason as text.
 export const replySchema = z
   .object({
@@ -206,10 +263,17 @@ export const replySchema = z
     // On the answer to a step tried by hand: how it went, and screenshots that show it.
     tried: z.enum(TRIED).optional(),
     images: z.array(z.string().regex(IMAGE_ID)).max(6).optional(),
+    // On an answer that the thread is dealt with: where the change is, and the checks run on it.
+    fix: fixSchema.optional(),
+    checks: z.array(checkSchema).min(1).max(8).optional(),
   })
   .refine(r => r.ask === undefined || (r.text !== undefined && r.replyTo !== undefined), "questions need text and replyTo")
   .refine(r => r.tried === undefined || (r.text !== undefined && r.replyTo !== undefined), "a tried step needs text and replyTo")
   .refine(r => r.images === undefined || r.text !== undefined, "images need text")
+  .refine(
+    r => (r.fix === undefined && r.checks === undefined) || (r.text !== undefined && r.replyTo !== undefined),
+    "a fix and its checks need text and replyTo",
+  )
   .refine(r => r.text !== undefined || r.state !== undefined || r.resolved !== undefined, "send text, a state or both")
   .refine(r => (r.state === undefined && r.resolved === undefined) || r.replyTo !== undefined, "a state needs replyTo")
   .refine(r => r.state !== "declined" || r.text !== undefined, "say why in text when declining");

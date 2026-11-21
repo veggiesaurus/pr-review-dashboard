@@ -1,7 +1,8 @@
-import { ChevronRight, ClipboardCopy, ExternalLink, NotebookPen, Send } from "lucide-react";
+import { ChevronRight, ClipboardCopy, ExternalLink, NotebookPen, Send, Wrench } from "lucide-react";
 import { useRef, useState } from "react";
 import type { GithubThread } from "shared/comments";
 import type { Message } from "shared/messages";
+import { openNote } from "shared/turn";
 
 import { useChatStore } from "src/components/chat/chat.store";
 import { IntentBadge } from "src/components/chat/Intent";
@@ -9,6 +10,7 @@ import { copyText, jumpTo, onCode, oneLine, pageOrder, shortLabel } from "src/co
 import { PostDialog } from "src/components/chat/PostDialog";
 import { Screenshots } from "src/components/chat/Screenshots";
 import { ClaudeThreadBlock, DraftEditor, layerOf, StateBadge } from "src/components/chat/ThreadBlock";
+import { TurnBadge } from "src/components/chat/Turn";
 import { type ClaudeThread, mentionsOf, unread, useThreads } from "src/components/chat/useThreads";
 import { MessageText } from "src/components/links/Markdown";
 import { Badge } from "src/components/ui/badge";
@@ -26,7 +28,7 @@ import {
 } from "src/components/ui/trace";
 import { useComments } from "src/queries/comments.query";
 import { useIsOwner, useMe } from "src/queries/me.query";
-import { errorText, useDeleteDraft, useSendDrafts } from "src/queries/messages.mutation";
+import { errorText, useDeleteDraft, useFixOpenNotes, useSendDrafts } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useLayer, useReview } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
@@ -144,6 +146,7 @@ function SentItem({ thread, pick, dot }: { thread: ClaudeThread; pick: boolean; 
         <IntentBadge message={root} />
         {root.anchor.outdated && <Gone />}
         <StateBadge state={root.state} />
+        <TurnBadge thread={thread} />
         {root.status === "sent" && root.kind !== "post" && <Badge tone="outline">Waiting for a session</Badge>}
         {root.posted && <Badge tone="outline">{root.posted.pending ? "On GitHub, pending" : "On GitHub"}</Badge>}
         {!open && (
@@ -291,6 +294,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
   const { data: session } = useSession();
   const { data: comments } = useComments(layer ?? 0, Boolean(shown?.capabilities.github));
   const send = useSendDrafts();
+  const fix = useFixOpenNotes();
   const remove = useDeleteDraft();
   const copied = useChatStore(state => state.copied);
   const markCopied = useChatStore(state => state.markCopied);
@@ -323,6 +327,14 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
     .filter(t => t.root.status !== "draft" && mentionsOf(t, me).length > 0)
     .sort((a, b) => Number(isNew(b)) - Number(isNew(a)) || newest(b) - newest(a));
   const nNew = mentioned.filter(isNew).length;
+  // Sent notes nobody settled and Claude isn't at work on, a guest's that waits on the owner's yes among them.
+  const leftOpen = owner ? notes.filter(n => openNote(n.root, n.replies)).length : 0;
+  const fixOpen = () =>
+    fix.mutate(undefined, {
+      onSuccess: ({ sent: n }) =>
+        setStatus(`Asked Claude to fix ${plural(n, "note")}. Each says what changed and what was run to check it.`),
+      onError: error => setStatus(errorText(error, "Not asked. Try again.")),
+    });
 
   const sendAll = () =>
     send.mutate(undefined, {
@@ -376,6 +388,18 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
           {drafts.length ? `${plural(drafts.length, "draft")}, kept until you send them` : "No drafts"}
         </span>
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {leftOpen > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fixOpen}
+              disabled={fix.isPending}
+              title="Asks Claude to fix every sent note still open, a guest's included"
+            >
+              <Wrench />
+              Fix the open notes ({leftOpen})
+            </Button>
+          )}
           {canPost && (
             <Button size="sm" variant="outline" onClick={() => setPosting(true)} disabled={pickedNow.length === 0}>
               Post {pickedNow.length || ""} to GitHub…
