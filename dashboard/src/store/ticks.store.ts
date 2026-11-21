@@ -3,7 +3,7 @@ import { formattingOnly } from "src/components/guide/visible";
 import { useLayer } from "src/queries/review.query";
 import { type OthersTicks, useSavedTicks, useTicks } from "src/queries/ticks.query";
 import { useViewStore } from "src/store/view.store";
-import { changedSinceTick, tickKey } from "src/utils/ticks";
+import { changedSinceTick, guideFileKeys, tickKey } from "src/utils/ticks";
 
 export { tickKey };
 
@@ -27,16 +27,14 @@ export const cardTickKeys = (layer: Layer, fileId: string, hunkIds: string[] | u
 export const sectionTickKeys = (layer: Layer, index: number) =>
   (layer.sections[index]?.files ?? []).map(part => tickKey(layer, part.id, part.hunks));
 
-// The template counts the guide sections' cards. Without sections (render.py failed) it is every file that isn't
-// a lock or generated file or formatting only.
-export function progressKeys(layer: Layer) {
-  if (layer.sections.length) {
-    return layer.sections
-      .filter(section => section.kind === "guide")
-      .flatMap(section => section.files.map(part => tickKey(layer, part.id, part.hunks)));
-  }
-  return layer.files.filter(file => !file.noise && !formattingOnly(file)).map(file => tickKey(layer, file.id));
-}
+// The files to review, each as the keys of its cards in the guide sections. Without sections (render.py failed) it
+// is every file that isn't a lock or generated file or formatting only.
+export const progressFiles = (layer: Layer): string[][] =>
+  layer.sections.length
+    ? guideFileKeys(layer)
+    : layer.files.filter(file => !file.noise && !formattingOnly(file)).map(file => [tickKey(layer, file.id)]);
+
+export const progressKeys = (layer: Layer) => progressFiles(layer).flat();
 
 // Who else has ticked every one of these keys.
 export const reviewedBy = (others: OthersTicks[] | undefined, keys: string[]) =>
@@ -55,6 +53,12 @@ export const namesOf = (people: Pick<OthersTicks, "role" | "person">[]) =>
 export function useTickedCount(keys: string[]) {
   const ticked = useTicks();
   return keys.filter(ticked).length;
+}
+
+// How many of these files have every card ticked.
+export function useReviewedCount(files: string[][]) {
+  const ticked = useTicks();
+  return files.filter(keys => keys.every(key => ticked(key))).length;
 }
 
 // Whether a card is ticked (every part behind it, for a whole file), for whatever draws the card.

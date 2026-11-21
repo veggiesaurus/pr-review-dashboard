@@ -202,6 +202,11 @@ try {
     tone => tone === "quiet",
   );
   await check(
+    "the size chip counts the lines outside tests and names the test lines beside them",
+    () => page.locator("header").first().textContent(),
+    text => text.includes("15 lines in 4 files, plus 9 in tests: fits one sitting"),
+  );
+  await check(
     'the header chips have "new since"',
     () => page.locator("header").first().textContent(),
     text => text.includes("new since"),

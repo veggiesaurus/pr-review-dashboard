@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Layer } from "shared/payload";
 
-import { changedSinceTick, tickKey } from "./ticks";
+import { changedSinceTick, guideFileKeys, tickKey } from "./ticks";
 
 // A layer of one file whose hunks are named by their signatures, some new since the last build.
 const layer = (sigs: string[], fresh: string[] = []) =>
@@ -35,5 +35,31 @@ describe("what changed since a card was ticked", () => {
 
   test("a hunk that only went away leaves nothing to look at", () => {
     expect(changed(layer(["a", "c"]), [undefined], [tickAll])).toBe("");
+  });
+});
+
+describe("review progress by file", () => {
+  test("a file split between two guide sections is one file, with a card in each", () => {
+    const hunk = (sig: string) => ({ id: `h-${sig}`, sig });
+    const split = {
+      meta: { repo: "o/r", number: 1, head: "b" },
+      files: [
+        { id: "f1", path: "a.ts", hunks: [hunk("a"), hunk("b")] },
+        { id: "f2", path: "b.ts", hunks: [hunk("c")] },
+        { id: "f3", path: "c.ts", hunks: [hunk("d")] },
+      ],
+      sections: [
+        {
+          kind: "guide",
+          files: [
+            { id: "f1", hunks: ["h-a"] },
+            { id: "f2", hunks: ["h-c"] },
+          ],
+        },
+        { kind: "guide", files: [{ id: "f1", hunks: ["h-b"] }] },
+        { kind: "formatting", files: [{ id: "f3", hunks: ["h-d"] }] },
+      ],
+    } as unknown as Layer;
+    expect(guideFileKeys(split)).toEqual([[tickKey(split, "f1", ["h-a"]), tickKey(split, "f1", ["h-b"])], [tickKey(split, "f2", ["h-c"])]]);
   });
 });

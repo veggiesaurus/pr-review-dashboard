@@ -82,6 +82,11 @@ export function LineCount({ layer }: { layer: number }) {
           </tbody>
         </table>
         {stats.moved > 0 && <p className="mt-2 text-muted-foreground text-xs">{plural(stats.moved, "added line")} only moved.</p>}
+        {!!stats.skipped && (
+          <p className="mt-2 text-muted-foreground text-xs">
+            The size leaves out {plural(stats.skipped, "line")}: moved code counts once, and a long deleted file by its opening lines.
+          </p>
+        )}
       </PopoverContent>
     </Popover>
   );

@@ -229,7 +229,7 @@ def lint(data, sections):
                     where = sorted({home[p] for p in peers})
                     out.append(f"{h} is in section {i} but connects only to hunks in section "
                                f"{', '.join(map(str, where))} ({', '.join(sorted(peers))}); check it belongs here")
-    if data.get("stats", {}).get("reviewable", 0) > C.SIZE_BANDS[0][0] and len(guide) >= 2 and not data.get("_split"):
+    if (data.get("ready") or {}).get("tone", "good") != "good" and len(guide) >= 2 and not data.get("_split"):
         out.append("the PR is long for one review and the guide suggests no split")
     return out
 
@@ -352,7 +352,7 @@ def self_test():
                    "section 1 links [a](f3h1)", "uses '\u2014'", "section 3 holds 200",
                    "section 4 is one 2-line hunk", "f1h1 is in section 1 but connects only to hunks in section 3"):
         assert expect in w, (expect, w)
-    sd = {"meta": {}, "stats": {"reviewable": 2500}, "files": [
+    sd = {"meta": {}, "ready": {"tone": "bad"}, "files": [
         {"id": "f1", "path": "src/auth/token.ts", "category": "implementation", "noise": False, "risk": ["auth"], "hunks": [
             {"id": "f1h1", "noise": None, "lines": lines(5), "usedBy": {"f2h1": ["mintToken"]}}]},
         {"id": "f2", "path": "src/menu.ts", "category": "implementation", "noise": False, "risk": [], "hunks": [
@@ -427,8 +427,8 @@ def load(workdir, data, layers=None):
         guide = read_json(os.path.join(workdir, "guide.json"))
     except (OSError, json.JSONDecodeError) as e:
         return {"problems": [f"guide.json unreadable: {e}"]}
-    if data.get("ready"):
-        # From the bands as they are now, so a folder collected before they changed renders the same.
+    if "tests" in (data.get("ready") or {}):
+        # From the bands as they are now. A folder collected while tests still counted keeps the band it was given.
         data["ready"]["band"], data["ready"]["tone"] = C.size_band(data["ready"]["lines"])
     sections, problems = build_sections(data, guide, layers)
     split, split_problems, split_warnings = check_split(data, guide, sections) if not problems else (None, [], [])
