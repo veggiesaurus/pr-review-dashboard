@@ -533,7 +533,12 @@ try {
   );
   await asSession("replies", { replyTo: unescaped.id, state: "done", text: "Escaped it." });
   await found.getByRole("button", { name: "Open this finding's thread" }).last().click();
-  await check("a finding shows the patch Claude proposes", () => page.getByText("Proposed patch").count());
+  const patch = page.locator("figure", { hasText: "Proposed patch" });
+  await check(
+    "a finding shows the patch Claude proposes, coloured as the file's code",
+    async () => (await patch.locator(".hljs-keyword").count()) > 0 && (await patch.locator("pre > span").first().textContent()),
+    first => first === "-  return prefix + slugify(title);",
+  );
   await page.keyboard.press("Escape");
   await found.getByRole("button", { name: "Open this finding's thread" }).nth(1).click();
   await page.getByRole("button", { name: "Dismiss" }).click();

@@ -8,7 +8,7 @@ import { FullRow, Half, LineExtras } from "src/components/diff/Rows";
 import { useViewStore } from "src/store/view.store";
 import { hunkElementId, lineKey } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
-import { bruBlockAt, hunkUnits, layoutRows, type Segment, wordMarks } from "src/utils/diff";
+import { bruBlockAt, hunkUnits, layoutRows, wordMarks } from "src/utils/diff";
 import { lineAnchor } from "src/utils/lines";
 import { indexLayer } from "src/utils/payload";
 
@@ -64,25 +64,6 @@ function MoveRow({ id, move, hunk, onShow }: { id?: string; move: Move; hunk: Hu
   );
 }
 
-// Each line's highlighting, both sides highlighted as runs so constructs that span lines read right.
-function highlightHunk(highlight: typeof import("src/utils/highlight"), hunk: Hunk, language: string | null, block: string | null) {
-  const out: (Segment[] | undefined)[] = new Array(hunk.lines.length);
-  for (const side of ["-", "+"]) {
-    const indexes = hunk.lines.flatMap((row, i) => (row[0] === side ? [] : [i]));
-    const lines = highlight.highlightLines(
-      indexes.map(i => hunk.lines[i]?.[3] ?? ""),
-      language,
-      block,
-    );
-    indexes.forEach((i, k) => {
-      if (out[i] === undefined || hunk.lines[i]?.[0] !== " ") {
-        out[i] = lines[k];
-      }
-    });
-  }
-  return out;
-}
-
 type HunkBodyProps = {
   hunk: Hunk;
   dim: boolean;
@@ -107,7 +88,14 @@ export const HunkBody = memo(function HunkBody({ hunk, dim, changed, threads, co
 
   const rows = useMemo(() => layoutRows(hunkUnits(hunk, formatting, shownMoves), split), [hunk, formatting, shownMoves, split]);
   const segments = useMemo(
-    () => (near && highlight ? highlightHunk(highlight, hunk, language, bruBlockAt(file.bruBlocks, hunk.newStart)) : null),
+    () =>
+      near && highlight
+        ? highlight.highlightSides(
+            hunk.lines.map(row => [row[0], row[3]]),
+            language,
+            bruBlockAt(file.bruBlocks, hunk.newStart),
+          )
+        : null,
     [near, highlight, hunk, language, file.bruBlocks],
   );
   const marks = useMemo(() => (near ? wordMarks(hunk) : null), [near, hunk]);

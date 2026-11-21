@@ -114,3 +114,22 @@ export function highlightLines(texts: string[], language: string | null, block: 
   }
   return out;
 }
+
+// Diff rows as [sign, text], each side highlighted as its own run so constructs that span lines read right.
+export function highlightSides(rows: [sign: string, text: string][], language: string | null, block: string | null = null) {
+  const out: (Segment[] | undefined)[] = new Array(rows.length);
+  for (const side of ["-", "+"]) {
+    const indexes = rows.flatMap((row, i) => (row[0] === side ? [] : [i]));
+    const lines = highlightLines(
+      indexes.map(i => rows[i]?.[1] ?? ""),
+      language,
+      block,
+    );
+    indexes.forEach((i, k) => {
+      if (out[i] === undefined || rows[i]?.[0] !== " ") {
+        out[i] = lines[k];
+      }
+    });
+  }
+  return out;
+}
