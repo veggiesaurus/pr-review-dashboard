@@ -36,9 +36,18 @@ export const useRequestReview = () =>
 export const useRequestTries = () =>
   useMessagesMutation((layer: number) => api.post("tries", { json: { layer } }).json<{ sent: number }>());
 
+export const useRequestQuiz = () => useMessagesMutation((layer: number) => api.post("quiz", { json: { layer } }).json<Message>());
+
+export const usePick = () =>
+  useMessagesMutation(({ id, choice }: { id: string; choice: number }) =>
+    api.post(`quiz/questions/${id}/pick`, { json: { choice } }).json<Message>(),
+  );
+
 export const useArchiveReview = () => useMessagesMutation((n: number) => api.post(`reviews/${n}/archive`).json());
 
 export const useFixRecommended = () => useMessagesMutation((n: number) => api.post(`reviews/${n}/fix`).json<{ sent: number }>());
+
+export const useFixOpenNotes = () => useMessagesMutation<void, { sent: number }>(() => api.post("messages/fix").json());
 
 export const useDeleteDraft = () => useMessagesMutation((id: string) => api.delete(`messages/${id}`).json());
 

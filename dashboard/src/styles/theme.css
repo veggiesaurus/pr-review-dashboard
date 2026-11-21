@@ -1,5 +1,5 @@
 /* tweakcn's Modern Minimal theme (https://tweakcn.com/r/themes/modern-minimal.json) with the reader's own fonts. Its primary
-   and muted tones are moved so text reads at 4.5:1 and a muted fill shows on white. The last seven tokens are this page's. */
+   and muted tones are moved so text reads at 4.5:1 on them and as them. The last seven tokens of each block are this page's. */
 :root {
   /* So the browser's own parts (scrollbars, checkboxes, the select) follow the theme too. */
   color-scheme: light;
@@ -71,7 +71,8 @@
     --card-foreground: oklch(0.9219 0 0);
     --popover: oklch(0.2686 0 0);
     --popover-foreground: oklch(0.9219 0 0);
-    --primary: oklch(0.65 0.188 259.8145);
+    --primary: oklch(0.7137 0.1434 254.624);
+    --primary-foreground: oklch(0.2046 0 0);
     --secondary: oklch(0.2686 0 0);
     --secondary-foreground: oklch(0.9219 0 0);
     --muted: oklch(0.2393 0 0);
@@ -80,7 +81,7 @@
     --accent-foreground: oklch(0.8823 0.0571 254.1284);
     --border: oklch(0.3715 0 0);
     --input: oklch(0.3715 0 0);
-    --ring: oklch(0.65 0.188 259.8145);
+    --ring: oklch(0.7137 0.1434 254.624);
     --chart-1: oklch(0.7137 0.1434 254.624);
     --chart-2: oklch(0.6231 0.188 259.8145);
     --chart-3: oklch(0.5461 0.2152 262.8809);
@@ -111,7 +112,8 @@
   --card-foreground: oklch(0.9219 0 0);
   --popover: oklch(0.2686 0 0);
   --popover-foreground: oklch(0.9219 0 0);
-  --primary: oklch(0.65 0.188 259.8145);
+  --primary: oklch(0.7137 0.1434 254.624);
+  --primary-foreground: oklch(0.2046 0 0);
   --secondary: oklch(0.2686 0 0);
   --secondary-foreground: oklch(0.9219 0 0);
   --muted: oklch(0.2393 0 0);
@@ -120,7 +122,7 @@
   --accent-foreground: oklch(0.8823 0.0571 254.1284);
   --border: oklch(0.3715 0 0);
   --input: oklch(0.3715 0 0);
-  --ring: oklch(0.65 0.188 259.8145);
+  --ring: oklch(0.7137 0.1434 254.624);
   --chart-1: oklch(0.7137 0.1434 254.624);
   --chart-2: oklch(0.6231 0.188 259.8145);
   --chart-3: oklch(0.5461 0.2152 262.8809);

@@ -1074,6 +1074,157 @@ try {
   }
   console.log("evidence and second look ok");
 
+  {
+    // A note Claude won't act on without the owner waits on the owner, who can have every such note fixed at once.
+    // The fix then says where the change is and what was run to check it.
+    await open(work.link);
+    const ownerKey = new URL(work.link).searchParams.get("t");
+    const asOwner = (path, data) =>
+      owners.get(work.link).request.post(`${work.origin}/api/${path}`, { headers: { "x-prg-key": ownerKey, origin: work.origin }, data });
+    const layer = (await (await fetch(`${work.origin}/api/review`, { headers: auth })).json()).layers[0];
+    const file = layer.files.find(f => f.hunks.some(hunk => hunk.lines.some(row => row[0] === "+")));
+    const hunk = file.hunks.find(h => h.lines.some(row => row[0] === "+"));
+    const line = hunk.lines.find(row => row[0] === "+")[2];
+    const anchor = { kind: "line", layer: layer.id, file: file.id, hunk: hunk.id, side: "R", line };
+    const note = await (await asOwner("messages", { kind: "note", text: "Escape the slug first.", anchor })).json();
+    await asOwner("messages/send");
+    await asSession("replies", {
+      replyTo: note.id,
+      text: "That changes how every link is built.",
+      ask: [{ question: "Change it?", options: ["Yes", "No"], owner: true }],
+    });
+    const dock = page.locator("div.fixed.bottom-0");
+    const mine = () => dock.locator(`#t-${note.id}`);
+    const openMine = async () => {
+      await dock.getByRole("button", { name: /^Chat/ }).click();
+      await threadList()
+        .getByRole("button", { name: /Escape the slug first/ })
+        .first()
+        .click();
+    };
+    await check(
+      "the tab's title counts the threads that wait on its reader",
+      () => page.title(),
+      title => /^\(\d+\) /.test(title),
+    );
+    await openMine();
+    await check("the drawer lists what waits on the reader first", () =>
+      threadList()
+        .getByText(/^Waiting on you \(\d+\)$/)
+        .count(),
+    );
+    await check("and the thread says it is the reader's turn", () => mine().getByText("Your turn", { exact: true }).count());
+    await asOwner("messages", { kind: "post", text: "Looking at this now.", replyTo: note.id });
+    await check(
+      "a post under Claude's question leaves it standing",
+      async () => [await mine().getByText("Looking at this now.").count(), await mine().getByText("Change it?").isVisible()],
+      ([posted, asked]) => posted === 1 && asked,
+    );
+    await page.keyboard.press("Escape");
+
+    await dock.getByRole("button", { name: /^Notes/ }).click();
+    await dock.getByRole("button", { name: /^Fix the open notes \(\d+\)$/ }).click();
+    await check("Fix the open notes asks for the note on its own thread", async () =>
+      (await said()).some(m => m.replyTo === note.id && m.from === "user" && m.text === "Fix this."),
+    );
+    await check(
+      "and a note that has been asked for isn't offered again",
+      () => dock.getByRole("button", { name: /^Fix the open notes/ }).count(),
+      n => n === 0,
+    );
+    await page.keyboard.press("Escape");
+
+    await asSession("replies", {
+      replyTo: note.id,
+      state: "done",
+      text: "The slug is escaped before it joins the path.",
+      fix: { file: file.path, line },
+      checks: [
+        { run: "bun test tests/posts.test.ts", passed: true },
+        { run: "bun run lint", passed: false },
+      ],
+    });
+    await openMine();
+    const ran = mine().getByRole("list", { name: "Checks Claude ran" }).locator("li");
+    await check(
+      "a fix lists the checks Claude ran, and which failed",
+      async () => [await ran.count(), await ran.filter({ hasText: "Failed:" }).count(), await ran.last().textContent()],
+      ([all, failed, last]) => all === 2 && failed === 1 && last.includes("bun run lint"),
+    );
+    await mine()
+      .getByRole("button", { name: `${file.path}:${line}`, exact: true })
+      .click();
+    await check(
+      "and where the change is jumps to that line, closing the drawer",
+      async () => [await page.locator(`#l${layer.id}-${file.id}-R${line}`).isVisible(), await threadList().isVisible()],
+      ([there, drawer]) => there && !drawer,
+    );
+    await page.close();
+  }
+  console.log("closing the loop ok");
+
+  {
+    // The owner asks for a quiz and takes it. A wrong pick points back at the code, and the right one says why.
+    await open(work.link);
+    const layer = (await (await fetch(`${work.origin}/api/review`, { headers: auth })).json()).layers[0];
+    const file = layer.files.find(f => f.hunks.some(hunk => hunk.lines.some(row => row[0] === "+")));
+    const hunk = file.hunks.find(h => h.lines.some(row => row[0] === "+"));
+    const ready = page.getByRole("region", { name: "Before you mark it ready" });
+    const quiz = ready.locator("details[data-quiz]");
+    await ready.getByRole("button", { name: "Quiz me", exact: true }).click();
+    await check("a quiz asked for with no session listening says it waits for one", () =>
+      quiz.getByText("Waiting for a session to write the questions.").count(),
+    );
+    const request = (await said()).findLast(m => m.quiz && m.from === "user");
+    await asSession(`quiz/${request.quiz.n}/questions`, {
+      questions: [
+        {
+          file: file.path,
+          line: hunk.lines.find(row => row[0] === "+")[2],
+          question: "What does an old link do now?",
+          options: ["It gives a 404", "It redirects"],
+          answer: 0,
+          why: "Nothing serves the old prefix.",
+        },
+        { question: "What else has to change?", options: ["Nothing", "Links elsewhere"], answer: 1, why: "Old links stop resolving." },
+      ],
+    });
+    await asSession("replies", { replyTo: request.id, state: "answered", text: "Two questions on the old links." });
+    const first = quiz.locator("li[data-question]").first();
+    await check(
+      "the questions show in the ready check, none answered",
+      async () => [await quiz.locator("li[data-question]").count(), await quiz.locator("summary").textContent()],
+      ([questions, title]) => questions === 2 && title.endsWith("(0 of 2)"),
+    );
+    await first.getByRole("button", { name: /It redirects/ }).click();
+    await check(
+      "a wrong pick is struck out and points back at the code",
+      async () => [await first.locator("button[data-option='wrong']:disabled").count(), await first.getByText("Not that one.").count()],
+      ([wrong, hint]) => wrong === 1 && hint === 1,
+    );
+    await first.getByRole("button", { name: /It gives a 404/ }).click();
+    await check(
+      "the right pick says why, and counts",
+      async () => [
+        await first.getAttribute("data-question"),
+        await first.getByText("Nothing serves the old prefix.").count(),
+        await quiz.locator("summary").textContent(),
+      ],
+      ([state, why, title]) => state === "right" && why === 1 && title.endsWith("(1 of 2)"),
+    );
+    await page.locator("div.fixed.bottom-0").getByRole("button", { name: /^Chat/ }).click();
+    await check(
+      "a question isn't a thread in the drawer",
+      async () => [await threadList().isVisible(), await threadList().getByText("What does an old link do now?").count()],
+      ([drawer, listed]) => drawer && listed === 0,
+    );
+    await page.keyboard.press("Escape");
+    await first.locator("button.font-mono").click();
+    await check("and where its code is jumps to that hunk", () => page.locator(`#l${layer.id}-${hunk.id}`).isVisible());
+    await page.close();
+  }
+  console.log("quiz ok");
+
   await open(stack.link);
   await check("the stack opens on its top layer", h1, title => title === "layer 12");
   await tab("Guide");

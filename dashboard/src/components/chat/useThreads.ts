@@ -1,8 +1,11 @@
 import { useMemo } from "react";
 import type { GithubThread } from "shared/comments";
 import type { Anchor, Message } from "shared/messages";
+import { turnOf } from "shared/turn";
 
+import { yours } from "src/components/chat/Turn";
 import { useComments } from "src/queries/comments.query";
+import { useMe } from "src/queries/me.query";
 import { useMessages } from "src/queries/messages.query";
 import { useLayer } from "src/queries/review.query";
 import { anchorKey, lineKey } from "src/utils/anchors";
@@ -37,8 +40,9 @@ function useThreadList() {
         replies.set(message.replyTo, [...(replies.get(message.replyTo) ?? []), message]);
       }
     }
+    // A quiz's questions are threads only in how they are kept: the ready check shows them, and nothing else does.
     const all: ClaudeThread[] = messages
-      .filter(m => !m.replyTo)
+      .filter(m => !m.replyTo && !m.quiz?.options)
       .map(root => ({ kind: "claude", root, replies: replies.get(root.id) ?? [] }));
     // An archived thread shows nowhere but the drawer's Archived list.
     return { messages, threads: all.filter(t => !t.root.archived), archived: all.filter(t => t.root.archived) };
@@ -96,10 +100,13 @@ export function useThreadsAbout(anchor: Anchor) {
 
 export function useThreads() {
   const { messages, threads, archived } = useThreadList();
+  const me = useMe();
   return useMemo(
     () => ({
       threads,
       archived,
+      // Waiting on the reader: a question of Claude's that they may answer.
+      yours: threads.filter(thread => yours(turnOf(thread.root, thread.replies), me)),
       // Not under a line: about something else, or about a line a rebuild took away.
       unplaced: threads.filter(thread => thread.root.anchor.outdated || !["line", "tell"].includes(thread.root.anchor.kind)),
       notes: threads.filter(thread => thread.root.kind === "note"),
@@ -111,6 +118,6 @@ export function useThreads() {
         .sort((a, b) => number(a) - number(b))
         .at(-1),
     }),
-    [messages, threads, archived],
+    [messages, threads, archived, me],
   );
 }
