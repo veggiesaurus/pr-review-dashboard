@@ -154,6 +154,20 @@ test("a long-poll arriving cancels a pending wake, so the next message waits its
   expect(calls).toEqual([1]);
 });
 
+test("a long-poll dropped before it arrives isn't a listener, so the next message still wakes the session", async () => {
+  const { review } = setup();
+  const calls: number[] = [];
+  const store = new Store(review, { wake: n => calls.push(n), wakeMs: 20 });
+  const gone = new AbortController();
+  gone.abort();
+  const said = store.wait(gone.signal);
+  expect(store.listening).toBe(false);
+  expect(await said).toBe("");
+  store.addUserMessage({ kind: "chat", text: "one" }, null);
+  await sleep(60);
+  expect(calls).toEqual([1]);
+});
+
 test("frames kept from before a restart wake the session when nobody listens", async () => {
   const { review } = setup();
   const db = openDb();

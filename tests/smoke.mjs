@@ -20,7 +20,7 @@ await open(process.argv[2]);
 await page.waitForSelector(".sec");
 check(await visible(".sec") === 2, "two sections, with the formatting one hidden");
 check(
-  (await page.locator(".chip").allTextContents()).includes("15 lines in 4 files, plus 9 in tests: fits one sitting"),
+  (await page.locator(".chip").allTextContents()).includes("15 lines in 4 files, plus 9 in 1 test file: fits one sitting"),
   "the size chip counts the lines outside tests and names the test lines beside them",
 );
 check(await count("td.noise") === 0, "formatting lines inside a hunk show once, as context");

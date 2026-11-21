@@ -49,7 +49,11 @@ export function useHashSync(review: ReviewResponse | undefined) {
   useEffect(() => {
     const follow = () => {
       const hash = parseHash(location.hash);
-      const { setLayer, setTab, goTo } = useViewStore.getState();
+      const { setLayer, setTab, goTo, review } = useViewStore.getState();
+      // A layer this review doesn't hold would leave nothing to show.
+      if (hash.layer !== undefined && !review?.layers.some(l => l.id === hash.layer)) {
+        return;
+      }
       if (hash.layer !== undefined) {
         setLayer(hash.layer);
       }

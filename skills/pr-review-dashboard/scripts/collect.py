@@ -625,9 +625,11 @@ def read_blobs(repo, specs):
     out, data, pos = {}, r.stdout, 0
     for spec in specs:
         nl = data.index(b"\n", pos)
-        header = data[pos:nl].decode(errors="replace").split()
+        line = data[pos:nl].decode(errors="replace")
+        header = line.split()
         pos = nl + 1
-        if len(header) < 3:
+        # git echoes a missing spec back, spaces in its path and all
+        if line.endswith((" missing", " ambiguous")) or len(header) < 3:
             out[spec] = None
             continue
         size = int(header[2])
@@ -1001,8 +1003,8 @@ def reviewable_text(data):
         out += ["# Formatting-only hunks, kept out of the sections:", *("#   " + x for x in noise_hunks)]
     if noise_files:
         out += ["# Lock and generated files, kept out of the sections:", *("#   " + x for x in noise_files)]
-    sized, _files, tests = sized_lines(chunks)
-    out[2] = f"# reviewable changed lines: {count}{f', {sized} outside tests' if tests else ''} ({size_band(sized)[0]})"
+    lines, _files, tests, _test_files = sized_lines(chunks)
+    out[2] = f"# reviewable changed lines: {count}{f', {lines} outside tests' if tests else ''} ({size_band(judged(lines, tests))[0]})"
     return "\n".join(out) + "\n", chunks, count
 
 
@@ -1023,11 +1025,20 @@ SIZE_BANDS = ((500, "fits one sitting", "good"), (1200, "long for one review", "
 
 
 def sized_lines(chunks):
-    """The lines and files the size is judged on, and the test lines read beside them. Tests don't decide the size,
-    so thorough tests never argue for a split; a change that is only tests is sized by them."""
-    counts = [(f["category"] == "test", n) for f, _lines, n in chunks if n]
-    sized = [n for test, n in counts if not test] or [n for _test, n in counts]
-    return sum(sized), len(sized), sum(n for _test, n in counts) - sum(sized)
+    """Reviewable lines and files outside tests, then in tests. A binary file has no lines to read."""
+    out = [0, 0, 0, 0]
+    for f, _lines, n in chunks:
+        if n and not f.get("binary"):
+            k = 2 if f["category"] == "test" else 0
+            out[k] += n
+            out[k + 1] += 1
+    return tuple(out)
+
+
+def judged(lines, tests):
+    """What the band is judged on. Test lines count half, so thorough tests don't argue for a split, yet a change
+    that is mostly tests is still sized by them, with no jump when it gains one line elsewhere."""
+    return max(lines, tests // 2)
 
 
 def size_band(count):
@@ -1038,9 +1049,9 @@ def size_band(count):
 def ready_check(data, chunks):
     impl = data["stats"]["categories"].get("implementation", {})
     tests = data["stats"]["categories"].get("test", {})
-    lines, files, beside = sized_lines(chunks)
-    band, tone = size_band(lines)
-    return {"lines": lines, "files": files, "tests": beside, "band": band, "tone": tone,
+    lines, files, tests_read, test_files = sized_lines(chunks)
+    band, tone = size_band(judged(lines, tests_read))
+    return {"lines": lines, "files": files, "tests": tests_read, "testFiles": test_files, "band": band, "tone": tone,
             "implChanged": bool(impl.get("add") or impl.get("del")),
             "testsChanged": bool(tests.get("add") or tests.get("del")),
             "checks": data["meta"].get("checks")}
@@ -1256,14 +1267,22 @@ def self_test():
     assert risk_hints("migrations/0042_add_index.py") == ["migration"]
     assert risk_hints("src/store/auth/tokenChannel.ts") == ["auth"] and risk_hints("web/package.json") == ["dependencies"]
     assert risk_hints("src/components/Button.tsx") == []
-    # Tests are read beside the size, not counted in it; alone, they are the size.
-    src, tst = ({"category": "implementation"}, [], 400), ({"category": "test"}, [], 900)
+    # Lines outside tests and in tests are counted apart, with their files; a binary file has no lines to read.
+    src, tst = ({"category": "implementation"}, [], 400), ({"category": "test"}, [], 3000)
+    png = ({"category": "test", "binary": True}, [], 1)
     blank = {"stats": {"categories": {}}, "files": [], "meta": {}}
-    r = ready_check(blank, [src, tst])
-    assert (r["lines"], r["files"], r["tests"], r["band"]) == (400, 1, 900, "fits one sitting"), r
-    r = ready_check(blank, [tst])
-    assert (r["lines"], r["tests"], r["band"]) == (900, 0, "long for one review"), r
-    assert ready_check(blank, [({"category": "implementation"}, [], 2500)])["band"] == "too big for one review"
+    r = ready_check(blank, [src, tst, png])
+    assert (r["lines"], r["files"], r["tests"], r["testFiles"]) == (400, 1, 3000, 1), r
+    assert r["band"] == size_band(judged(400, 3000))[0], r
+    # git echoes a missing spec back, so one with a space in its path still reads as missing, and the next is still read.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init", "-q", tmp], check=True)
+        blob = subprocess.run(["git", "-C", tmp, "hash-object", "-w", "--stdin"], input=b"kept\n", capture_output=True,
+                              check=True).stdout.decode().strip()
+        assert read_blobs(tmp, ["HEAD:third party/lib", blob]) == {"HEAD:third party/lib": None, blob: "kept\n"}
+    # Tests decide the size only when they outweigh the rest, and one line elsewhere doesn't shrink it.
+    assert judged(400, 300) == 400 and judged(1, 3000) == judged(0, 3000) > 1, judged(1, 3000)
     d = description_text({"title": "t", "url": "", "body": "", "commits": ["abc123 adds x\nwhy it matters\n"]})
     assert "(none)" in d and "- abc123 adds x" in d and "  why it matters" in d
     got, text = linked_issues("/nonexistent", "o/r", {"closingIssuesReferences": [

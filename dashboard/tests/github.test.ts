@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+
+import { type RunResult, run } from "../server/exec";
 import { ciFrame, githubLive, POLL, Poller, type Runner, requiredChecks } from "../server/github";
 import { Review } from "../server/review";
+import { limited } from "../server/routes/github";
 import type { GithubLive } from "../shared/live";
 import { loaded } from "./helpers";
 
@@ -265,4 +269,41 @@ test("a gh that can't start leaves the poller with an error to show, not a crash
   await poller.tick();
   const layer = review.response.layers[0];
   expect(layer && (await poller.get(layer)).error).toContain("gh didn't run");
+});
+
+describe("running gh", () => {
+  test("a program that can't start comes back as a failed run, not a throw", async () => {
+    expect(await run(["prg-no-such-program"], tmpdir())).toMatchObject({ code: -1, stdout: "" });
+  });
+
+  test("never runs more at once than its limit, even when a call arrives as a slot frees", async () => {
+    let running = 0;
+    let peak = 0;
+    const started: { done: Promise<RunResult>; finish: () => void }[] = [];
+    const runner: Runner = () => {
+      peak = Math.max(peak, ++running);
+      const { promise, resolve } = Promise.withResolvers<RunResult>();
+      const finish = () => {
+        running--;
+        resolve({ code: 0, stdout: "", stderr: "" });
+      };
+      started.push({ done: promise, finish });
+      return promise;
+    };
+    const gh = limited(runner, 1);
+    const calls = [gh(["a"], "."), gh(["b"], ".")];
+    await Bun.sleep(0);
+    // The third call comes in on the first one's own answer: after its slot frees, before the queued second starts.
+    void started[0]?.done.then(() => calls.push(gh(["c"], ".")));
+    started[0]?.finish();
+    for (let k = 1; k < 3; k++) {
+      while (started.length <= k) {
+        await Bun.sleep(0);
+      }
+      started[k]?.finish();
+    }
+    await Promise.all(calls);
+    expect(started).toHaveLength(3);
+    expect(peak).toBe(1);
+  });
 });

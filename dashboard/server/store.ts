@@ -215,6 +215,10 @@ export class Store {
   wait(signal: AbortSignal): Promise<string> {
     // ponytail: coming back for more answers for the last poll, whoever polls; give polls a cursor if two sessions ever share one.
     this.heard();
+    // A poll dropped before it got here has nobody to answer: registered, it would look like a listener and take frames.
+    if (signal.aborted) {
+      return Promise.resolve("");
+    }
     this.disarmWake();
     return new Promise(resolve => {
       const waiter = (text: string) => {
@@ -597,7 +601,7 @@ export class Store {
     }
     const open = this.messages.filter(m => !m.replyTo && ON_THE_CHANGE.includes(m.anchor.kind) && leftOpen(m, this.repliesTo(m)));
     // A thread from before heads were kept has none, and only takes this one.
-    const moved = open.filter(m => m.head !== undefined && m.head !== head(m));
+    const moved = open.filter(m => m.head !== undefined && head(m) !== undefined && m.head !== head(m));
     for (const thread of open) {
       thread.head = head(thread);
     }

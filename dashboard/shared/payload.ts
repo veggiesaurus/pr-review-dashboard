@@ -132,7 +132,7 @@ export type Stats = {
   moved: number;
   // Changed lines a reviewer reads: no formatting, lock or generated files, and moved code once.
   reviewable: number;
-  // Changed lines of the rows above that the size leaves out: the removed side of moved code, the rest of a deleted file.
+  // Changed lines of the rows above that reviewable leaves out: the removed side of moved code, the rest of a deleted file.
   skipped?: number;
 };
 
@@ -159,8 +159,10 @@ export type Ready = {
   // What the band is judged on: reviewable lines outside tests, and the files they are in.
   lines: number;
   files: number;
-  // Reviewable test lines, read beside those. Absent from a folder collected while tests still counted in lines.
+  // Reviewable test lines and their files, read beside those. Absent from a folder collected while tests still
+  // counted in lines; testFiles is absent from one collected before it was added.
   tests?: number;
+  testFiles?: number;
   band: string;
   tone: "good" | "warn" | "bad";
   implChanged: boolean;

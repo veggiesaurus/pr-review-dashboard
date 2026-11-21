@@ -5,7 +5,7 @@ import { pageKey } from "src/queries/key";
 
 // Claude's replies can name issues and pull requests, so a new message can widen the references the server answers for.
 const KEYS: Record<Push["type"], string[]> = {
-  review: ["review", "github", "linear", "usages", "lines", "refs"],
+  review: ["review", "github", "linear", "usages", "lines", "refs", "comments", "local"],
   messages: ["messages", "refs"],
   session: ["session", "me", "share", "permissions", "people"],
   github: ["github"],

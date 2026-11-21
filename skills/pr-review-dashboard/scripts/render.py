@@ -242,7 +242,8 @@ def check_split(data, guide, sections):
     n = sum(1 for s in sections if s["kind"] == "guide")
     prs = split.get("prs") if isinstance(split, dict) else None
     flat = [x for pr in prs or [] if isinstance(pr, list) for x in pr]
-    if not prs or not all(isinstance(pr, list) and pr for pr in prs) or sorted(flat) != list(range(1, n + 1)):
+    if (not prs or not all(isinstance(pr, list) and pr for pr in prs) or not all(type(x) is int for x in flat)
+            or sorted(flat) != list(range(1, n + 1))):
         return None, [f"split.prs must list every section 1 to {n} exactly once, grouped into PRs"], []
     pr_of = {sec: k for k, pr in enumerate(prs, 1) for sec in pr}
     home = {h: i for i, s in enumerate(sections[:n], 1) for x in s["files"] for h in x["hunks"]}
@@ -365,6 +366,7 @@ def self_test():
     assert not probs and not sp and split["prs"] == [[1], [2]], (probs, sp)
     assert sw == ["split: PR 1 uses mintToken from section 2, which lands later in PR 2"], sw
     assert check_split(sd, dict(g, split={"prs": [[1]]}), secs)[1], "a split that drops a section must fail"
+    assert check_split(sd, dict(g, split={"prs": [[1, "2"]]}), secs)[1], "a split of mixed types must fail, not raise"
     sd["files"][0]["hunks"][0]["defines"] = ["switchWorkspace"]
     sd["files"][1]["hunks"][0]["defines"] = ["switchWorkspace"]
     assert "split: switchWorkspace is defined in sections 1, 2, which land in different PRs" in check_split(sd, g, secs)[2]
@@ -429,7 +431,7 @@ def load(workdir, data, layers=None):
         return {"problems": [f"guide.json unreadable: {e}"]}
     if "tests" in (data.get("ready") or {}):
         # From the bands as they are now. A folder collected while tests still counted keeps the band it was given.
-        data["ready"]["band"], data["ready"]["tone"] = C.size_band(data["ready"]["lines"])
+        data["ready"]["band"], data["ready"]["tone"] = C.size_band(C.judged(data["ready"]["lines"], data["ready"]["tests"]))
     sections, problems = build_sections(data, guide, layers)
     split, split_problems, split_warnings = check_split(data, guide, sections) if not problems else (None, [], [])
     problems += split_problems

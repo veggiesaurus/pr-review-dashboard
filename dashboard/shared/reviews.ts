@@ -27,9 +27,9 @@ export function standing({ review, state, anchor }: Finding): Standing {
 }
 
 // A finding that can still be asked to be fixed: open, Claude not at work on it, and no ask of the user's waiting
-// on an answer. A reply of Claude's that settles nothing, as a re-check's is, leaves it so.
-export const fixable = (finding: Finding, replies: Pick<Message, "from">[]) =>
-  standing(finding) === "open" && finding.state === "open" && replies.at(-1)?.from !== "user";
+// on an answer. A reply of Claude's that settles nothing, as a re-check's is, leaves it so, as does a post between people.
+export const fixable = (finding: Finding, replies: Pick<Message, "from" | "kind">[]) =>
+  standing(finding) === "open" && finding.state === "open" && replies.findLast(m => m.kind !== "post")?.from !== "user";
 
 // Why the user put a finding away. The first two are told to later reviews of the same repo, so they don't come back.
 export const DISMISS_REASONS = ["false-positive", "intentional", "later"] as const;

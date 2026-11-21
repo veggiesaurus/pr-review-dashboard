@@ -216,7 +216,13 @@ function templateTarget(id: string): Pick<HashState, "target" | "section"> | nul
 }
 
 export function parseHash(hash: string): HashState {
-  const text = decodeURIComponent(hash.replace(/^#/, ""));
+  let text: string;
+  try {
+    text = decodeURIComponent(hash.replace(/^#/, ""));
+  } catch {
+    // A hand-edited or cut-off link opens the page as if it had no hash.
+    return {};
+  }
   const full = /^(\d+)\/([a-z]+)(?:\/(.+))?$/.exec(text);
   if (full) {
     const tab = TABS.find(t => t === full[2]);
