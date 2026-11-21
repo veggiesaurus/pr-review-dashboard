@@ -1,7 +1,11 @@
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cmake from "highlight.js/lib/languages/cmake";
+import cpp from "highlight.js/lib/languages/cpp";
 import csharp from "highlight.js/lib/languages/csharp";
 import css from "highlight.js/lib/languages/css";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
 import go from "highlight.js/lib/languages/go";
 import graphql from "highlight.js/lib/languages/graphql";
 import ini from "highlight.js/lib/languages/ini";
@@ -10,9 +14,11 @@ import javascript from "highlight.js/lib/languages/javascript";
 import json from "highlight.js/lib/languages/json";
 import kotlin from "highlight.js/lib/languages/kotlin";
 import less from "highlight.js/lib/languages/less";
+import lua from "highlight.js/lib/languages/lua";
 import makefile from "highlight.js/lib/languages/makefile";
 import markdown from "highlight.js/lib/languages/markdown";
 import php from "highlight.js/lib/languages/php";
+import protobuf from "highlight.js/lib/languages/protobuf";
 import python from "highlight.js/lib/languages/python";
 import ruby from "highlight.js/lib/languages/ruby";
 import rust from "highlight.js/lib/languages/rust";
@@ -26,8 +32,12 @@ import { bruStep, type Segment, splitHighlighted } from "src/utils/diff";
 // Loaded on demand by the diff, so the first paint doesn't wait for the grammars.
 const LANGUAGES = {
   bash,
+  c,
+  cmake,
+  cpp,
   csharp,
   css,
+  dockerfile,
   go,
   graphql,
   ini,
@@ -36,9 +46,11 @@ const LANGUAGES = {
   json,
   kotlin,
   less,
+  lua,
   makefile,
   markdown,
   php,
+  protobuf,
   python,
   ruby,
   rust,
@@ -99,6 +111,25 @@ export function highlightLines(texts: string[], language: string | null, block: 
     }
     out.push(...highlightRun(texts.slice(k, end), languages[k] ?? null));
     k = end;
+  }
+  return out;
+}
+
+// Diff rows as [sign, text], each side highlighted as its own run so constructs that span lines read right.
+export function highlightSides(rows: [sign: string, text: string][], language: string | null, block: string | null = null) {
+  const out: (Segment[] | undefined)[] = new Array(rows.length);
+  for (const side of ["-", "+"]) {
+    const indexes = rows.flatMap((row, i) => (row[0] === side ? [] : [i]));
+    const lines = highlightLines(
+      indexes.map(i => rows[i]?.[1] ?? ""),
+      language,
+      block,
+    );
+    indexes.forEach((i, k) => {
+      if (out[i] === undefined || rows[i]?.[0] !== " ") {
+        out[i] = lines[k];
+      }
+    });
   }
   return out;
 }

@@ -336,6 +336,9 @@ tr.xref code { color: var(--foreground); }
 
 <script id="prg-data" type="application/json">__PRG_DATA__</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cmake.min.js" integrity="sha384-iqJTnKrAPlpoueHQticEO1SgUDmD+Lv1EGplrE41YfNgnnVCt6pLeVjutOnr/Ddi" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dockerfile.min.js" integrity="sha384-H3wUmCndJNBOuIIzcLSr2zLLZYs8PYuw6qKyENk7THEnYQJvOMDBu42P9XsJSRKw" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/protobuf.min.js" integrity="sha384-1ALwZ77/iqBsHTR04APuiMf4wWnFgY4b8VUXQHCjPfywk7S9K76uwvs1xLZUTfY5" crossorigin="anonymous"></script>
 <script>
 (function () {
   "use strict";
@@ -456,11 +459,15 @@ tr.xref code { color: var(--foreground); }
 
     // ---- language + highlighting ----
     const LANG = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript",
-      mjs: "javascript", cjs: "javascript", py: "python", go: "go", json: "json", yml: "yaml", yaml: "yaml", css: "css",
-      scss: "scss", less: "less", sql: "sql", sh: "bash", bash: "bash", md: "markdown", html: "xml", xml: "xml", svg: "xml",
+      mjs: "javascript", cjs: "javascript", py: "python", pyi: "python", go: "go", json: "json", jsonc: "json", yml: "yaml",
+      yaml: "yaml", css: "css", scss: "scss", less: "less", sql: "sql", sh: "bash", bash: "bash", zsh: "bash", md: "markdown",
+      mdx: "markdown", html: "xml", xml: "xml", svg: "xml",
       rs: "rust", java: "java", cs: "csharp", kt: "kotlin", rb: "ruby", php: "php", toml: "ini", ini: "ini", graphql: "graphql",
-      bru: "bru" };
-    const langOf = path => { const ext = path.split(".").pop().toLowerCase(); return /(^|\/)Makefile$/.test(path) ? "makefile" : LANG[ext]; };
+      c: "c", h: "cpp", cc: "cpp", cpp: "cpp", cxx: "cpp", hh: "cpp", hpp: "cpp", hxx: "cpp", tcc: "cpp", tpp: "cpp", ipp: "cpp",
+      inl: "cpp", lua: "lua", proto: "protobuf", cmake: "cmake", dockerfile: "dockerfile", mk: "makefile", bru: "bru" };
+    const NAMED = [[/(^|\/)(GNU)?[Mm]akefile$/, "makefile"], [/(^|\/)(Dockerfile|Containerfile)(\.[\w-]+)?$/, "dockerfile"],
+      [/(^|\/)CMakeLists\.txt$/, "cmake"]];
+    const langOf = path => (NAMED.find(([name]) => name.test(path)) || [])[1] || LANG[path.split(".").pop().toLowerCase()];
     function hl(text, lang) {
       if (!lang || !window.hljs || !hljs.getLanguage(lang)) return esc(text);
       try { return hljs.highlight(text, { language: lang, ignoreIllegals: true }).value; } catch (e) { return esc(text); }

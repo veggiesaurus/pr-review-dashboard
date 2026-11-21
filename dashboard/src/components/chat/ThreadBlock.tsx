@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, ExternalLink, Pencil, Trash2 } from "lucide-react";
-import { type FormEvent, Fragment, useEffect, useRef, useState } from "react";
+import { type FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { GithubComment } from "shared/comments";
 import type { Anchor, Message, NoteState } from "shared/messages";
 import { DISMISS_REASONS, DISMISS_TEXT, fixable, standing } from "shared/reviews";
@@ -13,6 +13,8 @@ import { Ask, Note, Steps, timeline } from "src/components/chat/Timeline";
 import { FixNote, TurnBadge } from "src/components/chat/Turn";
 import { type ClaudeThread, type GithubThreadView, mentionsOf, type Thread, unread, unseenReply } from "src/components/chat/useThreads";
 import { awaited, verbFor } from "src/components/chat/verbs";
+import { CodeText } from "src/components/diff/CodeText";
+import { useHighlighter } from "src/components/diff/hooks";
 import { handleOf, PersonFace } from "src/components/links/Github";
 import { Markdown, MessageText } from "src/components/links/Markdown";
 import { Avatar, AvatarFallback, AvatarImage } from "src/components/ui/avatar";
@@ -26,6 +28,7 @@ import { useViewStore } from "src/store/view.store";
 import { anchorKey } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
 import { ago, fullDate } from "src/utils/dates";
+import { languageOf } from "src/utils/diff";
 import { arrived } from "src/utils/motion";
 
 const SEVERITY_TONE = { high: "danger", medium: "warning", low: "neutral" } as const;
@@ -53,16 +56,24 @@ export function FindingBadges({ message }: { message: Message }) {
   );
 }
 
-// The change Claude proposes for a finding, as the few lines of diff it sent.
-function Patch({ text }: { text: string }) {
+// The change Claude proposes for a finding, as the few lines of diff it sent, coloured as the code of the finding's file.
+function Patch({ text, path }: { text: string; path: string | null }) {
+  const highlighter = useHighlighter();
+  // ponytail: a file or @@ header line is coloured as code too; leave those plain if findings start to carry them.
+  const rows = useMemo(
+    () => text.split("\n").map((line): [string, string] => (/^[-+ ]/.test(line) ? [line.charAt(0), line.slice(1)] : ["", line])),
+    [text],
+  );
+  const segments = useMemo(() => highlighter?.highlightSides(rows, path ? languageOf(path) : null), [highlighter, rows, path]);
   return (
     <figure className="grid gap-1">
       <figcaption className="text-muted-foreground text-xs">Proposed patch</figcaption>
       <pre className="overflow-x-auto rounded-md border bg-muted/60 py-1.5 font-mono text-[12.5px] leading-normal">
-        {text.split("\n").map((line, index) => (
+        {rows.map(([sign, code], index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: a patch's lines have no id and keep their order
-          <span key={index} className={cn("block px-2.5", line.startsWith("+") ? "bg-diff-add" : line.startsWith("-") && "bg-diff-del")}>
-            {line || " "}
+          <span key={index} className={cn("block px-2.5", sign === "+" ? "bg-diff-add" : sign === "-" && "bg-diff-del")}>
+            {sign}
+            {code ? <CodeText text={code} segments={segments?.[index]} /> : !sign && " "}
           </span>
         ))}
       </pre>
@@ -409,7 +420,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
             return message === root ? (
               <Fragment key={message.id}>
                 <Bubble message={message} />
-                {finding && root.review?.patch && <Patch text={root.review.patch} />}
+                {finding && root.review?.patch && <Patch text={root.review.patch} path={root.anchor.path} />}
               </Fragment>
             ) : (
               // The gap is padding inside the box that grows, so the space opens with the message.
