@@ -361,12 +361,12 @@ describe("signing in through the share link", () => {
     }
   });
 
-  test("the link can't start more GitHub sign-ins than the owner could answer", async () => {
-    const { visit } = await shared({ polls: Array.from({ length: 2 * MAX_WAITING }, () => ({ error: "authorization_pending" })) });
-    for (let i = 0; i < MAX_WAITING; i++) {
-      expect((await visit("/api/signin", { method: "POST" })).status).toBe(200);
-    }
-    expect((await visit("/api/signin", { method: "POST" })).status).toBe(429);
+  test("the link can't start more GitHub sign-ins than the owner could answer, all at once or one by one", async () => {
+    const { visit } = await shared({ polls: Array.from({ length: 4 * MAX_WAITING }, () => ({ error: "authorization_pending" })) });
+    const start = async () => (await visit("/api/signin", { method: "POST" })).status;
+    const burst = await Promise.all(Array.from({ length: 2 * MAX_WAITING }, start));
+    expect(burst.filter(status => status === 200)).toHaveLength(MAX_WAITING);
+    expect(await start()).toBe(429);
   });
 
   test("someone who isn't a collaborator is refused", async () => {

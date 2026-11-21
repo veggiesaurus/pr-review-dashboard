@@ -45,6 +45,8 @@ export function browserOf(userAgent: string | undefined): string | null {
 export class SignIn {
   private readonly statuses = new Map<string, { status: SignInStatus; at: number; claimed?: boolean }>();
   private readonly dropped = new Set<string>();
+  // Sign-ins waiting on GitHub for a device code, counted from the moment they start so a burst can't pass the cap.
+  private starting = 0;
   private readonly guests = new Map<string, Omit<WaitingGuest, "alreadyIn" | "person" | "code">>();
 
   constructor(
@@ -65,7 +67,12 @@ export class SignIn {
   async start(from?: From): Promise<{ id: string } & SignInStatus> {
     this.forget();
     const id = randomBytes(24).toString("hex");
-    const device = deviceSchema.safeParse(await this.post("https://github.com/login/device/code", {}).catch(() => null));
+    this.starting++;
+    const device = deviceSchema.safeParse(
+      await this.post("https://github.com/login/device/code", {})
+        .catch(() => null)
+        .finally(() => this.starting--),
+    );
     if (!device.success) {
       return { id, ...this.set(id, { state: "failed", reason: "error" }) };
     }
@@ -119,7 +126,9 @@ export class SignIn {
   open() {
     this.lapse();
     this.forget();
-    return [...this.statuses.values()].filter(({ status }) => status.state === "pending" || status.state === "waiting").length;
+    return (
+      this.starting + [...this.statuses.values()].filter(({ status }) => status.state === "pending" || status.state === "waiting").length
+    );
   }
 
   waiting(): Omit<WaitingGuest, "alreadyIn">[] {
