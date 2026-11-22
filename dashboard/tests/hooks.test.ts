@@ -273,4 +273,13 @@ describe("attention.sh", () => {
     await run();
     expect(dashboard.calls.some(c => c.path === "/api/permissions/clear")).toBe(true);
   });
+
+  test("reads the hook's own session and tool when the tool's input has fields of the same names", async () => {
+    const dashboard = stub();
+    mkdirSync(join(home, ".cache", "prg", "waiting"), { recursive: true });
+    writeFileSync(marker(), "Bash\n");
+    const input = { session_id: SESSION, tool_name: "Bash", tool_input: { session_id: "other", tool_name: "Write" } };
+    await runHook(["sh", join(scripts, "attention.sh"), "clear"], input);
+    expect(dashboard.calls.some(c => c.path === "/api/permissions/clear")).toBe(true);
+  });
 });
