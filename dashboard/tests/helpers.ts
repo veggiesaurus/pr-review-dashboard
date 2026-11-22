@@ -107,6 +107,7 @@ export function setup(
     onActivity?: () => void;
     host?: string;
     repo?: string;
+    claudeDir?: string;
     guestCode?: () => string | null;
     clientId?: string;
   } = {},
@@ -147,6 +148,7 @@ export function setup(
     cookieSecret: COOKIE,
     port: () => PORT,
     repo: options.repo ?? staticDir,
+    claudeDir: options.claudeDir,
     staticDir,
     attachments,
     linearKey: LINEAR_KEY,

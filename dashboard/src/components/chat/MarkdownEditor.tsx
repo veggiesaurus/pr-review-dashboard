@@ -8,13 +8,14 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Suggestion } from "@tiptap/suggestion";
 import { useEffect, useRef } from "react";
-import type { Person } from "shared/messages";
+import type { Person, Skill } from "shared/messages";
 
 import { emojiNow, loadEmoji, matchEmoji } from "src/components/chat/emoji";
 import { outsideCode, suggestRender } from "src/components/chat/suggest";
 import { PersonFace } from "src/components/links/Github";
 import { useMe } from "src/queries/me.query";
 import { usePeople } from "src/queries/people.query";
+import { useSkills } from "src/queries/skills.query";
 import { cn } from "src/utils/cn";
 
 // How the boxes send: the chat boxes on Enter, the note composer on ⌘↵ (a note) and ⇧↵ or ⇧⌘↵ (a question now).
@@ -32,6 +33,8 @@ type Props = {
   placeholder: string;
   autoFocus?: boolean;
   className?: string;
+  // Off where what is typed doesn't reach Claude, as in a post between people.
+  skills?: boolean;
 };
 
 const CONTENT = cn(
@@ -65,6 +68,31 @@ const emojiRow = (e: EmojiItem) => (
     <span className="truncate text-muted-foreground text-xs">:{e.shortcodes[0]}:</span>
   </>
 );
+
+const skillRow = ({ name, description }: Skill) => (
+  <span className="grid min-w-0">
+    <span className="truncate font-mono text-[12.5px]">/{name}</span>
+    {description && <span className="truncate text-muted-foreground text-xs">{description}</span>}
+  </span>
+);
+
+// Names that start with what was typed come first, then names holding it, then descriptions that mention it. Among
+// equals the shorter name after any plugin: wins, so pr-review comes before receiving-code-review, and a built-in
+// code-review before code-review:code-review.
+export function matchSkills(skills: Skill[], query: string) {
+  const q = query.toLowerCase();
+  const short = (name: string) => name.slice(name.indexOf(":") + 1);
+  const rank = ({ name, description }: Skill) => {
+    const bare = name.toLowerCase();
+    return bare.startsWith(q) || short(bare).startsWith(q) ? 0 : bare.includes(q) ? 1 : description?.toLowerCase().includes(q) ? 2 : 3;
+  };
+  return skills
+    .map(skill => ({ skill, rank: rank(skill) }))
+    .filter(({ rank }) => rank < 3)
+    .sort((a, b) => a.rank - b.rank || short(a.skill.name).length - short(b.skill.name).length || a.skill.name.length - b.skill.name.length)
+    .slice(0, 8)
+    .map(({ skill }) => skill);
+}
 
 // :think offers emoji and the pick is stored as the character itself; :name: typed through converts.
 const EmojiPicker = Extension.create({
@@ -105,12 +133,26 @@ const EmojiPicker = Extension.create({
 
 // A box that formats markdown as it is typed (`code`, _emphasis_, fenced blocks, lists) and hands back markdown,
 // so drafts, edits and what reaches the session stay plain text.
-export function MarkdownEditor({ value, onChange, onSend, onEscape, onFiles, sendKey, label, placeholder, autoFocus, className }: Props) {
+export function MarkdownEditor({
+  value,
+  onChange,
+  onSend,
+  onEscape,
+  onFiles,
+  sendKey,
+  label,
+  placeholder,
+  autoFocus,
+  className,
+  skills: offerSkills = true,
+}: Props) {
   // The editor is made once; the latest handlers are read through this.
   const me = useMe()?.person?.id;
   const people = usePeople().filter(p => p.id !== me);
-  const latest = useRef({ onChange, onSend, onEscape, onFiles, sendKey, people });
-  latest.current = { onChange, onSend, onEscape, onFiles, sendKey, people };
+  const known = useSkills();
+  const skills = offerSkills ? known : [];
+  const latest = useRef({ onChange, onSend, onEscape, onFiles, sendKey, people, skills });
+  latest.current = { onChange, onSend, onEscape, onFiles, sendKey, people, skills };
 
   const take = (files: FileList | undefined) => Boolean(files?.length && latest.current.onFiles?.(files));
 
@@ -134,6 +176,24 @@ export function MarkdownEditor({ value, onChange, onSend, onEscape, onFiles, sen
         },
       }),
       EmojiPicker,
+      // /rev offers the skills the session can run, written into the message as /code-review for the session to run.
+      Extension.create({
+        name: "skillPicker",
+        priority: 1001,
+        addProseMirrorPlugins() {
+          return [
+            Suggestion<Skill, Skill>({
+              editor: this.editor,
+              pluginKey: new PluginKey("skillSuggestion"),
+              char: "/",
+              allow: outsideCode,
+              items: ({ query }) => matchSkills(latest.current.skills, query),
+              command: ({ editor, range, props }) => editor.chain().focus().insertContentAt(range, `/${props.name} `).run(),
+              render: suggestRender(skillRow, "Skills"),
+            }),
+          ];
+        },
+      }),
       Extension.create({
         name: "sendKeys",
         priority: 1000,

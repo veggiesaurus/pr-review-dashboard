@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 import { websocket } from "hono/bun";
@@ -174,6 +175,7 @@ const app = createApp({
   port: () => server.port ?? 0,
   host,
   repo: resolve(values.repo),
+  claudeDir: process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
   staticDir,
   linearKey: process.env.LINEAR_API_KEY,
   githubComments: values["github-comments"],

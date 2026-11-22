@@ -45,7 +45,7 @@ async function serve(name, data) {
   const state = join(tmp, `${name}.json`);
   const child = spawn("bun", ["run", "server/index.ts", "--state", state, "--data", data, "--repo", join(fx, "repo"), "--static", built], {
     cwd: here,
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PRG_GITHUB_CLIENT_ID: "test" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PRG_GITHUB_CLIENT_ID: "test", CLAUDE_CONFIG_DIR: join(tmp, "claude") },
     stdio: ["ignore", "ignore", "inherit"],
   });
   const server = { child, state };
@@ -171,6 +171,14 @@ try {
   const asSession = (path, body) => fetch(`${work.origin}/api/${path}`, { method: "POST", headers: auth, body: JSON.stringify(body) });
   const said = async () => (await fetch(`${work.origin}/api/messages`, { headers: auth })).json();
 
+  // The session lists the skills it can run as it starts the server, as SESSION.md says.
+  await asSession("skills", [
+    { name: "frontend-design:frontend-design", description: "Design guidance for UI" },
+    { name: "simplify", description: "Review changed code for reuse" },
+    { name: "receiving-code-review", description: "Weigh feedback before acting on it" },
+    { name: "code-review:code-review", description: "Code review a pull request" },
+    { name: "code-review", description: "Find bugs in the current diff" },
+  ]);
   await open(work.link);
   // The ready check's lists are on Overview and its chips in the header on every tab, where the template has both under the header.
   const ready = await page.getByRole("region", { name: "Before you mark it ready" }).textContent();
@@ -401,6 +409,26 @@ try {
   );
 
   await page.getByRole("button", { name: /^Chat/ }).click();
+  // The owner's chat box offers the skills the session listed after /.
+  const askBox = page.getByRole("textbox", { name: "Ask Claude about this review" });
+  await askBox.pressSequentially("/rev");
+  await check(
+    "/ lists the skills the session can run, matching names first, the shorter first, then descriptions",
+    () => page.getByRole("listbox", { name: "Skills" }).getByRole("option").allInnerTexts(),
+    options =>
+      options.length === 4 &&
+      options[0].startsWith("/code-review\n") &&
+      options[1].startsWith("/code-review:code-review") &&
+      options[2].startsWith("/receiving-code-review") &&
+      options[3].startsWith("/simplify"),
+  );
+  await page.keyboard.press("Enter");
+  await check(
+    "and a pick writes it into the message",
+    () => typed(askBox),
+    text => text?.trim() === "/code-review",
+  );
+  await clear(askBox);
   await dropImage(page.getByRole("textbox", { name: "Ask Claude about this review" }));
   await check(
     "a screenshot dropped into the chat box waits there to be sent",
