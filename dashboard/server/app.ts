@@ -46,6 +46,8 @@ export type AppDeps = {
   // Started with --host: an address of this machine the page may also be reached on, such as its Wi-Fi address for a phone.
   host?: string;
   repo: string;
+  // Where Claude Code keeps the user's skills and plugins, read for the owner's `/` menu; none in tests unless given.
+  claudeDir?: string;
   staticDir: string;
   // Where screenshots dropped into the chat are kept.
   attachments: string;

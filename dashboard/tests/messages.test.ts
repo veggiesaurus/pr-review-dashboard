@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { openDb } from "../server/db";
 import { Review } from "../server/review";
+import { diskSkills } from "../server/skills";
 import { Store } from "../server/store";
 import { splitMentions } from "../shared/mentions";
 import type { Message, SessionInfo } from "../shared/messages";
@@ -61,6 +62,73 @@ describe("mentions", () => {
     expect(await (await page("/api/people")).json()).toEqual([OWNER, GUEST]);
     expect(await (await guest("/api/people")).json()).toEqual([OWNER, GUEST]);
     expect((await session("/api/people")).status).toBe(403);
+  });
+});
+
+// A Claude folder and a repo laid out as Claude Code keeps them: the user's skills, the repo's, and plugins installed
+// for everyone, for another repo, and turned off.
+function claudeFolders() {
+  const claude = mkdtempSync(join(tmpdir(), "prg-claude-"));
+  const repo = mkdtempSync(join(tmpdir(), "prg-repo-"));
+  const write = (path: string, text: string) => {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+  };
+  const skill = (name: string, more = "") => `---\nname: ${name}\ndescription: >\n  Does ${name}\n  over two lines.\n${more}---\n\nBody\n`;
+  write(join(claude, "skills/mine/SKILL.md"), skill("mine"));
+  write(join(claude, "skills/typed-only/SKILL.md"), skill("typed-only", "disable-model-invocation: true\n"));
+  symlinkSync(join(claude, "gone"), join(claude, "skills/broken"));
+  write(join(repo, ".claude/skills/the-repos/SKILL.md"), skill("the-repos"));
+  const plugin = (name: string) => join(claude, "plugins/cache/m", name, "1.0.0");
+  write(join(plugin("on"), "skills/default/SKILL.md"), skill("default"));
+  write(join(plugin("on"), "skills/notes/README.md"), "Not a skill.\n");
+  write(join(plugin("on"), "grouped/area/listed/SKILL.md"), skill("listed"));
+  write(join(plugin("on"), ".claude-plugin/plugin.json"), JSON.stringify({ name: "on", skills: ["./grouped/area"] }));
+  write(join(plugin("on"), "commands/run.md"), "---\ndescription: Runs it\n---\n");
+  write(join(plugin("off"), "skills/hidden/SKILL.md"), skill("hidden"));
+  write(join(plugin("theirs"), "skills/elsewhere/SKILL.md"), skill("elsewhere"));
+  const installs = {
+    "on@m": [{ scope: "user", installPath: plugin("on") }],
+    "off@m": [{ scope: "user", installPath: plugin("off") }],
+    "theirs@m": [{ scope: "project", installPath: plugin("theirs"), projectPath: "/another/repo" }],
+  };
+  write(join(claude, "plugins/installed_plugins.json"), JSON.stringify({ version: 2, plugins: installs }));
+  write(join(claude, "settings.json"), JSON.stringify({ enabledPlugins: { "on@m": true, "off@m": false, "theirs@m": true } }));
+  return { claude, repo };
+}
+
+describe("skills after /", () => {
+  test("the skills on disk are read from where Claude Code keeps them, leaving out what the model can't run", () => {
+    const { claude, repo } = claudeFolders();
+    const found = diskSkills(claude, repo);
+    expect(found.map(skill => skill.name).sort()).toEqual(["mine", "on:default", "on:listed", "on:run", "the-repos"]);
+    expect(found.find(skill => skill.name === "mine")?.description).toBe("Does mine over two lines.");
+  });
+
+  test("what the session posts adds the skills that aren't on disk", async () => {
+    const { claude, repo } = claudeFolders();
+    const { page, session, post } = setup({ claudeDir: claude, repo });
+    await session(
+      "/api/skills",
+      post([
+        { name: "code-review", description: "Find bugs" },
+        { name: "mine", description: "Posted too" },
+      ]),
+    );
+    const shown = (await (await page("/api/skills")).json()) as { name: string; description?: string }[];
+    expect(shown.map(skill => skill.name).sort()).toEqual(["code-review", "mine", "on:default", "on:listed", "on:run", "the-repos"]);
+    expect(shown.find(skill => skill.name === "mine")?.description).toBe("Does mine over two lines.");
+  });
+
+  test("the session's list of skills reaches the owner and no one else", async () => {
+    const { page, guest, session, post } = setup({ guestCode: () => GUEST_CODE });
+    const skills = [{ name: "code-review", description: "Review the current diff" }, { name: "frontend-design:frontend-design" }];
+    expect(await (await session("/api/skills", post(skills))).json()).toEqual({ skills: 2 });
+    expect(await (await page("/api/skills")).json()).toEqual(skills);
+    expect((await guest("/api/skills")).status).toBe(403);
+    expect((await page("/api/skills", post(skills))).status).toBe(403);
+    // A name is one word, or plugin:skill, so what the page writes into a message can't carry more than a skill's name.
+    expect((await session("/api/skills", post([{ name: "code-review now; and push" }]))).status).toBe(400);
   });
 });
 
