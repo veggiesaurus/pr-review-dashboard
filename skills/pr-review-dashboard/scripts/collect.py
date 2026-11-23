@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 CONTEXT = 3
@@ -85,7 +86,18 @@ def remote_name(repo):
     return m.group(1) if m else os.path.basename(repo)
 
 
-PR_FIELDS = "number,title,url,body,author,baseRefName,headRefName,baseRefOid,headRefOid,closingIssuesReferences"
+def repo_name(repo):
+    return (gh_json(repo, "repo", "view", "--json", "nameWithOwner") or {}).get("nameWithOwner") or remote_name(repo)
+
+
+def has_commits(repo, *shas):
+    r = subprocess.run(["git", "-C", repo, "cat-file", "--batch-check"], capture_output=True, text=True,
+                       input="".join(f"{s}^{{commit}}\n" for s in shas))
+    return r.returncode == 0 and "missing" not in r.stdout
+
+
+PR_FIELDS = ("number,title,url,body,author,baseRefName,headRefName,baseRefOid,headRefOid,closingIssuesReferences,"
+             "statusCheckRollup")
 
 GH_ISSUE_URL = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)")
 TRACKER_URL = re.compile(r"https?://(?:linear\.app/[\w-]+/issue|[\w.-]+/browse)/([A-Z][A-Z0-9]*-\d+)[^\s)>\]]*")
@@ -126,7 +138,7 @@ def parse_ref(text, name):
     return "key", text, None
 
 
-def linked_issues(repo, name, pr, title, body, commits, branch):
+def linked_issues(repo, name, pr, title, body, commits, branch, pool=None):
     """The issues a change says it works on: GitHub ones with their text, Jira or Linear keys for the session
     to fetch with its own tracker tool. Returns (issues for the page, issue.md text).
 
@@ -166,11 +178,15 @@ def linked_issues(repo, name, pr, title, body, commits, branch):
     for k in KEY.findall("\n".join(c.split("\n", 1)[0] for c in commits)):
         add("key", k, None, False)
     issues, parts = [], []
-    gh = [(k, v) for k, v in found["gh"].items() if k not in skipped]
-    for (where, n), x in gh[:MAX_ISSUES]:
-        ref = f"#{n}" if where == name else f"{where}#{n}"
-        got = gh_json(repo, "issue", "view", str(n), "-R", where, "--json", "title,body,url") \
+    gh = [(k, v) for k, v in found["gh"].items() if k not in skipped][:MAX_ISSUES]
+
+    def view(item):
+        (where, n), _x = item
+        return gh_json(repo, "issue", "view", str(n), "-R", where, "--json", "title,body,url") \
             if same_owner(where, name) else None
+
+    for ((where, n), x), got in zip(gh, (pool.map if pool else map)(view, gh)):
+        ref = f"#{n}" if where == name else f"{where}#{n}"
         issues.append({"ref": ref, "url": (got or {}).get("url") or x["url"], "fetched": bool(got), "closes": x["closes"]})
         if got:
             how = "This PR closes it." if x["closes"] else "Linked from this PR, which doesn't close it."
@@ -184,18 +200,25 @@ def linked_issues(repo, name, pr, title, body, commits, branch):
 
 
 
-def resolve(a):
+def resolve(a, pool):
+    """The change's metadata, and a future for its CI, which runs while the diff is read."""
     repo = a.repo
-    name = (gh_json(repo, "repo", "view", "--json", "nameWithOwner") or {}).get("nameWithOwner") or remote_name(repo)
-    pr = None
+    pr, ci = None, None
     if a.pr:
         pr = gh_json(repo, "pr", "view", str(a.pr), "--json", PR_FIELDS)
         if not pr:
             sys.exit(f"gh pr view {a.pr} failed; is gh installed and logged in, and is {repo} the right clone?")
-        git(repo, "fetch", "-q", "origin", f"refs/pull/{pr['number']}/head", pr["baseRefName"])
+        # The PR's URL names its repo, as gh repo view would.
+        m = re.match(r"https://[^/]+/([^/]+/[^/]+)/pull/\d+$", pr.get("url") or "")
+        name = m.group(1) if m else repo_name(repo)
         head, base = pr["headRefOid"], pr["baseRefOid"]
+        ci = pool.submit(ci_state, repo, name, pr, head)
+        # The diff needs only these two commits, so a clone that has both has nothing to fetch.
+        if not has_commits(repo, head, base):
+            git(repo, "fetch", "-q", "origin", f"refs/pull/{pr['number']}/head", pr["baseRefName"])
         base_label, head_label = pr["baseRefName"], pr["headRefName"]
     else:
+        named = pool.submit(repo_name, repo)
         head_label = a.head or git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
         head = git(repo, "rev-parse", a.head or "HEAD").strip()
         if a.base:
@@ -211,49 +234,84 @@ def resolve(a):
                 if not base_label:
                     sys.exit("no --base given and no PR, origin/HEAD or origin/main to compare against")
         base = git(repo, "rev-parse", base_label).strip()
+        name = named.result()
+        if pr:
+            ci = pool.submit(ci_state, repo, name, pr, head)
     merge_base = git(repo, "merge-base", base, head).strip()
     log = git(repo, "log", "--reverse", "--format=%H%x01%h %s%n%b%x00", f"{merge_base}..{head}")
     entries = [c.strip().split("\x01", 1) for c in log.split("\0") if c.strip()]
     shas, commits = [e[0] for e in entries], [e[1].strip() for e in entries]
     issues, issue_text = linked_issues(repo, name, pr, pr["title"] if pr else "", (pr or {}).get("body") or "",
-                                       commits, head_label)
-    checks, annotations = None, []
-    if pr:
-        rows = gh_json(repo, "pr", "checks", str(pr["number"]), "--json", "name,bucket,link")
-        if rows is not None:
-            checks = {k: sum(1 for r in rows if r["bucket"] == k) for k in ("pass", "fail", "pending", "cancel")}
-            checks["failing"] = [{"name": r["name"], "link": r["link"]} for r in rows if r["bucket"] == "fail"]
-            # Without --pr the diff is the local head, which may not be the commit CI ran on.
-            checks["stale"] = pr["headRefOid"] != head
-            if not checks["stale"]:
-                annotations = ci_annotations(repo, name, head)
+                                       commits, head_label, pool)
     return {
         "repo": name, "number": pr and pr["number"], "title": pr["title"] if pr else head_label,
         "url": pr and pr["url"], "body": (pr or {}).get("body") or "",
         "author": ((pr or {}).get("author") or {}).get("login") or git(repo, "log", "-1", "--format=%an", head).strip(),
         "base": base_label, "head": head_label, "baseSha": base, "headSha": head, "mergeBase": merge_base,
-        "commits": commits, "shas": shas, "checks": checks, "issues": issues, "issueText": issue_text,
-        "annotations": annotations,
-    }
+        "commits": commits, "shas": shas, "checks": None, "issues": issues, "issueText": issue_text,
+    }, ci
 
 
-ANN_RUNS = 20
+# gh pr checks' buckets; any other state is pending.
+CHECK_BUCKETS = {"SUCCESS": "pass", "SKIPPED": "skipping", "NEUTRAL": "skipping", "ERROR": "fail", "FAILURE": "fail",
+                 "TIMED_OUT": "fail", "ACTION_REQUIRED": "fail", "STARTUP_FAILURE": "fail", "CANCELLED": "cancel"}
+
+
+def checks_from_rollup(rollup):
+    """The checks gh pr checks lists: the latest run of each, by name and workflow."""
+    rows, seen = [], set()
+    for c in sorted(rollup or [], key=lambda c: c.get("startedAt") or "", reverse=True):
+        key = (c.get("name") or "", c.get("workflowName") or "", c.get("context") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        state = c.get("state") or (c.get("conclusion") if c.get("status") == "COMPLETED" else c.get("status")) or ""
+        rows.append({"name": c.get("name") or c.get("context") or "", "bucket": CHECK_BUCKETS.get(state, "pending"),
+                     "link": c.get("detailsUrl") or c.get("targetUrl") or ""})
+    return rows
+
+
+def ci_state(repo, name, pr, head):
+    """The PR's checks, counted as gh pr checks counts them, and the annotations on its head."""
+    rows = checks_from_rollup(pr.get("statusCheckRollup"))
+    if not rows:
+        # gh pr checks fails on a PR with no checks, which reads as no CI rather than none passing.
+        return None, []
+    checks = {k: sum(1 for r in rows if r["bucket"] == k) for k in ("pass", "fail", "pending", "cancel")}
+    checks["failing"] = [{"name": r["name"], "link": r["link"]} for r in rows if r["bucket"] == "fail"]
+    # Without --pr the diff is the local head, which may not be the commit CI ran on.
+    checks["stale"] = pr["headRefOid"] != head
+    return checks, [] if checks["stale"] else ci_annotations(repo, name, head)
+
+
 ANN_MAX = 200
+ANN_QUERY = """query($owner: String!, $name: String!, $oid: GitObjectID!) {
+  repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit {
+    checkSuites(first: 30) { nodes { checkRuns(first: 50, filterBy: {checkType: LATEST}) { nodes { name permalink
+      annotations(first: 50) { nodes { path annotationLevel title message location { start { line } end { line } } } }
+    } } } }
+  } } }
+}"""
 
 
 def ci_annotations(repo, name, head):
     """The warnings and failures the head's check runs pinned to a line, such as lint and type errors."""
-    runs = (gh_json(repo, "api", f"repos/{name}/commits/{head}/check-runs?per_page=100") or {}).get("check_runs") or []
+    owner, _, short = name.partition("/")
+    got = gh_json(repo, "api", "graphql", "-f", f"query={ANN_QUERY}", "-f", f"owner={owner}", "-f", f"name={short}",
+                  "-f", f"oid={head}")
+    commit = (((got or {}).get("data") or {}).get("repository") or {}).get("object") or {}
     out = []
-    for run in [r for r in runs if (r.get("output") or {}).get("annotations_count")][:ANN_RUNS]:
-        for a in gh_json(repo, "api", f"repos/{name}/check-runs/{run['id']}/annotations?per_page=50") or []:
-            # Actions pins its own job errors ("exit code 1") to .github, which is not a file.
-            if a.get("annotation_level") in ("warning", "failure") and a.get("path") not in (None, "", ".github") \
-                    and a.get("start_line"):
-                out.append({"check": run.get("name") or "", "link": run.get("html_url"), "path": a["path"],
-                            "line": a["start_line"], "end": a.get("end_line") or a["start_line"],
-                            "level": a["annotation_level"], "title": (a.get("title") or "")[:200],
-                            "message": (a.get("message") or "")[:600]})
+    for suite in (commit.get("checkSuites") or {}).get("nodes") or []:
+        for run in (suite.get("checkRuns") or {}).get("nodes") or []:
+            for a in (run.get("annotations") or {}).get("nodes") or []:
+                level = (a.get("annotationLevel") or "").lower()
+                where = a.get("location") or {}
+                start, end = (where.get("start") or {}).get("line"), (where.get("end") or {}).get("line")
+                # Actions pins its own job errors ("exit code 1") to .github, which is not a file.
+                if level in ("warning", "failure") and a.get("path") not in (None, "", ".github") and start:
+                    out.append({"check": run.get("name") or "", "link": run.get("permalink"), "path": a["path"],
+                                "line": start, "end": end or start, "level": level,
+                                "title": (a.get("title") or "")[:200], "message": (a.get("message") or "")[:600]})
     return out[:ANN_MAX]
 
 
@@ -802,7 +860,7 @@ def blame(repo, rng, path, lines, reverse=False):
 COMMIT_MAP_MAX_FILES = 150
 
 
-def map_commits(repo, meta, files):
+def map_commits(repo, meta, files, pool=None):
     """Give each hunk the commits that wrote its added lines or removed its removed ones, as indexes into
     meta["commits"], so the page can show one commit's part of the change."""
     shas = meta["shas"]
@@ -816,11 +874,15 @@ def map_commits(repo, meta, files):
         sha, *parents = line.split() or [""]
         for p in parents:
             children.setdefault(p, []).append(sha)
-    for f in work:
+
+    def blames(f):
         new = {r[2] for h in f["hunks"] for r in h["lines"] if r[0] == "+"}
         old = {r[1] for h in f["hunks"] for r in h["lines"] if r[0] == "-"}
         wrote = blame(repo, rng, f["path"], new) if new and f["status"] != "deleted" else {}
         kept = blame(repo, rng, f["oldPath"] or f["path"], old, reverse=True) if old else {}
+        return wrote, kept
+
+    for f, (wrote, kept) in zip(work, (pool.map if pool else map)(blames, work)):
         for h in f["hunks"]:
             got = {at[wrote[r[2]]] for r in h["lines"] if r[0] == "+" and wrote.get(r[2]) in at}
             for r in h["lines"]:
@@ -873,13 +935,20 @@ def record_pass(path, data, keep=5):
 
 
 def collect(a):
-    meta = resolve(a)
+    # The GitHub and git calls overlap on these threads; at most a handful reach GitHub at once.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return _collect(a, pool)
+
+
+def _collect(a, pool):
+    meta, ci = resolve(a, pool)
+    ws = pool.submit(whitespace_blind_changes, a.repo, meta["mergeBase"], meta["headSha"])
     raw = git(a.repo, "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", "-M",
               f"-U{CONTEXT}", meta["mergeBase"], meta["headSha"])
     files = parse_diff(raw)
-    ws = whitespace_blind_changes(a.repo, meta["mergeBase"], meta["headSha"])
-    attrs = check_attrs(a.repo, meta["headSha"], [f["path"] for f in files])
+    attrs = pool.submit(check_attrs, a.repo, meta["headSha"], [f["path"] for f in files])
     blobs = read_blobs(a.repo, [f"{meta['headSha']}:{f['path']}" for f in files if f["status"] != "deleted"])
+    ws, attrs = ws.result(), attrs.result()
     stats, noise_lines = {}, {"add": 0, "del": 0}
     for i, f in enumerate(files, 1):
         f["id"] = f"f{i}"
@@ -924,8 +993,9 @@ def collect(a):
     find_moves(files)
     connect(files)
     tells = find_tells(files)
-    meta["commitMap"] = map_commits(a.repo, meta, files)
-    annotations = place_annotations(files, meta.pop("annotations"))
+    meta["commitMap"] = map_commits(a.repo, meta, files, pool)
+    meta["checks"], annotations = ci.result() if ci else (None, [])
+    annotations = place_annotations(files, annotations)
     total = {"files": len(files), "add": sum(f["additions"] for f in files), "del": sum(f["deletions"] for f in files)}
     moved = sum(m["end"] - m["start"] for f in files for h in f["hunks"] for m in h["moves"] if m["side"] == "+")
     data = {"meta": meta, "stats": {"categories": stats, "noise": noise_lines, "total": total, "moved": moved},
@@ -1393,6 +1463,18 @@ def self_test():
         {"id": "f1h1", "lines": [[" ", 4, 4, "a"], ["-", 5, None, "b"], ["+", None, 5, "c"]]}]}],
         [{"path": "a.ts", "line": 4, "end": 6}, {"path": "a.ts", "line": 40, "end": 40}])
     assert anns[0]["row"] == "R5" and anns[0]["hunk"] == "f1h1" and "hunk" not in anns[1], anns
+    # A re-run leaves the earlier run in the rollup; as in gh pr checks, only the latest of each check counts.
+    def run(name, wf, at, status, conclusion=""):
+        return {"name": name, "workflowName": wf, "startedAt": at, "status": status, "conclusion": conclusion,
+                "detailsUrl": name}
+    rows = checks_from_rollup([run("lint", "CI", "2026-01-01T10:00:00Z", "COMPLETED", "FAILURE"),
+                               run("lint", "CI", "2026-01-01T11:00:00Z", "COMPLETED", "SUCCESS"),
+                               run("lint", "Nightly", "2026-01-01T09:00:00Z", "IN_PROGRESS"),
+                               run("e2e", "CI", "2026-01-01T10:00:00Z", "COMPLETED", "CANCELLED"),
+                               {"context": "deploy", "state": "ERROR", "targetUrl": "https://ci.test/1"}])
+    assert sorted((r["name"], r["bucket"]) for r in rows) == [
+        ("deploy", "fail"), ("e2e", "cancel"), ("lint", "pass"), ("lint", "pending")], rows
+    assert ci_state(None, "o/r", {"statusCheckRollup": [], "headRefOid": "h"}, "h") == (None, []), "no checks is no CI"
     print("self-test ok")
 
 

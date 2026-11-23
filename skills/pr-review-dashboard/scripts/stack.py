@@ -22,12 +22,15 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import collect as C  # noqa: E402
 
 CHURN_MIN = 3
+# Layers collected at once. Each makes a few GitHub requests at a time, so four stays well inside GitHub's limits.
+LAYER_JOBS = 4
 SUBSTANTIAL = re.compile(r"[A-Za-z_$][\w$]{2}")
 
 
@@ -122,11 +125,19 @@ def main():
     chain, forks = find_stack(prs, a.pr)
     if len(chain) == 1:
         print(f"#{a.pr} is not in a stack: no open PR builds on it or sits under it. Use collect.py for one PR.")
-    layers = []
-    for pr in chain:
+    # One fetch for every layer, so each layer's collect.py finds its commits and fetches nothing.
+    C.git(repo, "fetch", "-q", "origin", *(f"refs/pull/{pr['number']}/head" for pr in chain),
+          *dict.fromkeys(pr["baseRefName"] for pr in chain))
+
+    def collect_layer(pr):
         out = os.path.join(a.out, str(pr["number"]))
-        r = subprocess.run([sys.executable, os.path.join(HERE, "collect.py"), "--pr", str(pr["number"]),
-                            "--repo", repo, "--out", out], capture_output=True, text=True)
+        return out, subprocess.run([sys.executable, os.path.join(HERE, "collect.py"), "--pr", str(pr["number"]),
+                                    "--repo", repo, "--out", out], capture_output=True, text=True)
+
+    with ThreadPoolExecutor(max_workers=LAYER_JOBS) as pool:
+        runs = list(pool.map(collect_layer, chain))
+    layers = []
+    for pr, (out, r) in zip(chain, runs):
         if r.returncode:
             sys.exit(f"collect.py failed on #{pr['number']}: {r.stderr.strip()}")
         print(f"#{pr['number']}")
