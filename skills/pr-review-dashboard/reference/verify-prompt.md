@@ -22,7 +22,8 @@ Check, in this order:
 6. Risk. Does a section that touches auth, tokens, money, migrations, data deletion, dependencies, outside input, concurrency or deploy config lack a `risk` note, or does a note claim a risk the code does not carry?
 7. Split. If `split` is present, could each suggested PR merge on its own, in that order? If it is absent and the `review.diff` header says the change is long or too big for one review, is there a clean split the guide missed?
 8. Try. For each item in `try`, could the author do it with the code as it is, and would it exercise what the diff changes? Is the outcome it says to expect what the code does?
-9. Warnings. For each warning from `--check`, decide whether it is a real problem here or fine.
+9. Summary. Is each part of `summary` true to the diff and right for its persona in `{WORKDIR}/personas.json`: its reader, what its prompt asks for, and steps that can be followed with the change as it stands? Is an optional persona missing where it applies?
+10. Warnings. For each warning from `--check`, decide whether it is a real problem here or fine.
 
 Do not report style preferences, synonyms, or rewordings of sentences that are already true. Leaving something out is an issue only when the section's main point is missing or the text would mislead: a section is one or two sentences, not an inventory, and a fix that adds a clause for every detail makes the guide worse. A guide with nothing wrong is a good result; say so with an empty list.
 
@@ -42,6 +43,6 @@ Write `{WORKDIR}/verify.json`:
  ]}
 ```
 
-`kind` is one of `move`, `claim`, `link`, `order`, `split`, `merge`, `risk`, `try`; for a suggested split of the PR use `split` too, with the PR grouping as the `fix`. Every `fix` is concrete enough to apply without reading your reasoning: the hunk and the target section, or the replacement sentence.
+`kind` is one of `move`, `claim`, `link`, `order`, `split`, `merge`, `risk`, `try`, `summary`; for a suggested split of the PR use `split` too, with the PR grouping as the `fix`. Every `fix` is concrete enough to apply without reading your reasoning: the hunk and the target section, or the replacement sentence.
 
 Reply with the number of issues and one line per issue, and nothing else.

@@ -59,7 +59,20 @@ export const replyKey = (thread: string) => `reply:${thread}`;
 export const composerText = (anchor: Anchor) => draftText(anchorKey(anchor));
 export const saveComposerText = (anchor: Anchor, text: string) => saveDraftText(anchorKey(anchor), text);
 
-const KINDS: AnchorKind[] = ["line", "hunk", "file", "section", "tell", "annotation", "check", "claim", "try", "stackIssue", "general"];
+const KINDS: AnchorKind[] = [
+  "line",
+  "hunk",
+  "file",
+  "section",
+  "tell",
+  "annotation",
+  "check",
+  "claim",
+  "try",
+  "summary",
+  "stackIssue",
+  "general",
+];
 
 // The composer that was open with something typed in it, reopened after a reload. The server checks the anchor
 // again when the note is added, so a plain look at its shape is enough here.

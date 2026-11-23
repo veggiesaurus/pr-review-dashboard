@@ -67,6 +67,8 @@ export function anchorKey(anchor: Anchor): string {
       return `check:${anchor.layer}:${anchor.name}`;
     case "claim":
       return `claim:${anchor.layer}:${anchor.list}:${anchor.index}`;
+    case "summary":
+      return `summary:${anchor.layer}:${anchor.reader}:${anchor.index}`;
     case "stackIssue":
       return `stackIssue:${anchor.index}`;
     case "general":

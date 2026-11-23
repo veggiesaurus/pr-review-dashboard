@@ -25,7 +25,12 @@ Write `{WORKDIR}/guide.json`:
  "split": {"note": "The switcher can merge before the tab sync it needs only for other tabs.",
            "prs": [[1, 2], [3, 4]]},
  "try": ["Switch workspace in one tab while another is mid-refresh: the second tab should land on the home page, not a 403.",
-         "Sign out during a switch and check no tab keeps the old workspace's data."]}
+         "Sign out during a switch and check no tab keeps the old workspace's data."],
+ "summary": {"exec": "People in more than one workspace can switch between them without signing out. A small change to sign-in, with the usual care needed around access tokens.",
+             "product": "Adds a workspace switcher to the user menu. Every open tab follows the switch, so nobody ends up looking at two workspaces at once.",
+             "developer": "Switching swaps the session's workspace on the server and tells the user's other tabs, which reload onto it. Signing out mid-switch drops the session as before.",
+             "reviewer": "The switch mutation re-mints the access token and fences off token refreshes already in flight; look hardest at a refresh that lands between the two.",
+             "qa": "- Switch workspace from the user menu: the page reloads in the new workspace.\n- With a second tab open, switch in the first: the second follows within a few seconds."}}
 ```
 
 Sections:
@@ -46,6 +51,8 @@ Risk and size, so the reviewer's attention goes where it matters:
 - Give a section a `risk` note, one sentence, when its code touches auth or permissions, tokens or secrets, money, a migration or data deletion, a dependency, input from outside the system, concurrency, or deploy and CI config. Say what is at stake, not the category. Leave `risk` out otherwise; a note on every section is as useless as none. A `risk hint` on a file is a pointer from its path, not a verdict.
 - Add `try`: up to three things the author should do by hand before marking the PR ready, each one concrete enough to follow without reading the code (what to do, and what should happen), chosen where the change is most likely to go wrong: a race, an edge case in the input, an old record or a second tab. Link a phrase to the hunk it exercises if that helps. Leave it out, or keep it short, when the change has no behaviour to try, such as a refactor with tests or a docs change.
 - If the header says the change is long or too big for one review, add `split`: how the sections could go out as several smaller PRs, each able to merge on its own, in order, and a one-sentence `note` on why that order. A PR must not use something a later one adds (the `uses:` lines show those dependencies). Leave `split` out when the change does not divide cleanly, and say so in your reply instead.
+
+Add `summary`: what the whole change does, written once for each persona in `{WORKDIR}/personas.json`, so the author can pass the right one to whoever asks. A persona has an `id`, the key to write its part under; a `name`; a `prompt` saying who reads it and what to write for them; `words`, the most its reader wants, when set; and `optional` when it may be left out where it doesn't apply. Each part stands on its own, since its reader reads only that one, and says what the diff does, not what the description claims. Plain text that pastes anywhere: paragraphs separated by a blank line, lists as lines starting `- `, and code names in backticks where the prompt allows code. No links, headings or bold. Steps someone is to follow must be ones they can follow with the change as it stands: if the screens don't use it yet, say how to reach it through the API.
 
 Text, for the person who wrote the code:
 

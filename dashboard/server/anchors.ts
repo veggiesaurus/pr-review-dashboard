@@ -1,5 +1,6 @@
 import type { Anchor, ResolvedAnchor } from "../shared/messages";
 import type { Hunk, HunkLine, Layer, ReviewFile } from "../shared/payload";
+import { summaryParts } from "../shared/summary";
 import { flat } from "./format";
 import type { Review } from "./review";
 
@@ -322,6 +323,19 @@ export function resolveAnchor(review: Review, anchor: Anchor): ResolvedAnchor | 
         match: step,
       });
     }
+    case "summary": {
+      const text = layer.summary?.[anchor.reader];
+      const part = text ? summaryParts(text)[anchor.index] : undefined;
+      if (!part) {
+        return null;
+      }
+      const what = part.item ? "an item" : "a paragraph";
+      const name = layer.personas.find(p => p.id === anchor.reader)?.name ?? anchor.reader;
+      return found(`${at}${what} of the summary for ${name}: "${oneLine(part.text, 200)}"`, {
+        detail: part.text.length > 200 ? clip(part.text, 1200) : null,
+        match: part.text,
+      });
+    }
   }
 }
 
@@ -464,6 +478,11 @@ function findAgain(review: Review, old: ResolvedAnchor): Anchor | null {
     case "try": {
       const index = layer.try.indexOf(old.match ?? "");
       return index >= 0 ? { kind: "try", ...base, index } : null;
+    }
+    case "summary": {
+      const text = layer.summary?.[old.reader];
+      const index = text ? summaryParts(text).findIndex(part => part.text === old.match) : -1;
+      return index >= 0 ? { kind: "summary", ...base, reader: old.reader, index } : null;
     }
   }
 }

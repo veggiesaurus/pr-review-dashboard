@@ -10,6 +10,7 @@ Read `{WORKDIR}/description.md` (the author's intent, to check against the diff,
 
 - Put each hunk left to place in the section whose purpose it serves, by adding it to that section's `items`, or in a new section where it serves none. Keep the order of sections as it is unless a new section must come before one that depends on it.
 - In each section whose code changed, fix any sentence the new code makes wrong, and link a new hunk where it is now the clearest example of what the sentence says.
+- If what the whole change does has moved on, fix whatever in `summary` it makes wrong, or add a `summary` as the guide prompt describes if the guide has none.
 - Leave every other section, and every sentence that is still right, word for word. This is an update, not a rewrite.
 
 When the file is written, run `python3 {SCRIPTS}/render.py {WORKDIR} --check` and fix what it lists until it passes.

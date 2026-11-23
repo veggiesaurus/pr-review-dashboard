@@ -45,7 +45,7 @@ async function serve(name, data) {
   const state = join(tmp, `${name}.json`);
   const child = spawn("bun", ["run", "server/index.ts", "--state", state, "--data", data, "--repo", join(fx, "repo"), "--static", built], {
     cwd: here,
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PRG_GITHUB_CLIENT_ID: "test" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PRG_GITHUB_CLIENT_ID: "test", CLAUDE_CONFIG_DIR: join(tmp, "claude") },
     stdio: ["ignore", "ignore", "inherit"],
   });
   const server = { child, state };
@@ -171,6 +171,14 @@ try {
   const asSession = (path, body) => fetch(`${work.origin}/api/${path}`, { method: "POST", headers: auth, body: JSON.stringify(body) });
   const said = async () => (await fetch(`${work.origin}/api/messages`, { headers: auth })).json();
 
+  // The session lists the skills it can run as it starts the server, as SESSION.md says.
+  await asSession("skills", [
+    { name: "frontend-design:frontend-design", description: "Design guidance for UI" },
+    { name: "simplify", description: "Review changed code for reuse" },
+    { name: "receiving-code-review", description: "Weigh feedback before acting on it" },
+    { name: "code-review:code-review", description: "Code review a pull request" },
+    { name: "code-review", description: "Find bugs in the current diff" },
+  ]);
   await open(work.link);
   // The ready check's lists are on Overview and its chips in the header on every tab, where the template has both under the header.
   const ready = await page.getByRole("region", { name: "Before you mark it ready" }).textContent();
@@ -201,6 +209,65 @@ try {
     () => toneOf("Try by hand"),
     tone => tone === "quiet",
   );
+  // What the PR does, at the level the slider picks: the product's by default, plain words at one end, the code at the other.
+  const summary = page.getByRole("region", { name: "What this PR does" });
+  const summaryText = () =>
+    summary
+      .locator("p")
+      .textContent({ timeout: 500 })
+      .catch(() => null);
+  await check(
+    "the summary opens on the first persona, Exec",
+    summaryText,
+    text => text === "Blog posts move to a new web address; old links stop working.",
+  );
+  await summary
+    .getByRole("button", { name: "Product" })
+    .click({ timeout: 500 })
+    .catch(() => {});
+  await check(
+    "and Product shows the version written for product",
+    summaryText,
+    text => text === "Post links move from /posts to /blog, so old links stop working.",
+  );
+  // Each part of a summary is something to ask about, and a note on one jumps back to it in its reader's version.
+  const asks = summary.locator("li[data-part] button[data-ask]");
+  await summary
+    .getByRole("button", { name: "QA" })
+    .click({ timeout: 500 })
+    .catch(() => {});
+  await check(
+    "each step of QA's version can be asked about",
+    () => asks.count(),
+    n => n === 2,
+  );
+  await asks
+    .nth(1)
+    .click({ timeout: 500 })
+    .catch(() => {});
+  await page
+    .getByRole("textbox", { name: /^Note or question about an item of the summary for QA/ })
+    .fill("And the RSS feed?", { timeout: 2000 })
+    .catch(() => {});
+  await page
+    .getByRole("button", { name: "Add note", exact: true })
+    .click({ timeout: 2000 })
+    .catch(() => {});
+  await summary.getByRole("button", { name: "Product" }).click();
+  await page.getByRole("button", { name: /^Notes/ }).click();
+  await page
+    .getByRole("button", { name: /^an item of the summary for QA/ })
+    .last()
+    .click({ timeout: 2000 })
+    .catch(() => {});
+  await check(
+    "a note on one of its steps jumps back to it, showing QA's version again",
+    () => summary.getByRole("button", { name: "QA" }).getAttribute("aria-pressed"),
+    pressed => pressed === "true",
+  );
+  await page.getByRole("button", { name: /^Notes/ }).click();
+  await page.locator("li", { hasText: "And the RSS feed?" }).last().getByRole("button", { name: "Delete" }).click();
+  await page.keyboard.press("Escape");
   await check(
     "the size chip counts the lines outside tests and names the test lines beside them",
     () => page.locator("header").first().textContent(),
@@ -411,6 +478,26 @@ try {
   );
 
   await page.getByRole("button", { name: /^Chat/ }).click();
+  // The owner's chat box offers the skills the session listed after /.
+  const askBox = page.getByRole("textbox", { name: "Ask Claude about this review" });
+  await askBox.pressSequentially("/rev");
+  await check(
+    "/ lists the skills the session can run, matching names first, the shorter first, then descriptions",
+    () => page.getByRole("listbox", { name: "Skills" }).getByRole("option").allInnerTexts(),
+    options =>
+      options.length === 4 &&
+      options[0].startsWith("/code-review\n") &&
+      options[1].startsWith("/code-review:code-review") &&
+      options[2].startsWith("/receiving-code-review") &&
+      options[3].startsWith("/simplify"),
+  );
+  await page.keyboard.press("Enter");
+  await check(
+    "and a pick writes it into the message",
+    () => typed(askBox),
+    text => text?.trim() === "/code-review",
+  );
+  await clear(askBox);
   await dropImage(page.getByRole("textbox", { name: "Ask Claude about this review" }));
   await check(
     "a screenshot dropped into the chat box waits there to be sent",

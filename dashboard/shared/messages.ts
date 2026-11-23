@@ -47,6 +47,8 @@ export const anchorSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("claim"), layer, list: z.enum(["checklist", "unsupported", "missing", "issue"]), index }),
   // index into layer.try.
   z.object({ kind: z.literal("try"), layer, index }),
+  // One part of the summary written for a persona, by its id: index into summaryParts(layer.summary[reader]).
+  z.object({ kind: z.literal("summary"), layer, reader: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), index }),
   // index into stack.check.issues.
   z.object({ kind: z.literal("stackIssue"), index }),
   // Nothing in particular, optionally while looking at one layer.
@@ -281,6 +283,10 @@ export const replySchema = z
 // What the session says it is doing, in a line. An empty line says it has stopped.
 export const activitySchema = z.object({ text: z.string().max(400), replyTo: messageId.optional() });
 export const attentionSchema = z.object({ text: z.string().max(400) });
+// A skill the session can run, as its own list names it, for the owner's `/` menu.
+export const skillSchema = z.object({ name: z.string().regex(/^[\w.-]{1,80}(:[\w.-]{1,80})?$/), description: oneLine(200).optional() });
+export const skillsSchema = z.array(skillSchema).max(300);
+export type Skill = z.infer<typeof skillSchema>;
 // thread is the first message of the thread the work is for, when the session named one.
 export type Activity = { text: string; thread: string | null; at: string };
 // The session is stopped at a prompt in its terminal, such as a request for permission, which only the user can answer.

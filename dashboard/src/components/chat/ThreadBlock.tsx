@@ -296,6 +296,7 @@ export function ReplyBox({
           label={placeholder}
           placeholder={placeholder}
           className="flex-1"
+          skills={main === "chat"}
         />
         <Button type="submit" size="sm" variant="outline" disabled={!text.trim() || add.isPending || shots.uploading} title={title[main]}>
           {main === "post" ? "Post" : "Send"}

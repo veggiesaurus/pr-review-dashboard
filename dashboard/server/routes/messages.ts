@@ -2,11 +2,21 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 
-import { activitySchema, archiveSchema, attentionSchema, editSchema, newMessageSchema, replySchema } from "../../shared/messages";
+import {
+  activitySchema,
+  archiveSchema,
+  attentionSchema,
+  editSchema,
+  newMessageSchema,
+  replySchema,
+  type Skill,
+  skillsSchema,
+} from "../../shared/messages";
 import type { AppDeps } from "../app";
 import { type Env, only, small } from "../guards";
 import { mentionsIn } from "../people";
 import { parseWhere } from "../presence";
+import { diskSkills } from "../skills";
 import { hasAttachment } from "./attachments";
 
 export function messagesRoutes(deps: AppDeps) {
@@ -85,6 +95,21 @@ export function messagesRoutes(deps: AppDeps) {
       return c.json({ error: "no message with that id" }, 404);
     }
     return result.message ? c.json(result.message, 201) : c.json(result.thread, 200);
+  });
+
+  // The skills the session can run: those on disk, read here, and those it posts because they aren't, its built-ins
+  // and any from a claude.ai account. Only the owner may ask for one, and the names can say what the owner has
+  // installed, so guests never see them.
+  let posted: Skill[] = [];
+  app.post("/skills", only("session"), small, zValidator("json", skillsSchema), c => {
+    posted = c.req.valid("json");
+    store.notify("session");
+    return c.json({ skills: posted.length });
+  });
+  app.get("/skills", only("owner", "session"), c => {
+    const found = deps.claudeDir ? diskSkills(deps.claudeDir, deps.repo) : [];
+    const names = new Set(found.map(skill => skill.name));
+    return c.json([...found, ...posted.filter(skill => !names.has(skill.name))]);
   });
 
   app.get("/session/wait", only("session"), async c => c.text(await store.wait(c.req.raw.signal)));

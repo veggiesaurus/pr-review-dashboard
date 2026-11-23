@@ -11,7 +11,8 @@ WORKDIR holds hunks.json from collect.py and guide.json from the guide worker.
 one go. Without it the page is written to PAGE.html (default WORKDIR/page.html).
 
 guide.json is {"sections": [{"title", "why", "how", "items": [...], "risk"?}],
-"split"?: {"note", "prs": [[1, 2], [3]]}, "try"?: [...]}. An item is a hunk id
+"split"?: {"note", "prs": [[1, 2], [3]]}, "try"?: [...],
+"summary"?: {persona id: text}}, one part per persona in personas.json. An item is a hunk id
 (f3h2) or a file id (f3), which takes whatever hunks of that file no other item
 names. why and how may link phrases as [phrase](f3h2). risk is a short note on
 what makes the section risky; split suggests how a large PR could be several, by
@@ -78,6 +79,37 @@ def check_try(guide, data, layers=None):
     if len(items) > 3:
         problems.append(f'"try" has {len(items)} items; keep the three that matter most')
     return items, problems
+
+
+def read_personas(workdir):
+    """The personas collect.py resolved for this build, or the skill's own for a folder collected before it did."""
+    try:
+        listed, _problem = C.check_personas(read_json(os.path.join(workdir, "personas.json")))
+    except (OSError, json.JSONDecodeError):
+        listed = None
+    return listed or C.check_personas(read_json(C.DEFAULT_PERSONAS))[0]
+
+
+def check_summary(guide, personas):
+    """The guide's summary, one part per persona, and its problems and warnings. A guide without one is fine."""
+    summary = guide.get("summary") if isinstance(guide, dict) else None
+    if summary is None:
+        return None, [], []
+    ids = [p["id"] for p in personas]
+    if not isinstance(summary, dict) or not all(isinstance(v, str) and v.strip() for v in summary.values()):
+        return None, ['"summary" must map each persona\'s id to its text'], []
+    problems = [f'summary has "{k}", which is no persona; the ids are {", ".join(ids)}' for k in summary if k not in ids]
+    problems += [f'summary has nothing for {p["name"]} ("{p["id"]}")' for p in personas if not p["optional"] and p["id"] not in summary]
+    problems += [f"summary {k} has a link, heading or bold; keep to paragraphs, `- ` lists and backticks, to paste anywhere"
+                 for k, text in summary.items() if re.search(r"\]\(|^#|\*\*", text, re.M)]
+    warnings = []
+    for p in personas:
+        n = len(summary.get(p["id"], "").split())
+        if p["words"] and n > 2 * p["words"]:
+            problems.append(f"summary {p['id']} is {n} words, twice the {p['words']} its reader wants")
+        elif p["words"] and n > p["words"]:
+            warnings.append(f"summary {p['id']} is {n} words, over the {p['words']} its reader wants")
+    return {k: summary[k].strip() for k in ids if k in summary}, problems, warnings
 
 
 def build_sections(data, guide, layers=None):
@@ -325,6 +357,21 @@ def self_test():
     assert check_try({"try": ["open [it](f1h2)", "x"]}, gen2) == (["open [it](f1h2)", "x"], [])
     assert len(check_try({"try": ["see [it](f7)", "a", "b", "c"]}, gen2)[1]) == 2
     assert check_try({"try": "x"}, gen2)[1]
+    defaults = C.check_personas(read_json(C.DEFAULT_PERSONAS))[0]
+    levels = {"exec": "Pages load faster.", "product": "Post pages load faster.", "developer": "Caches the slug lookup.",
+              "reviewer": "Memoises slugify per title.", "qa": "- Open a post twice: the second load is quicker."}
+    assert check_summary({}, defaults) == (None, [], []) and check_summary({"summary": levels}, defaults) == (levels, [], [])
+    assert check_summary({"summary": {"exec": "x"}}, defaults)[1], "a summary missing a required persona must fail"
+    no_qa = {k: v for k, v in levels.items() if k != "qa"}
+    assert check_summary({"summary": no_qa}, defaults)[:2] == (no_qa, []), "an optional persona may be left out"
+    assert check_summary({"summary": dict(levels, reviewer="See [the cache](f1h1).")}, defaults)[1], "a link must fail"
+    listed = dict(levels, reviewer="Memoises `slugify`:\n\n- per title\n- cleared on deploy")
+    assert check_summary({"summary": listed}, defaults)[:2] == (listed, []), "paragraphs, lists and backticks are fine"
+    team = C.check_personas([{"name": "Support desk", "prompt": "What to tell customers.", "words": 10}])[0]
+    assert check_summary({"summary": {"support-desk": "Fine."}}, team)[:2] == ({"support-desk": "Fine."}, [])
+    assert check_summary({"summary": {"support-desk": "Fine.", "exec": "x"}}, team)[1], "a part for no persona must fail"
+    assert check_summary({"summary": {"support-desk": "word " * 15}}, team)[2], "a part over its word limit is a warning"
+    assert check_summary({"summary": {"support-desk": "word " * 21}}, team)[1], "twice the limit is a problem"
     import tempfile
     page = os.path.join(tempfile.mkdtemp(), "p.html")
     meta = {"repo": "o/r", "number": 1, "head": "h"}
@@ -438,6 +485,9 @@ def load(workdir, data, layers=None):
     data["_split"] = bool(split)
     tries, try_problems = check_try(guide, data, layers)
     problems += try_problems
+    personas = read_personas(workdir)
+    summary, summary_problems, summary_warnings = check_summary(guide, personas)
+    problems += summary_problems
     try:
         desc = read_json(os.path.join(workdir, "description.json"))
     except OSError:
@@ -446,9 +496,10 @@ def load(workdir, data, layers=None):
         problems.append(f"description.json unreadable: {e}")
     if desc is not None:
         problems += check_description(desc, data)
-    warnings = (lint(data, sections) + split_warnings) if not problems else []
+    warnings = (lint(data, sections) + split_warnings + summary_warnings) if not problems else []
     return {"problems": problems, "warnings": warnings, "sections": sections,
-            "extras": {"split": split, "descriptionCheck": desc, "try": tries}}
+            "extras": {"split": split, "descriptionCheck": desc, "try": tries, "summary": summary,
+                       "personas": [{"id": p["id"], "name": p["name"]} for p in personas if summary and p["id"] in summary]}}
 
 
 def check_description(desc, data):

@@ -262,18 +262,6 @@ describe("both scripts", () => {
 });
 
 describe("attention.sh", () => {
-  test("reads the hook's own session and tool, not ones nested in the tool's input", async () => {
-    const dashboard = stub();
-    mkdirSync(join(home, ".cache", "prg", "waiting"), { recursive: true });
-    writeFileSync(marker(), "mcp__x__run\n");
-    await runHook(["sh", join(scripts, "attention.sh"), "clear"], {
-      session_id: SESSION,
-      tool_name: "mcp__x__run",
-      tool_input: { session_id: "another", tool_name: "Other" },
-    });
-    expect(dashboard.calls.some(c => c.path === "/api/permissions/clear")).toBe(true);
-  });
-
   test("skips the clear for a tool not in the marker, and runs it for one that is", async () => {
     const dashboard = stub();
     mkdirSync(join(home, ".cache", "prg", "waiting"), { recursive: true });
@@ -283,6 +271,15 @@ describe("attention.sh", () => {
     expect(dashboard.calls).toEqual([]);
     writeFileSync(marker(), "Write\nBash\n");
     await run();
+    expect(dashboard.calls.some(c => c.path === "/api/permissions/clear")).toBe(true);
+  });
+
+  test("reads the hook's own session and tool when the tool's input has fields of the same names", async () => {
+    const dashboard = stub();
+    mkdirSync(join(home, ".cache", "prg", "waiting"), { recursive: true });
+    writeFileSync(marker(), "Bash\n");
+    const input = { session_id: SESSION, tool_name: "Bash", tool_input: { session_id: "other", tool_name: "Write" } };
+    await runHook(["sh", join(scripts, "attention.sh"), "clear"], input);
     expect(dashboard.calls.some(c => c.path === "/api/permissions/clear")).toBe(true);
   });
 });
