@@ -217,7 +217,15 @@ export type Layer = {
   descriptionCheck: DescriptionCheck | null;
   // Up to three things to try by hand, prose like a section's why.
   try: string[];
+  // The whole change in plain text for each persona, by id; null for a guide written before it.
+  summary: Summary | null;
+  // The personas the summary was written for, in the order the page offers them.
+  personas: Persona[];
 };
+
+export type Summary = Record<string, string>;
+export type SummaryReader = string;
+export type Persona = { id: SummaryReader; name: string };
 
 export type StackLayerRow = {
   number: number;
@@ -321,6 +329,8 @@ export const rawLayerSchema = z.looseObject({
   split: z.looseObject({ prs: z.array(z.array(z.number().int())) }).nullish(),
   descriptionCheck: z.looseObject({}).nullish(),
   try: z.array(z.string()).default([]),
+  summary: z.record(z.string(), z.string()).nullish().default(null),
+  personas: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
 });
 
 export const rawStackSchema = z.looseObject({

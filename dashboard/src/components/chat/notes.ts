@@ -1,6 +1,7 @@
 import type { Anchor, AnchorKind, Message, NoteState, ResolvedAnchor } from "shared/messages";
 import { noteOrder } from "shared/order";
 import type { ReviewResponse } from "shared/payload";
+import { summaryParts } from "shared/summary";
 import { typedText } from "shared/typed";
 
 import { plain } from "src/components/guide/visible";
@@ -28,6 +29,7 @@ export const STATE_TONE: Record<NoteState, Tone> = {
 export const GROUPS: { name: string; kinds: AnchorKind[] }[] = [
   { name: "Lines", kinds: ["line", "tell"] },
   { name: "Files and hunks", kinds: ["hunk", "file"] },
+  { name: "Summary", kinds: ["summary"] },
   { name: "Guide sections", kinds: ["section"] },
   { name: "CI", kinds: ["annotation", "check"] },
   { name: "Description", kinds: ["claim"] },
@@ -80,6 +82,13 @@ export function describe(anchor: Anchor, review: ReviewResponse | undefined): st
     }
     case "try":
       return `${at}a thing to try by hand: "${plain(layer?.try[anchor.index] ?? "")}"`;
+    case "summary": {
+      // Worded as the server labels it, so the composer and the notes name it the same way.
+      const text = layer?.summary?.[anchor.reader];
+      const part = text ? summaryParts(text)[anchor.index] : undefined;
+      const name = layer?.personas.find(p => p.id === anchor.reader)?.name ?? anchor.reader;
+      return `${at}${part?.item ? "an item" : "a paragraph"} of the summary for ${name}: "${plain(part?.text ?? "")}"`;
+    }
     case "stackIssue":
       return `the stack issue "${plain(review?.stack?.check?.issues[anchor.index]?.problem ?? "")}"`;
     case "general":
@@ -164,11 +173,15 @@ export function jumpTo(anchor: Anchor, review: ReviewResponse | undefined): bool
   if ("layer" in anchor) {
     view.setLayer(anchor.layer);
   }
+  // A part of the summary is on the page only while its reader's version is the one shown.
+  if (anchor.kind === "summary") {
+    view.setSummaryReader(anchor.reader);
+  }
   view.setTab("overview");
   const key = anchorKey(anchor);
   revealSoon(() => {
     const button = document.querySelector<HTMLElement>(`[data-ask="${CSS.escape(key)}"]`);
-    return button?.closest<HTMLElement>("li, tr, section") ?? button;
+    return button?.closest<HTMLElement>("[data-part], li, tr, section") ?? button;
   });
   return true;
 }

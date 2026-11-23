@@ -44,6 +44,7 @@ Checks: `bun test`, `bun run typecheck`, `bunx biome check .`.
 - `sections`: render.py's resolved sections, guide sections first, then `formatting` (hidden unless formatting is shown) and `generated`. `section.files[].hunks` is the part of the file that section shows. `risk` is `""` when there is none.
 - `tells[].line` and `annotations[].row` are `"R12"` or `"L3"`, the same form as line element ids. An annotation has `file`, `hunk` and `row` only when it lands on a line in the diff.
 - `ready`: the size band, CI counts (`checks`, null without a PR) and whether implementation and tests changed. `meta.lastPass`: the previous build, `fresh` hunks new since it.
+- `summary`: the whole change written for each persona, keyed by its id, in plain text with paragraphs, `- ` lists and backticks; null for a guide written before it. `personas`: `{id, name}` for each part there is, in the order the page offers them.
 - `descriptionCheck`: `checklist` (claims the diff carries out, with hunks), `unsupported`, `missing`, `issue`; any row may carry a `stack` note.
 - `stack`: `layers` bottom first (`needsRebase`), `forks`, `links`, `churn`, and `check` (`stack-guide.json`: a summary per layer and `issues` whose `problem` and `fix` are prose with `[phrase](1014:f3h2)` links).
 
@@ -168,6 +169,7 @@ The page's socket, `WS /ws`, also takes `{type: "where", layer, tab, section, hi
 | `check`      | `layer, name` (checks are live, so the name isn't checked)                           | `the CI check "name"`          |
 | `claim`      | `layer, list: "checklist"\|"unsupported"\|"missing"\|"issue", index`                 | the claim's text               |
 | `try`        | `layer, index` (into `layer.try`)                                                    | the step's text                |
+| `summary`    | `layer, reader` (a persona id), `index` (into `summaryParts(layer.summary[reader])`) | the part's text                |
 | `stackIssue` | `index` (into `stack.check.issues`)                                                  | the problem                    |
 | `general`    | `layer?`                                                                             | none                           |
 

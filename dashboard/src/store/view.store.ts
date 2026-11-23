@@ -1,4 +1,4 @@
-import type { Layer, ReviewResponse } from "shared/payload";
+import type { Layer, ReviewResponse, SummaryReader } from "shared/payload";
 import { formattingOnly, hits } from "src/components/guide/visible";
 import { clearFlash, findTarget, parseTarget, reveal, type Tab, type Target } from "src/utils/anchors";
 import { indexLayer } from "src/utils/payload";
@@ -24,6 +24,9 @@ type ViewState = {
   anchor: string | null;
   // The Go to a file or section picker, when open.
   jump: "file" | "section" | "usages" | null;
+  // Whose version of the summary is shown, so a jump to a thread about one of its parts can show it; null for the first.
+  summaryReader: SummaryReader | null;
+  setSummaryReader: (reader: SummaryReader) => void;
   setReview: (review: ReviewResponse | null) => void;
   // keepScroll leaves the page where it is, for a switch made from a list the reader is looking at.
   setLayer: (layer: number, keepScroll?: boolean) => void;
@@ -139,6 +142,8 @@ export const useViewStore = create<ViewState>((set, get) => ({
   keysOpen: false,
   anchor: null,
   jump: null,
+  summaryReader: null,
+  setSummaryReader: summaryReader => set({ summaryReader }),
   setReview: review => set({ review }),
   setLayer: (layer, keepScroll = false) => {
     if (get().layer !== layer) {

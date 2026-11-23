@@ -47,6 +47,8 @@ export const anchorSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("claim"), layer, list: z.enum(["checklist", "unsupported", "missing", "issue"]), index }),
   // index into layer.try.
   z.object({ kind: z.literal("try"), layer, index }),
+  // One part of the summary written for a persona, by its id: index into summaryParts(layer.summary[reader]).
+  z.object({ kind: z.literal("summary"), layer, reader: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), index }),
   // index into stack.check.issues.
   z.object({ kind: z.literal("stackIssue"), index }),
   // Nothing in particular, optionally while looking at one layer.
