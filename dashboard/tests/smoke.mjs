@@ -209,6 +209,65 @@ try {
     () => toneOf("Try by hand"),
     tone => tone === "quiet",
   );
+  // What the PR does, at the level the slider picks: the product's by default, plain words at one end, the code at the other.
+  const summary = page.getByRole("region", { name: "What this PR does" });
+  const summaryText = () =>
+    summary
+      .locator("p")
+      .textContent({ timeout: 500 })
+      .catch(() => null);
+  await check(
+    "the summary opens on the first persona, Exec",
+    summaryText,
+    text => text === "Blog posts move to a new web address; old links stop working.",
+  );
+  await summary
+    .getByRole("button", { name: "Product" })
+    .click({ timeout: 500 })
+    .catch(() => {});
+  await check(
+    "and Product shows the version written for product",
+    summaryText,
+    text => text === "Post links move from /posts to /blog, so old links stop working.",
+  );
+  // Each part of a summary is something to ask about, and a note on one jumps back to it in its reader's version.
+  const asks = summary.locator("li[data-part] button[data-ask]");
+  await summary
+    .getByRole("button", { name: "QA" })
+    .click({ timeout: 500 })
+    .catch(() => {});
+  await check(
+    "each step of QA's version can be asked about",
+    () => asks.count(),
+    n => n === 2,
+  );
+  await asks
+    .nth(1)
+    .click({ timeout: 500 })
+    .catch(() => {});
+  await page
+    .getByRole("textbox", { name: /^Note or question about an item of the summary for QA/ })
+    .fill("And the RSS feed?", { timeout: 2000 })
+    .catch(() => {});
+  await page
+    .getByRole("button", { name: "Add note", exact: true })
+    .click({ timeout: 2000 })
+    .catch(() => {});
+  await summary.getByRole("button", { name: "Product" }).click();
+  await page.getByRole("button", { name: /^Notes/ }).click();
+  await page
+    .getByRole("button", { name: /^an item of the summary for QA/ })
+    .last()
+    .click({ timeout: 2000 })
+    .catch(() => {});
+  await check(
+    "a note on one of its steps jumps back to it, showing QA's version again",
+    () => summary.getByRole("button", { name: "QA" }).getAttribute("aria-pressed"),
+    pressed => pressed === "true",
+  );
+  await page.getByRole("button", { name: /^Notes/ }).click();
+  await page.locator("li", { hasText: "And the RSS feed?" }).last().getByRole("button", { name: "Delete" }).click();
+  await page.keyboard.press("Escape");
   await check(
     "the size chip counts the lines outside tests and names the test lines beside them",
     () => page.locator("header").first().textContent(),

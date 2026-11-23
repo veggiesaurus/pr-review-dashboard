@@ -165,6 +165,19 @@ h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; margin: 0; te
 .index a.risky .n::before { content: "! "; color: var(--warning-high-contrast); font-weight: 700; }
 
 /* the author's checklist before marking the PR ready */
+.summary { display: grid; gap: 0.5rem; margin-top: 0.75rem; }
+.summary .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.summary h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
+.summary .readers { display: flex; flex-wrap: wrap; }
+.summary .readers .btn { border-radius: 0; margin-left: -1px; font-size: 13px; }
+.summary .readers .btn:first-child { border-radius: calc(var(--radius) - 2px) 0 0 calc(var(--radius) - 2px); margin-left: 0; }
+.summary .readers .btn:last-child { border-radius: 0 calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0; }
+.summary .readers .btn[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); position: relative; }
+.summary .text { display: grid; gap: 0.6rem; max-width: 65ch; line-height: 1.6; }
+.summary .text p, .summary .text ul { margin: 0; }
+.summary .text ul { padding-left: 1.2rem; display: grid; gap: 0.25rem; }
+.summary .text code { font-family: var(--font-mono); font-size: 0.9em; background: var(--muted); border-radius: 4px; padding: 0 0.25rem; }
+.summary .copied { font-size: 12px; color: var(--muted-foreground); margin-right: 0.5rem; }
 .ready { display: grid; gap: 0.6rem; margin-top: 0.5rem; }
 .ready h2 { font-size: 0.95rem; font-weight: 600; margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
@@ -1121,8 +1134,54 @@ tr.xref code { color: var(--foreground); }
       panel.querySelectorAll("a[data-to]").forEach(a => a.onclick = e => { e.preventDefault(); goTo(a.dataset.to); });
     }
 
+    // The guide's summary of the whole change, one version for each persona it was written for, in their order.
+    function summaryPanel() {
+      const S = D.summary, panel = $("summary");
+      if (!S) return;
+      const readers = ((D.personas || []).length ? D.personas : Object.keys(S).map(id => ({ id, name: id })))
+        .filter(p => S[p.id]).map(p => [p.id, p.name]);
+      panel.hidden = false;
+      panel.innerHTML = `<div class="head"><h2>What this PR does</h2><span><span class="copied" role="status"></span>`
+        + `<button class="btn" type="button" data-copy-summary>Copy</button></span></div>`
+        + `<div class="readers" role="group" aria-label="Written for">${readers.map(([k, label]) =>
+          `<button class="btn" type="button" data-k="${esc(k)}" aria-pressed="false">${esc(label)}</button>`).join("")}</div>`
+        + `<div class="text" aria-live="polite"></div>`;
+      const text = panel.querySelector(".text"), said = panel.querySelector(".copied");
+      const code = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+      // As shared/summary.ts splits it: "- " lines are items, an indented line carries on the item above, the rest are paragraphs.
+      const parts = s => {
+        const out = [];
+        let para = [];
+        const close = () => { if (para.length) { out.push({ text: para.join(" "), item: false }); para = []; } };
+        s.split("\n").forEach(line => {
+          const words = line.trim(), last = out[out.length - 1];
+          if (!words) close();
+          else if (words.startsWith("- ")) { close(); out.push({ text: words.slice(2).trim(), item: true }); }
+          else if (last && last.item && !para.length && /^\s/.test(line)) last.text += " " + words;
+          else para.push(words);
+        });
+        close();
+        return out;
+      };
+      const blocks = s => parts(s).map((p, i, all) => !p.item ? `<p>${code(p.text)}</p>`
+        : `${i && all[i - 1].item ? "" : "<ul>"}<li>${code(p.text)}</li>${all[i + 1] && all[i + 1].item ? "" : "</ul>"}`).join("");
+      const set = k => {
+        text.innerHTML = blocks(S[k]);
+        text.dataset.raw = S[k];
+        said.textContent = "";
+        panel.querySelectorAll(".readers button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === k)));
+      };
+      panel.querySelectorAll(".readers button").forEach(b => b.onclick = () => set(b.dataset.k));
+      panel.querySelector("[data-copy-summary]").onclick = () => {
+        const manual = () => { said.textContent = "The browser blocked copying: select the text instead"; };
+        try { navigator.clipboard.writeText(text.dataset.raw).then(() => { said.textContent = "Copied"; }, manual); } catch (e) { manual(); }
+      };
+      set(readers[0][0]);
+    }
+
     header();
     sections();
+    summaryPanel();
     readyPanel();
     const api = { goTo, redraw: sections };
     MOUNTS.push(api);
@@ -1162,6 +1221,7 @@ tr.xref code { color: var(--foreground); }
     const nav = k == null ? "" : navBar(k);
     box.innerHTML = nav + `<header class="top"><div class="crumbs" id="${P}crumbs"></div><h1 id="${P}title"></h1>`
       + `<div class="meta" id="${P}meta"></div><ul class="index" id="${P}index"></ul>`
+      + `<section class="summary" id="${P}summary" aria-label="What this PR does" hidden></section>`
       + `<section class="ready" id="${P}ready" aria-label="Before you mark it ready"></section></header>`
       + `<main class="guide" id="${P}guide"></main>`;
     box.querySelectorAll(".lnav button").forEach(b => b.onclick = () => show(+b.dataset.n));

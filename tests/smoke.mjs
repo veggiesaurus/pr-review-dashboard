@@ -19,6 +19,10 @@ const visible = sel => page.locator(sel).filter({ visible: true }).count();
 await open(process.argv[2]);
 await page.waitForSelector(".sec");
 check(await visible(".sec") === 2, "two sections, with the formatting one hidden");
+const summaryText = () => page.locator(".summary .text").first().textContent();
+check(await summaryText() === "Blog posts move to a new web address; old links stop working.", "the summary opens on the first persona, Exec");
+await page.locator(".summary .readers button", { hasText: "QA" }).first().click();
+check((await summaryText()).startsWith("Open a post from the blog index"), "and QA's shows the steps to check it");
 check(
   (await page.locator(".chip").allTextContents()).includes("15 lines in 4 files, plus 9 in tests: fits one sitting"),
   "the size chip counts the lines outside tests and names the test lines beside them",

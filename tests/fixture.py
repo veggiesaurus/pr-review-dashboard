@@ -84,8 +84,11 @@ def commit(repo, msg):
 
 
 def collect(repo, work):
+    # An empty Claude folder, so the user's own personas don't change what the page shows.
+    claude = os.path.join(os.path.dirname(work), "claude")
     r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "collect.py"), "--repo", repo, "--base", "main",
-                        "--head", "feature", "--out", work], capture_output=True, text=True)
+                        "--head", "feature", "--out", work], capture_output=True, text=True,
+                       env={**os.environ, "CLAUDE_CONFIG_DIR": claude})
     if r.returncode:
         sys.exit(r.stderr)
     return r.stdout
@@ -146,7 +149,12 @@ def main():
          "risk": "Old /posts links stop resolving."},
         {"title": "Give slugs their own module", "why": "Slug code [moves out](%s) of the shared helpers." % ids["src/slug.ts"],
          "how": "The function is unchanged.", "items": [ids["src/slug.ts"], ids["src/util.ts"]]},
-    ], "try": ["Open an old [post link](%s) and check what it does now." % ids["src/posts.ts"]]}
+    ], "try": ["Open an old [post link](%s) and check what it does now." % ids["src/posts.ts"]],
+       "summary": {"exec": "Blog posts move to a new web address; old links stop working.",
+                   "product": "Post links move from /posts to /blog, so old links stop working.",
+                   "developer": "The post path builder takes a new prefix, and slug code moves into a module of its own.",
+                   "reviewer": "postPath builds its prefix from BLOG, and slugify moves out of util.ts into slug.ts unchanged.",
+                   "qa": "- Open a post from the blog index: its address starts /blog.\n- Open an old /posts link: it no longer resolves."}}
     json.dump(guide, open(os.path.join(work, "guide.json"), "w"))
     hunk = next(h["id"] for f in data["files"] if f["path"] == "src/posts.ts" for h in f["hunks"])
     desc = {"checklist": [{"claim": "posts are served under /blog", "from": "description", "hunks": [hunk]}],

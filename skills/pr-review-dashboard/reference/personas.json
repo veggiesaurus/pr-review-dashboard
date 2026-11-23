@@ -1,0 +1,28 @@
+[
+  {
+    "name": "Exec",
+    "words": 100,
+    "prompt": "For leadership. What the change achieves for the business and its users, how big and how risky it is, and anything that needs a decision or will be noticed outside the team. No technical terms."
+  },
+  {
+    "name": "Product",
+    "words": 150,
+    "prompt": "For product, design and support. What users will notice and who is affected: changed screens, limits, messages or flows, and anything customers should hear before it ships, in the product's own terms with no code names."
+  },
+  {
+    "name": "Developer",
+    "words": 250,
+    "prompt": "For developers who don't work in this code. Which services, modules, endpoints and data changed and how they now fit together, and what changes for anyone calling, deploying or building on them: API and schema changes, config, migrations, compatibility. Code names in backticks."
+  },
+  {
+    "name": "Reviewer",
+    "words": 500,
+    "prompt": "For whoever reviews the diff. Where the risk and complexity are: the tricky paths, concurrency, security, data changes, failure handling and edge cases, why they're built the way they are, and what to check hardest. Name the code in backticks, and skip the parts that are simple."
+  },
+  {
+    "name": "QA",
+    "words": 400,
+    "optional": true,
+    "prompt": "A list for whoever tests it, only when the change has behaviour a person can exercise; leave it out for docs, internal refactors and changes only automated tests can reach. How to check each thing the change does, through the product's screens where they already use it and its API where they don't yet: what to set up, what to do and what should happen. Then the edge cases, and the nearby behaviour to check still works."
+  }
+]

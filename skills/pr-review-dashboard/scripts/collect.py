@@ -1006,6 +1006,48 @@ def reviewable_text(data):
     return "\n".join(out) + "\n", chunks, count
 
 
+DEFAULT_PERSONAS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reference", "personas.json")
+
+
+def check_personas(listed):
+    """A personas list as the summary needs it, each with an id from its name, and what is wrong with it."""
+    if not isinstance(listed, list) or not 1 <= len(listed) <= 8:
+        return None, "must be a list of 1 to 8 personas"
+    out = []
+    for k, p in enumerate(listed, 1):
+        if not isinstance(p, dict) or not isinstance(p.get("name"), str) or not isinstance(p.get("prompt"), str):
+            return None, f"persona {k} needs a \"name\" and a \"prompt\""
+        pid = re.sub(r"[^a-z0-9]+", "-", p["name"].lower()).strip("-")[:40]
+        words = p.get("words")
+        if not pid or not 1 <= len(p["name"]) <= 30 or not 1 <= len(p["prompt"].strip()) <= 1500:
+            return None, f"persona {k}: name is 1 to 30 characters with a letter or digit, prompt 1 to 1500"
+        if words is not None and (not isinstance(words, int) or isinstance(words, bool) or not 10 <= words <= 2000):
+            return None, f"persona {k}: words is a whole number from 10 to 2000"
+        if any(o["id"] == pid for o in out):
+            return None, f"persona {k}: two personas are both called {p['name']!r}"
+        out.append({"id": pid, "name": p["name"], "prompt": p["prompt"].strip(), "words": words,
+                    "optional": p.get("optional") is True})
+    return out, None
+
+
+def personas(repo):
+    """Who the summary is written for, and the file that said so (None for the skill's own). The repo's
+    .claude/pr-review-personas.json is shared by its team; the user's pr-review-dashboard/personas.json in their Claude
+    folder is theirs everywhere. The first found replaces the rest whole; one that doesn't read falls through, said."""
+    claude = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    for path in (os.path.join(repo, ".claude", "pr-review-personas.json"), os.path.join(claude, "pr-review-dashboard", "personas.json")):
+        if not os.path.exists(path):
+            continue
+        try:
+            listed, problem = check_personas(json.load(open(path)))
+        except (OSError, json.JSONDecodeError) as e:
+            listed, problem = None, str(e)
+        if listed:
+            return listed, path
+        print(f"warning: {path}: {problem}; using the next personas file or the defaults", file=sys.stderr)
+    return check_personas(json.load(open(DEFAULT_PERSONAS)))[0], None
+
+
 def description_text(m):
     out = [f"# {m['title']}", *([m["url"]] if m.get("url") else []), "", "## PR description", "",
            m["body"].strip() or "(none)", "", "## Commits", ""]
@@ -1061,6 +1103,10 @@ def write(data, out_dir):
             fh.write(issue_text + "\n")
     elif os.path.exists(issue_path):
         os.remove(issue_path)
+    listed = data["meta"].pop("personas", None)
+    if listed:
+        with open(os.path.join(out_dir, "personas.json"), "w") as fh:
+            json.dump(listed, fh, indent=1)
     with open(os.path.join(out_dir, "description.md"), "w") as fh:
         fh.write(description_text(data["meta"]))
     with open(os.path.join(out_dir, "hunks.json"), "w") as fh:
@@ -1264,6 +1310,31 @@ def self_test():
     r = ready_check(blank, [tst])
     assert (r["lines"], r["tests"], r["band"]) == (900, 0, "long for one review"), r
     assert ready_check(blank, [({"category": "implementation"}, [], 2500)])["band"] == "too big for one review"
+    # Personas: the repo's file wins, then the user's, then the skill's own; one that doesn't read is passed over.
+    import tempfile
+    with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as claude:
+        saved = os.environ.get("CLAUDE_CONFIG_DIR")
+        os.environ["CLAUDE_CONFIG_DIR"] = claude
+        try:
+            def put(path, value):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as fh:
+                    fh.write(value if isinstance(value, str) else json.dumps(value))
+            mine = os.path.join(claude, "pr-review-dashboard", "personas.json")
+            team = os.path.join(repo, ".claude", "pr-review-personas.json")
+            assert [p["id"] for p in personas(repo)[0]] == ["exec", "product", "developer", "reviewer", "qa"]
+            put(mine, [{"name": "Support desk", "prompt": "What to tell customers."}])
+            assert personas(repo)[0][0]["id"] == "support-desk" and personas(repo)[1] == mine
+            put(team, [{"name": "Ops", "prompt": "What to watch after deploy.", "words": 80}])
+            assert [p["name"] for p in personas(repo)[0]] == ["Ops"] and personas(repo)[1] == team
+            put(team, "{not json")
+            assert personas(repo)[1] == mine, "a team file that doesn't read falls through to the user's"
+            assert check_personas([{"name": "A", "prompt": "x"}, {"name": "a", "prompt": "y"}])[1], "two personas with one id"
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_CONFIG_DIR", None)
+            else:
+                os.environ["CLAUDE_CONFIG_DIR"] = saved
     d = description_text({"title": "t", "url": "", "body": "", "commits": ["abc123 adds x\nwhy it matters\n"]})
     assert "(none)" in d and "- abc123 adds x" in d and "  why it matters" in d
     got, text = linked_issues("/nonexistent", "o/r", {"closingIssuesReferences": [
@@ -1340,6 +1411,7 @@ def main():
         p.error("--out is required")
     a.repo = os.path.abspath(a.repo)
     data = collect(a)
+    data["meta"]["personas"], persona_file = personas(a.repo)
     count, nbatches = write(data, a.out)
     record_pass(pass_path(a.repo, data["meta"]), data)
     s = data["stats"]
@@ -1353,6 +1425,8 @@ def main():
     print(f"reviewable changed lines: {count}{outside} ({r['band']}), batches: {nbatches}")
     if s["moved"]:
         print(f"moved unchanged: {s['moved']} lines")
+    if persona_file:
+        print(f"summary personas from {persona_file}")
     hunkless = sum(1 for f in data["files"] if not f["noise"] and not f["hunks"])
     if hunkless:
         print(f"files with no line changes (binary, renamed or mode only): {hunkless}")

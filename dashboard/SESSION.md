@@ -100,6 +100,7 @@ What a thread can be about, and what the frame quotes:
 | a CI check            | `the CI check "lint"`, by name only, since checks are live               |
 | a description finding | which list it is in and its text, with the reason and the hunks          |
 | a thing to try        | `a thing to try by hand: "…"`, the step, and where its links point       |
+| a part of the summary | `an item of the summary for QA: "…"`, the part in full when long         |
 | a stack issue         | its kind and layers, the problem, the fix, and where each linked hunk is |
 | the review as a whole | `the review as a whole`                                                  |
 

@@ -84,3 +84,30 @@ test("a restart keeps a note on an opened unchanged line, a long range, and a th
     around: [["line 19", "line 18", "line 17"], expect.any(Array)],
   });
 });
+
+test("a thread on one part of the summary follows that part through a rebuild, and goes outdated when it is gone", async () => {
+  const summary = { exec: "E.", product: "P.", developer: "D.", reviewer: "R.", qa: "- Open a post\n- Open an old link" };
+  const personas = ["exec", "product", "developer", "reviewer"].map(id => ({ id, name: id })).concat({ id: "qa", name: "QA" });
+  const before = { ...first, summary, personas };
+  const grown = {
+    ...build("b", text, 10, 14, [12]),
+    personas,
+    summary: { ...summary, qa: "- Check the index\n- Open a post\n- Open an old link" },
+  };
+  const onOldLink = { kind: "summary" as const, layer: 12, reader: "qa" as const, index: 1 };
+
+  const moved = review(before, grown);
+  const store = new Store(moved);
+  expect(store.addUserMessage({ kind: "chat", text: "and the RSS feed?", anchor: { ...onOldLink, index: 9 } }, null)).toBeNull();
+  store.addUserMessage({ kind: "chat", text: "and the RSS feed?", anchor: onOldLink }, null);
+  expect(store.messages[0]?.anchor.label).toBe('an item of the summary for QA: "Open an old link"');
+  await moved.reload();
+  expect(store.messages[0]?.anchor).toMatchObject({ reader: "qa", index: 2 });
+  expect(store.messages[0]?.anchor.outdated).toBeUndefined();
+
+  const gone = review(before, { ...grown, summary: { ...summary, qa: "- Check the index" } });
+  const left = new Store(gone);
+  left.addUserMessage({ kind: "chat", text: "and the RSS feed?", anchor: onOldLink }, null);
+  await gone.reload();
+  expect(left.messages[0]?.anchor.outdated).toBe(true);
+});

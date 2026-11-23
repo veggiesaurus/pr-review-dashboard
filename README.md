@@ -1,6 +1,6 @@
 # pr-review-dashboard
 
-A Claude Code plugin that turns a pull request into a dashboard for reviewing your own work before anyone else does. The diff is split into logical sections, each with why it exists and how it works, and formatting and generated files are kept out of the way. The dashboard runs on your machine beside your Claude session: notes and questions you leave on lines reach the session as you send them, its answers show in the thread, and the PR's checks and Linear issues stay live.
+A Claude Code plugin that turns a pull request into a dashboard for reviewing your own work before anyone else does. The diff is split into logical sections, each with why it exists and how it works, and formatting and generated files are kept out of the way. A summary of the whole change is written for each person you might need to tell, from an exec to the reviewers, with a test plan for QA where the change has something to try. The dashboard runs on your machine beside your Claude session: notes and questions you leave on lines reach the session as you send them, its answers show in the thread, and the PR's checks and Linear issues stay live.
 
 It's much like Linear's [Guide](https://linear.app/docs/diffs#guides) tab, but it's built locally from the diff, so it works the same whether your team tracks work in Linear, Jira or GitHub issues. It also opens with what to settle before marking the PR ready: size, CI, missing tests, lines that look like an agent's leftovers, the description and linked issue checked claim by claim against the diff, a few things to try by hand, and whether the PR should be split.
 
@@ -37,6 +37,18 @@ The plugin has two settings, both only for sharing. Claude Code asks for them wh
 A change reaches the next review you ask for, not one that's already running. `PRG_GITHUB_CLIENT_ID` and `PRG_ALLOWED_MAIL` in the environment still work when a setting is empty.
 
 Linear issues need `LINEAR_API_KEY` in the environment Claude Code runs in, exported from your shell profile before starting `claude`. A read-only key is enough, and it only ever goes to `api.linear.app`. It isn't a plugin setting because Claude Code can't hand a secret setting to the dashboard without putting it in the environment of every command Claude runs.
+
+The summary at the top of a review is written once for each of five personas: Exec, Product, Developer, Reviewer and, where the change has something a tester can try, QA. To write it for your own readers instead, put a list of personas in `.claude/pr-review-personas.json` in a repo, where a team can share it, or in `pr-review-dashboard/personas.json` in your Claude folder (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) for every repo. A repo's list takes the place of yours, and yours of the five; the page offers them in the order listed and opens on the first. Each persona has a `name`, a `prompt` saying who reads it and what to write for them, and optionally `words`, the most that reader wants, and `optional`, for one that can be left out where it doesn't apply. The five are in [`personas.json`](skills/pr-review-dashboard/reference/personas.json), a good place to start:
+
+```json
+[
+  {"name": "Exec", "words": 100, "prompt": "For leadership. What the change achieves for the business and its users, how big and how risky it is."},
+  {"name": "Support", "words": 150, "prompt": "For the support team. What customers will see differently, and what to tell one who asks."},
+  {"name": "QA", "words": 400, "optional": true, "prompt": "A list of steps for whoever tests it, then the edge cases."}
+]
+```
+
+A list that doesn't read is passed over with a warning when the review is built, and the next one used.
 
 Two things are per review, and off unless you ask for them when you ask for the review: posting your notes to the PR as a GitHub review from the page ("with posting to GitHub on"), and a plain HTTP link a phone on the same network can open ("with a link for my phone").
 
