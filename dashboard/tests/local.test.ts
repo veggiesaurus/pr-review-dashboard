@@ -101,6 +101,15 @@ describe("what the checkout has that the reviewed head doesn't", () => {
     expect(await (await setup({ raw: fork, repo }).page("/api/layers/12/local")).json()).toEqual({ where: null, files: {} });
   });
 
+  test("a checkout whose git config drops the diff prefixes still shows its edits", async () => {
+    const { repo, reviewed } = await checkout();
+    await run(["git", "-C", repo, "config", "diff.noprefix", "true"], repo);
+    const raw = structuredClone(rawReview);
+    raw.meta.headSha = reviewed;
+    const local = (await (await setup({ raw, repo }).page("/api/layers/12/local")).json()) as LocalChanges;
+    expect(Object.keys(local.files)).toEqual(["f1"]);
+  });
+
   test("one edit is taken back out of the checkout, and only while it is still what the page saw", async () => {
     const { repo, reviewed } = await checkout();
     const raw = structuredClone(rawReview);

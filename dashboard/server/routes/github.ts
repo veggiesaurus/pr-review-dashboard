@@ -17,19 +17,25 @@ const MAX_GH = 4;
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 
 // At most a few gh processes at once, however many references a page shows.
-function limited(runner: Runner, max: number): Runner {
+// A finishing call hands its slot straight to the next in the queue, so a call arriving in between can't take it too.
+export function limited(runner: Runner, max: number): Runner {
   let active = 0;
   const queue: (() => void)[] = [];
   return async (...args) => {
-    if (active >= max) {
+    if (active < max) {
+      active++;
+    } else {
       await new Promise<void>(resolve => queue.push(resolve));
     }
-    active++;
     try {
       return await runner(...args);
     } finally {
-      active--;
-      queue.shift()?.();
+      const next = queue.shift();
+      if (next) {
+        next();
+      } else {
+        active--;
+      }
     }
   };
 }

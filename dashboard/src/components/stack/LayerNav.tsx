@@ -1,4 +1,5 @@
 import { plain } from "src/components/guide/visible";
+import { toReview } from "src/components/ready/ReadyChips";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "src/components/ui/select";
 import { useReview } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
@@ -35,7 +36,7 @@ export function LayerNav() {
                 {layers.length - index} of {layers.length}
                 {index === 0 ? ", the top" : index === layers.length - 1 ? `, on ${item.meta.base}` : ""}
               </span>
-              {item.ready && <span>{item.ready.lines + (item.ready.tests ?? 0)} lines to review</span>}
+              {item.ready && <span>{toReview(item.ready)}</span>}
             </span>
           </SelectItem>
         ))}

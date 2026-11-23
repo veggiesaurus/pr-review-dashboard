@@ -1,4 +1,4 @@
-import type { Checks, Layer } from "shared/payload";
+import type { Checks, Layer, Ready } from "shared/payload";
 
 import { useChecks, useConflicts } from "src/components/ready/checks";
 import { Badge, type Tone } from "src/components/ui/badge";
@@ -36,13 +36,24 @@ const mismatches = (layer: Layer) => (layer.descriptionCheck?.unsupported ?? [])
 const asks = (layer: Layer) => (layer.descriptionCheck?.issue ?? []).length;
 export const riskySections = (layer: Layer) => layer.sections.filter(section => section.kind === "guide" && section.risk).length;
 
+// How much there is to read: lines outside tests and in tests, each with its files.
+function sizeText({ lines, files, tests = 0, testFiles }: Ready) {
+  const where = testFiles ? plural(testFiles, "test file") : "tests";
+  if (!tests) {
+    return `${plural(lines, "line")} in ${plural(files, "file")}`;
+  }
+  return lines ? `${plural(lines, "line")} in ${plural(files, "file")}, plus ${tests} in ${where}` : `${plural(tests, "line")} in ${where}`;
+}
+
+// A layer's lines to read, tests among them, as its picker and its row in the stack say it.
+export const toReview = (ready: Ready) => `${plural(ready.lines + (ready.tests ?? 0), "line")} to review`;
+
 // The template's chips, in its order. checks is CI as it stands now; it defaults to what the payload holds.
 export function readyChips(layer: Layer, checks: Checks | null = layer.ready?.checks ?? null): Chip[] {
   const { ready, meta, tells, annotations, descriptionCheck } = layer;
   const chips: Chip[] = [];
   if (ready) {
-    const tests = ready.tests ? `, plus ${ready.tests} in tests` : "";
-    chips.push({ tone: ready.tone, label: `${ready.lines} lines in ${plural(ready.files, "file")}${tests}: ${ready.band}` });
+    chips.push({ tone: ready.tone, label: `${sizeText(ready)}: ${ready.band}` });
   }
   if (checks) {
     chips.push(ciChip(checks));
@@ -103,7 +114,7 @@ export function layerChips(layer: Layer, needsRebase: boolean, checks: Checks | 
     chips.push({ tone: "bad", label: "Needs a rebase", title: "This layer trails the one below it" });
   }
   if (layer.ready) {
-    chips.push({ tone: layer.ready.tone, label: `${layer.ready.lines} lines` });
+    chips.push({ tone: layer.ready.tone, label: toReview(layer.ready) });
   }
   if (checks) {
     chips.push(ciChip(checks));

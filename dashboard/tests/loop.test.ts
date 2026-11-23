@@ -63,6 +63,19 @@ describe("closing the loop after a fix", () => {
     expect(frames[0]).not.toContain(`${asked} from`);
   });
 
+  test("a thread whose pull request has left the review isn't sent back at a new head", async () => {
+    const { store, frames, said, rebuild, page, session, post } = reviewing();
+    const asked = await said(page, { kind: "chat", text: "Trim only spaces.", anchor: addedLine });
+    await session("/api/replies", post({ replyTo: asked, text: "That's on purpose." }));
+    // Its layer merged and dropped out of the stack, as a thread restored after a restart can find.
+    const kept = store.find(asked);
+    if (kept && "layer" in kept.anchor) {
+      kept.anchor = { ...kept.anchor, layer: 99 };
+    }
+    await rebuild("c");
+    expect(frames).toEqual([]);
+  });
+
   test("an answer keeps where the change is and what was run to check it", async () => {
     const { said, page, session, post } = reviewing();
     const note = await said(page, { kind: "chat", text: "Trim only spaces.", anchor: addedLine });

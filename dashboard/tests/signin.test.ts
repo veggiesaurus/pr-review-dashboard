@@ -2,6 +2,7 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { createHash } from "node:crypto";
 
 import type { Runner } from "../server/comments";
+import { MAX_WAITING } from "../server/routes/signin";
 import { browserOf, SignIn } from "../server/signin";
 import type { Person, Push } from "../shared/messages";
 import { GUEST, HOST, PORT, setup, TUNNEL } from "./helpers";
@@ -180,6 +181,20 @@ describe("the owner letting guests in", () => {
     expect(signIn.waiting()).toEqual([]);
   });
 
+  test("a finished sign-in gives one session, and none once sharing stops", async () => {
+    const first = await waitingGuest();
+    first.signIn.answer(first.handle, true);
+    expect(first.signIn.claim(first.id)).toEqual(ALICE);
+    expect(first.signIn.claim(first.id)).toBeNull();
+
+    // Let in, then sharing stopped before the guest's page asked again.
+    const late = await waitingGuest();
+    late.signIn.answer(late.handle, true);
+    late.signIn.dropWaiting();
+    expect(late.signIn.claim(late.id)).toBeNull();
+    expect(late.signIn.status(late.id)).toEqual({ state: "failed", reason: "expired" });
+  });
+
   test("turning a guest away fails the sign-in", async () => {
     const { signIn, id, handle } = await waitingGuest();
     expect(signIn.answer(handle, false)).toBe(true);
@@ -335,6 +350,7 @@ describe("signing in through the share link", () => {
     }
     expect(people.signedIn()).toContainEqual(ALICE);
     expect(pushes).toContainEqual({ type: "session" });
+    expect((await visit(`/api/signin/${id}`)).headers.get("set-cookie")).toBeNull();
 
     const me = await visit("/api/me", { headers: { cookie: `${link}; ${session.replace(/;.*/, "")}` } });
     said.push(await me.clone().text());
@@ -343,6 +359,14 @@ describe("signing in through the share link", () => {
     for (const text of [...said, Bun.inspect(signIn), Bun.inspect(people)]) {
       expect(text).not.toContain(GITHUB_TOKEN);
     }
+  });
+
+  test("the link can't start more GitHub sign-ins than the owner could answer, all at once or one by one", async () => {
+    const { visit } = await shared({ polls: Array.from({ length: 4 * MAX_WAITING }, () => ({ error: "authorization_pending" })) });
+    const start = async () => (await visit("/api/signin", { method: "POST" })).status;
+    const burst = await Promise.all(Array.from({ length: 2 * MAX_WAITING }, start));
+    expect(burst.filter(status => status === 200)).toHaveLength(MAX_WAITING);
+    expect(await start()).toBe(429);
   });
 
   test("someone who isn't a collaborator is refused", async () => {

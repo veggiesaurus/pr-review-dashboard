@@ -50,7 +50,20 @@ async function checkoutFor(runner: Runner, repo: string, layer: Layer, stack: La
     const tree = await worktreeOf(runner, repo, upper.meta);
     if (tree) {
       const changed = await runner(
-        ["git", "-C", tree, "diff", "--name-only", "--no-renames", layer.meta.headSha, upper.meta.headSha, "--", ...paths],
+        [
+          "git",
+          "-C",
+          tree,
+          "-c",
+          "core.quotePath=false",
+          "diff",
+          "--name-only",
+          "--no-renames",
+          layer.meta.headSha,
+          upper.meta.headSha,
+          "--",
+          ...paths,
+        ],
         tree,
       );
       const between = new Set(changed.stdout.split("\n"));
@@ -91,8 +104,27 @@ export function parseEdits(diff: string): { files: Map<string, LocalEdit[]>; tru
   return { files, truncated: false };
 }
 
+// Prefixes and path quoting are set here, as collect.py sets them, so a user's git config can't change what is parsed.
 const localDiff = (runner: Runner, tree: string, headSha: string, paths: Iterable<string>) =>
-  runner(["git", "-C", tree, "diff", "--no-color", "--no-ext-diff", "-U0", headSha, "--", ...paths], tree);
+  runner(
+    [
+      "git",
+      "-C",
+      tree,
+      "-c",
+      "core.quotePath=false",
+      "diff",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "-U0",
+      headSha,
+      "--",
+      ...paths,
+    ],
+    tree,
+  );
 
 // What the checkout of a layer's branch has that its reviewed head doesn't, in the files the review shows:
 // commits not pushed, a rebase, and anything uncommitted, Claude's fixes among it.

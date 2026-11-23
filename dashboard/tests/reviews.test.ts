@@ -148,8 +148,10 @@ describe("a review asked for from the page", () => {
   });
 
   test("the recommended findings go to the session in one frame, each with its proposed patch", async () => {
-    const { store, threads, frames, page, session } = await reviewed();
+    const { store, threads, frames, page, session, post } = await reviewed();
     expect(threads[0]?.review?.patch).toStartWith("-  return title.trim()");
+    // A post between people never reaches Claude, so it leaves the finding to be fixed.
+    await page("/api/messages", post({ kind: "post", text: "Agreed, worth fixing.", replyTo: "m2" }));
     expect(await (await page("/api/reviews/1/fix", { method: "POST" })).json()).toEqual({ sent: 1 });
     expect(frames.at(-1)).toStartWith("[review page] fix 1 recommended finding of review 1 on acme/shop#12 at aaaaaaa.");
     expect(frames.at(-1)).toContain("m2 about src/slug.ts:R2@aaaaaaa");

@@ -24,7 +24,7 @@ check(await summaryText() === "Blog posts move to a new web address; old links s
 await page.locator(".summary .readers button", { hasText: "QA" }).first().click();
 check((await summaryText()).startsWith("Open a post from the blog index"), "and QA's shows the steps to check it");
 check(
-  (await page.locator(".chip").allTextContents()).includes("15 lines in 4 files, plus 9 in tests: fits one sitting"),
+  (await page.locator(".chip").allTextContents()).includes("15 lines in 4 files, plus 9 in 1 test file: fits one sitting"),
   "the size chip counts the lines outside tests and names the test lines beside them",
 );
 check(await count("td.noise") === 0, "formatting lines inside a hunk show once, as context");

@@ -271,7 +271,7 @@ try {
   await check(
     "the size chip counts the lines outside tests and names the test lines beside them",
     () => page.locator("header").first().textContent(),
-    text => text.includes("15 lines in 4 files, plus 9 in tests: fits one sitting"),
+    text => text.includes("15 lines in 4 files, plus 9 in 1 test file: fits one sitting"),
   );
   await check(
     'the header chips have "new since"',
@@ -325,6 +325,16 @@ try {
     text => text === "About the claim.",
   );
   await clear(composerBox());
+  // A hand-edited or cut-off link with a broken escape opens the page, both as it arrives and when it is reloaded.
+  await page.goto(`${new URL(page.url()).origin}/#1/guide/%E0%A4`);
+  await page.reload();
+  await check("a link with a broken escape in its hash still opens the page", () => page.locator("[role=tablist]").count());
+  await page.evaluate(() => {
+    location.hash = "#999/overview";
+  });
+  await check("a hash naming a layer the review doesn't hold leaves the page where it was", () =>
+    page.getByRole("region", { name: "Before you mark it ready" }).count(),
+  );
   // A reload puts the drawer back on the review as a whole, where the checks below expect it.
   await page.reload();
   await tryBlock.getByRole("checkbox").uncheck();

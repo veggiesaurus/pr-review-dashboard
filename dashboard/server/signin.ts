@@ -43,8 +43,10 @@ export function browserOf(userAgent: string | undefined): string | null {
 // GitHub's device flow with no scope: the token only ever reads who signed in, and is dropped once it has.
 // Without a client id a guest types a name instead. Either way they wait for the owner, who checks their code.
 export class SignIn {
-  private readonly statuses = new Map<string, { status: SignInStatus; at: number }>();
+  private readonly statuses = new Map<string, { status: SignInStatus; at: number; claimed?: boolean }>();
   private readonly dropped = new Set<string>();
+  // Sign-ins waiting on GitHub for a device code, counted from the moment they start so a burst can't pass the cap.
+  private starting = 0;
   private readonly guests = new Map<string, Omit<WaitingGuest, "alreadyIn" | "person" | "code">>();
 
   constructor(
@@ -65,7 +67,12 @@ export class SignIn {
   async start(from?: From): Promise<{ id: string } & SignInStatus> {
     this.forget();
     const id = randomBytes(24).toString("hex");
-    const device = deviceSchema.safeParse(await this.post("https://github.com/login/device/code", {}).catch(() => null));
+    this.starting++;
+    const device = deviceSchema.safeParse(
+      await this.post("https://github.com/login/device/code", {})
+        .catch(() => null)
+        .finally(() => this.starting--),
+    );
     if (!device.success) {
       return { id, ...this.set(id, { state: "failed", reason: "error" }) };
     }
@@ -105,6 +112,25 @@ export class SignIn {
     return kept && Date.now() - kept.at < KEEP_MS ? kept.status : null;
   }
 
+  // A finished sign-in gives its guest one session, so its id can't sign them in again after sharing stops.
+  claim(id: string): Person | null {
+    const kept = this.statuses.get(id);
+    if (!kept || kept.claimed || kept.status.state !== "done" || Date.now() - kept.at >= KEEP_MS) {
+      return null;
+    }
+    kept.claimed = true;
+    return kept.status.person;
+  }
+
+  // Sign-ins not yet answered: still on GitHub's page, or waiting for the owner.
+  open() {
+    this.lapse();
+    this.forget();
+    return (
+      this.starting + [...this.statuses.values()].filter(({ status }) => status.state === "pending" || status.state === "waiting").length
+    );
+  }
+
   waiting(): Omit<WaitingGuest, "alreadyIn">[] {
     this.lapse();
     return [...this.guests].flatMap(([sid, guest]) => {
@@ -126,10 +152,13 @@ export class SignIn {
     return true;
   }
 
+  // Sharing stopped: nothing started under it signs anyone in, even a sign-in the owner already let through.
   dropWaiting() {
     for (const [sid, kept] of this.statuses) {
       if (kept.status.state === "pending") {
         this.dropped.add(sid);
+      }
+      if (kept.status.state === "pending" || kept.status.state === "done") {
         this.set(sid, { state: "failed", reason: "expired" });
       }
     }

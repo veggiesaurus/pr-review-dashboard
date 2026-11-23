@@ -362,6 +362,13 @@ tr.xref code { color: var(--foreground); }
   const BY_NUM = Object.fromEntries(LAYERS.map(D => [D.meta.number, D]));
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  // How much there is to read: lines outside tests and in tests, each with its files.
+  const sizeText = R => {
+    const where = R.testFiles ? plural(R.testFiles, "test file") : "tests";
+    if (!R.tests) return `${plural(R.lines, "line")} in ${plural(R.files, "file")}`;
+    return R.lines ? `${plural(R.lines, "line")} in ${plural(R.files, "file")}, plus ${R.tests} in ${where}` : `${plural(R.tests, "line")} in ${where}`;
+  };
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   const pad2 = n => String(n).padStart(2, "0");
   const counts = (a, d) => (a ? `<span class="plus">+${a}</span> ` : "") + (d ? `<span class="minus">−${d}</span>` : "") || `<span>±0</span>`;
@@ -893,7 +900,7 @@ tr.xref code { color: var(--foreground); }
         + `<span class="loc-wrap"><button class="loc" type="button" aria-expanded="false"><span class="num">${counts(impl.add, impl.del)}</span>${differs ? `<span class="star">(*)</span>` : ""}</button>`
         + `<div class="loc-pop" hidden><table>${rows.join("")}</table><p class="note">The headline counts implementation lines, leaving out tests, docs, generated files and formatting-only changes.`
         + `${S.moved ? ` ${S.moved} added lines only moved, unchanged, and are counted where they landed.` : ""}`
-        + `${S.skipped ? ` The size leaves out ${S.skipped} lines: moved code counts once, and a long deleted file by its opening lines.` : ""}</p></div></span>`
+        + `${S.skipped ? ` The size chip counts ${plural(S.skipped, "line")} fewer: moved code counts once, and a long deleted file by its opening lines.` : ""}</p></div></span>`
         + `<span class="progress" id="${P}progress"></span>`
         + `<span class="view">${opts.length > 1 ? `<select class="pick" id="${P}pick" aria-label="Which part of the change to show">${opts.join("")}</select>` : ""}`
         + `<span class="seg" role="group" aria-label="Diff layout"><button type="button" data-view="unified">Unified</button><button type="button" data-view="split">Split</button></span>`
@@ -1068,7 +1075,7 @@ tr.xref code { color: var(--foreground); }
       const R = D.ready || {}, tells = D.tells || [], desc = D.descriptionCheck, split = D.split, anns = D.annotations || [];
       const chip = (tone, label, title) => `<span class="chip ${tone}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
       const chips = [];
-      if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines in ${R.files} files${R.tests ? `, plus ${R.tests} in tests` : ""}: ${R.band}`));
+      if (R.lines != null) chips.push(chip(R.tone || "warn", `${sizeText(R)}: ${R.band}`));
       const C = R.checks;
       if (C) chips.push(ciChip(chip, C), ...(C.stale ? [chip("warn", "CI ran on the pushed head, not this one")] : []));
       const placed = anns.filter(a => a.row);
@@ -1256,7 +1263,7 @@ tr.xref code { color: var(--foreground); }
     const chip = (tone, label) => `<span class="chip ${tone}">${esc(label)}</span>`;
     const chips = [];
     if (row.needsRebase) chips.push(chip("bad", "Needs a rebase"));
-    if (R.lines != null) chips.push(chip(R.tone || "warn", `${R.lines} lines`));
+    if (R.lines != null) chips.push(chip(R.tone || "warn", `${plural(R.lines + (R.tests || 0), "line")} to review`));
     const C = R.checks;
     if (C) chips.push(ciChip(chip, C));
     if ((D.tells || []).length) chips.push(chip("warn", `${D.tells.length} flagged`));

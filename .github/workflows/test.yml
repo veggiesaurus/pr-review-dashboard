@@ -15,6 +15,9 @@ jobs:
         python: ["3.9", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v4
+      # collect.py's self-test reads blobs from a scratch repo, and the slim images have no git.
+      - name: Git
+        run: apt-get update -qq && apt-get install -qq -y --no-install-recommends git > /dev/null
       - name: Self-tests
         run: for s in collect render stack carry; do python skills/pr-review-dashboard/scripts/$s.py --self-test; done
 
