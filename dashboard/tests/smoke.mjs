@@ -340,6 +340,99 @@ try {
   await tryBlock.getByRole("checkbox").uncheck();
   await check("and the step unticks", tried, text => text.endsWith("Try by hand (0 of 1)"));
 
+  // The diagrams, in a carousel, drawn in the theme's colours; each opens full screen, where a sequence diagram folds.
+  await page.keyboard.press("4");
+  await check(
+    "4 opens the Visualize tab, which draws the first diagram",
+    () => count("[data-diagram='0'] .prg-diagram svg"),
+    n => n === 1,
+  );
+  const actorFill = () =>
+    page
+      .locator("[data-diagram='0'] svg rect.actor")
+      .first()
+      .evaluate(node => getComputedStyle(node).fill)
+      .catch(() => null);
+  const lightFill = await actorFill();
+  const themeButton = page.getByRole("button", { name: /^Theme:/ });
+  await themeButton.click();
+  await themeButton.click();
+  await check("the dark theme draws the diagrams again in its colours", actorFill, fill => fill !== null && fill !== lightFill);
+  await themeButton.click();
+  await check("and back in the light ones", actorFill, fill => fill === lightFill);
+  const titles = page.getByRole("navigation", { name: "Diagrams" });
+  await titles.getByRole("button", { name: /^02/ }).click();
+  await check(
+    "each diagram is named above the slide, and picking one shows it in its place",
+    async () => [
+      await titles.locator("span.ml-auto").textContent(),
+      await count("[data-diagram] .prg-diagram svg"),
+      await count("[data-diagram='1'] .node.changed"),
+    ],
+    ([text, drawn, marked]) => text === "2 / 2" && drawn === 1 && marked === 1,
+  );
+  await titles.getByRole("button", { name: /^01/ }).click();
+  await page.getByRole("button", { name: "Open Opening a post full screen" }).click();
+  const viewer = page.locator("[data-viewer]");
+  const drawnHeight = () =>
+    viewer
+      .locator(".prg-diagram svg")
+      .evaluate(svg => Number(svg.getAttribute("viewBox").split(/[\s,]+/)[3]))
+      .catch(() => null);
+  await check(
+    "a diagram opens full screen",
+    () => viewer.locator(".prg-diagram svg").count(),
+    n => n === 1,
+  );
+  const full = await drawnHeight();
+  // alt and loop by their tags and headings, and the else on its own; a wrapped heading is one button.
+  await check(
+    "its blocks and sections fold from their headings",
+    () => viewer.locator("text.prg-fold[role=button]").count(),
+    n => n === 5,
+  );
+  await viewer.getByRole("button", { name: "Fold all blocks", exact: true }).click();
+  await check("Fold all shrinks it to its headings", drawnHeight, height => height !== null && height < full);
+  await check(
+    "each saying what it holds",
+    () => viewer.locator("text.prg-fold-count").allTextContents(),
+    texts => texts.join() === "2 cases,2 steps",
+  );
+  await viewer.getByRole("button", { name: "Unfold all blocks", exact: true }).click();
+  await check("Unfold all draws it whole again", drawnHeight, height => height === full);
+  await viewer.getByRole("button", { name: "Fold this section" }).nth(1).click();
+  await check("an else section folds by itself", drawnHeight, height => height !== null && height < full);
+  await page.keyboard.press("ArrowRight");
+  await check(
+    "→ steps to the next diagram",
+    () => viewer.locator("[data-count]").textContent(),
+    text => text === "2 / 2",
+  );
+  const marked = () =>
+    viewer.evaluate(dialog =>
+      ["added", "changed", "removed"].map(mark => {
+        const shape = dialog.querySelector(`.node.${mark} rect, .node.${mark} path`);
+        return shape && getComputedStyle(shape).fill;
+      }),
+    );
+  await check(
+    "whose added, changed and removed parts each take a colour of their own",
+    marked,
+    fills => fills.every(Boolean) && new Set(fills).size === 3,
+  );
+  await page.keyboard.press("ArrowRight");
+  await check(
+    "and → again wraps round to the first",
+    () => viewer.locator("[data-count]").textContent(),
+    text => text === "1 / 2",
+  );
+  await page.keyboard.press("Escape");
+  await check(
+    "Escape closes it",
+    () => viewer.count(),
+    n => n === 0,
+  );
+
   // The template is one page; here the sections are the Guide tab.
   await tab("Guide");
   await page.waitForSelector(SECTION);

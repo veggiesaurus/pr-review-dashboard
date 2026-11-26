@@ -16,6 +16,7 @@ import { Overview } from "src/components/overview/Overview";
 import { ShareButton } from "src/components/share/ShareButton";
 import { SignIn } from "src/components/share/SignIn";
 import { ThemeButton } from "src/components/ThemeButton";
+import { Visualize } from "src/components/visualize/Visualize";
 import { useCurrentSection } from "src/hooks/useCurrentSection";
 import { useHashSync } from "src/hooks/useHashSync";
 import { useLiveSocket } from "src/hooks/useLiveSocket";
@@ -90,6 +91,7 @@ export function App() {
               {tab === "overview" && <Overview layer={shown.id} />}
               {tab === "guide" && <Guide layer={shown.id} />}
               {tab === "diff" && <DiffTab layer={shown.id} />}
+              {tab === "visualize" && <Visualize layer={shown.id} />}
             </div>
           </>
         )}

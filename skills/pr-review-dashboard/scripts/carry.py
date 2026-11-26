@@ -6,7 +6,8 @@
 
 A section keeps every hunk whose change is the same as before (by signature, so a hunk that only moved keeps its
 place) under its new id, and the links in its text follow; a link to code that is gone keeps its words. Writes NEW's
-guide.json files and stack-guide.json, and prints per layer what no section holds yet and which sections changed.
+guide.json, description.json and diagrams.json files and stack-guide.json, and prints per layer what no section holds
+yet and which sections changed.
 """
 import json
 import os
@@ -120,10 +121,10 @@ def carry(prev_root, new_root):
         with open(os.path.join(new_layers[k], "guide.json"), "w", encoding="utf-8") as fh:
             json.dump(guide, fh, indent=1, ensure_ascii=False)
         reports[k] = report
-        description = os.path.join(prev_layers[k], "description.json")
-        if os.path.exists(description):
-            with open(os.path.join(new_layers[k], "description.json"), "w", encoding="utf-8") as fh:
-                json.dump(remap(load(description), maps, k), fh, indent=1, ensure_ascii=False)
+        for name in ("description.json", "diagrams.json"):
+            if os.path.exists(os.path.join(prev_layers[k], name)):
+                with open(os.path.join(new_layers[k], name), "w", encoding="utf-8") as fh:
+                    json.dump(remap(load(os.path.join(prev_layers[k], name)), maps, k), fh, indent=1, ensure_ascii=False)
     stack_guide = os.path.join(prev_root, "stack-guide.json")
     if os.path.exists(stack_guide) and len(new_layers) > 1:
         # A stack guide's ids always name their layer.

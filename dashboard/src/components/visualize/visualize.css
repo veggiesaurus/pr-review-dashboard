@@ -1,0 +1,29 @@
+/* Sized by DiagramView to fit its column and the screen, and centred in the column. */
+.prg-diagram svg {
+  display: block;
+  margin-inline: auto;
+}
+
+/* The fold targets and counts follow the theme's tokens live; mermaid's own colours are drawn again on a theme change. */
+.prg-diagram text.prg-fold,
+.prg-diagram text.prg-fold tspan {
+  /* biome-ignore lint/complexity/noImportantStyles: beats the id-scoped rules in mermaid's own style element */
+  fill: var(--primary) !important;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.prg-diagram text.prg-fold:hover,
+.prg-diagram text.prg-fold:focus-visible {
+  text-decoration-style: solid;
+  outline: none;
+}
+
+.prg-diagram text.prg-fold-count {
+  /* biome-ignore lint/complexity/noImportantStyles: as above */
+  fill: var(--muted-foreground) !important;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}

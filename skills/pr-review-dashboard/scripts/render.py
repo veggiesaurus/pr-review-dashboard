@@ -20,7 +20,10 @@ section number; try is up to three things to try by hand, which may link too.
 An optional description.json from the checker is shown on the page:
 {"checklist": [{"claim", "from", "hunks"}], "unsupported": [{"claim", "why"}],
 "missing": [{"what", "hunks"}], "issue"?: [{"ask", "why"}]}, where from is
-"description" or "issue".
+"description" or "issue". An optional diagrams.json from the diagram worker,
+{"diagrams": [{"title", "why", "sections": [1, 2], "source"}]}, is shown in the
+dashboard's Visualize tab: source is mermaid that marks parts as added, changed
+or removed and names no colours, and sections are guide section numbers.
 
 A STACKDIR is what stack.py writes: stack.json and one WORKDIR per layer. Every
 layer is checked as above, links may reach into another layer as
@@ -433,6 +436,18 @@ def self_test():
     assert any("#7 has no summary" in x for x in sp) and any("names its layer" in x for x in sp), sp
     assert check_stack_guide({"layers": [{"number": 7, "summary": "Adds [the store](7:f1h1)."}]}, layers) == ([], [])
     assert "must be" in check_stack_guide({"layers": [], "issues": [{"layers": "7"}]}, layers)[0][0]
+    seq = "sequenceDiagram\n  participant A as Api\n  rect changed\n    A->>A: save\n  end"
+    diagram = {"title": "Save", "why": "Saves [here](f1h2).", "sections": [2], "source": seq}
+    assert check_diagrams({"diagrams": [diagram]}, data, secs) == ([diagram], [])
+    assert check_diagrams(None, data, secs) == ([], [])
+    bad = [dict(diagram, sections=[3]), dict(diagram, source="pie\n  a: 1"), dict(diagram, why="[x](f9)"),
+           dict(diagram, source="flowchart LR\n  A --> B\n  style A fill:#f00"),
+           dict(diagram, source=seq.replace("rect changed", "rect rgb(1, 2, 3)")),
+           dict(diagram, source=seq.replace("save", "save; then load")),
+           dict(diagram, source=seq.replace("rect changed", "loop"))]
+    for d in bad:
+        assert check_diagrams({"diagrams": [d]}, data, secs)[1], d
+    assert check_diagrams({"diagrams": [diagram] * 6}, data, secs)[1], "more than five diagrams must fail"
     print("self-test ok")
 
 
@@ -496,9 +511,18 @@ def load(workdir, data, layers=None):
         problems.append(f"description.json unreadable: {e}")
     if desc is not None:
         problems += check_description(desc, data)
+    diagrams = None
+    try:
+        diagrams = read_json(os.path.join(workdir, "diagrams.json"))
+    except OSError:
+        pass
+    except json.JSONDecodeError as e:
+        problems.append(f"diagrams.json unreadable: {e}")
+    diagrams, diagram_problems = check_diagrams(diagrams, data, sections, layers) if not problems else ([], [])
+    problems += diagram_problems
     warnings = (lint(data, sections) + split_warnings + summary_warnings) if not problems else []
     return {"problems": problems, "warnings": warnings, "sections": sections,
-            "extras": {"split": split, "descriptionCheck": desc, "try": tries, "summary": summary,
+            "extras": {"split": split, "descriptionCheck": desc, "try": tries, "summary": summary, "diagrams": diagrams,
                        "personas": [{"id": p["id"], "name": p["name"]} for p in personas if summary and p["id"] in summary]}}
 
 
@@ -520,6 +544,55 @@ def check_description(desc, data):
             if not isinstance(hs, list) or not all(isinstance(h, str) and has_id(data, h) for h in hs):
                 out.append(f'description.json: "hunks" in "{key}" must be a list of hunk ids from this diff, not {hs!r}')
     return out
+
+
+DIAGRAM_KINDS = ("sequenceDiagram", "flowchart", "graph", "stateDiagram-v2", "stateDiagram", "classDiagram", "erDiagram")
+MARKED_RECT = re.compile(r"^\s*rect\s+(added|changed|removed)\s*$")
+UNLABELLED = ("loop", "alt", "else", "opt", "par", "and", "break", "critical", "option")
+
+
+def check_diagrams(raw, data, sections, layers=None):
+    """diagrams.json's diagrams and their problems. Colours are the page's, from its theme, so a diagram marks parts
+    as added, changed or removed and never names a colour."""
+    if raw is None:
+        return [], []
+    items = raw.get("diagrams") if isinstance(raw, dict) else None
+    if not isinstance(items, list) or not all(isinstance(d, dict) for d in items):
+        return [], ['diagrams.json must be {"diagrams": [...]}, each an object']
+    guide_count = sum(1 for s in sections if s["kind"] == "guide")
+    problems, out = [], []
+    for k, d in enumerate(items, 1):
+        at = f"diagram {k}"
+        title, why, source, nums = d.get("title"), d.get("why", ""), d.get("source"), d.get("sections", [])
+        if not isinstance(title, str) or not title.strip() or not isinstance(why, str):
+            problems.append(f'{at}: needs a "title" and a "why" string')
+        if not isinstance(nums, list) or not all(isinstance(n, int) and 1 <= n <= guide_count for n in nums):
+            problems.append(f'{at}: "sections" must list section numbers from 1 to {guide_count}, not {nums!r}')
+        if not isinstance(source, str) or not source.strip():
+            problems.append(f'{at}: needs a "source" with the mermaid text')
+            continue
+        lines = source.strip().splitlines()
+        kind = lines[0].split()[0] if lines[0].split() else ""
+        if kind not in DIAGRAM_KINDS:
+            problems.append(f"{at}: starts with {kind!r}; start with one of {', '.join(DIAGRAM_KINDS)}, with no front matter")
+        for n, line in enumerate(lines, 1):
+            word = line.split()[0] if line.split() else ""
+            if line.lstrip().startswith("%%{"):
+                problems.append(f"{at} line {n}: no %%{{init}} directives; the page sets the theme")
+            elif word in ("classDef", "style", "linkStyle") or (word == "rect" and not MARKED_RECT.match(line)):
+                problems.append(f"{at} line {n}: names a colour; mark the part as added, changed or removed instead "
+                                f"(rect changed ... end, or class A,B changed) and the page colours it from its theme")
+            elif word in ("click", "href"):
+                problems.append(f"{at} line {n}: links in a diagram don't work on the page; put them in \"why\"")
+            elif kind == "sequenceDiagram" and not line.lstrip().startswith("%%") and re.search(r"[;#]", line):
+                problems.append(f"{at} line {n}: has ; or #, which mermaid reads as syntax in a sequence diagram")
+            elif kind == "sequenceDiagram" and word in UNLABELLED and len(line.split()) == 1:
+                problems.append(f"{at} line {n}: {word} needs a short label; the page folds it by its heading")
+        problems += [f"{at}: {x}" for x in link_problems(why if isinstance(why, str) else "", data, layers)]
+        out.append({"title": title, "why": why, "sections": nums, "source": source.strip()})
+    if len(items) > 5:
+        problems.append(f"diagrams.json has {len(items)} diagrams; keep the five that show the most")
+    return out, problems
 
 
 def fail(problems):
