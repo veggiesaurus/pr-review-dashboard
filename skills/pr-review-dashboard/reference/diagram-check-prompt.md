@@ -28,12 +28,12 @@ Write `{WORKDIR}/diagram-verify.json`:
 
 ```json
 {"issues": [
-  {"diagram": 1, "where": "the branch after POST /events",
-   "problem": "Shows every failure as a 503, but the forward answers 400 when the engine rejects the upload with a 400 or 413 (f4h1, and its status test).",
-   "fix": "Split the branch: the engine accepts, the engine rejects the upload (400), any other failure (503)."}
+  {"diagram": 1, "where": "the branch after POST /orders",
+   "problem": "Shows every failure as a 503, but the API answers 409 when the payment service reports a duplicate charge (f4h1, and its status test).",
+   "fix": "Split the branch: the payment is taken, a duplicate charge (409), any other failure (503)."}
  ],
  "unconfirmed": [
-  {"diagram": 1, "where": "Legacy pipeline: analyse_images", "why": "No call to analyse_images on this path at the head commit; the handler calls run_pipeline."}
+  {"diagram": 1, "where": "Fraud service: score order", "why": "No call to the fraud service on this path at the head commit; the API calls the payment service directly."}
  ]}
 ```
 
