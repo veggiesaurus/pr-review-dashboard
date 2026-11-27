@@ -223,7 +223,14 @@ export type Layer = {
   summary: Summary | null;
   // The personas the summary was written for, in the order the page offers them.
   personas: Persona[];
+  // diagrams.json from the diagram worker; empty for a change with none, or a guide written before them.
+  diagrams: Diagram[];
 };
+
+// Mermaid source that marks parts as added, changed or removed, which the page colours from the theme. sections are
+// 1-based guide section numbers; why is prose like a section's.
+// allNew: every step drawn is new in this change, so nothing is marked and the page says so instead of a legend.
+export type Diagram = { title: string; why: string; sections: number[]; source: string; allNew: boolean };
 
 export type Summary = Record<string, string>;
 export type SummaryReader = string;
@@ -333,6 +340,17 @@ export const rawLayerSchema = z.looseObject({
   try: z.array(z.string()).default([]),
   summary: z.record(z.string(), z.string()).nullish().default(null),
   personas: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+  diagrams: z
+    .array(
+      z.object({
+        title: z.string(),
+        why: z.string().default(""),
+        sections: z.array(z.number().int()).default([]),
+        source: z.string(),
+        allNew: z.boolean().default(false),
+      }),
+    )
+    .default([]),
 });
 
 export const rawStackSchema = z.looseObject({

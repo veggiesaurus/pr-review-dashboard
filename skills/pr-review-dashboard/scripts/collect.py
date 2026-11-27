@@ -1120,6 +1120,20 @@ def personas(repo):
     return check_personas(json.load(open(DEFAULT_PERSONAS)))[0], None
 
 
+def diagram_rules(repo):
+    """The diagram rules a project adds to the skill's own: `.claude/pr-review-diagram-rules.md` in the clone and every
+    folder above it, found as CLAUDE.md files are, outermost first so the nearest has the last word."""
+    found, here = [], os.path.abspath(repo)
+    while True:
+        path = os.path.join(here, ".claude", "pr-review-diagram-rules.md")
+        if os.path.isfile(path):
+            found.append(path)
+        up = os.path.dirname(here)
+        if up == here:
+            return found[::-1]
+        here = up
+
+
 def description_text(m):
     out = [f"# {m['title']}", *([m["url"]] if m.get("url") else []), "", "## PR description", "",
            m["body"].strip() or "(none)", "", "## Commits", ""]
@@ -1188,6 +1202,12 @@ def write(data, out_dir):
     if listed:
         with open(os.path.join(out_dir, "personas.json"), "w") as fh:
             json.dump(listed, fh, indent=1)
+    rules, rules_path = data["meta"].pop("diagramRules", []), os.path.join(out_dir, "diagram-rules.md")
+    if rules:
+        with open(rules_path, "w") as fh:
+            fh.write("\n\n".join(f"<!-- from {p} -->\n\n{open(p).read().strip()}" for p in rules) + "\n")
+    elif os.path.exists(rules_path):
+        os.remove(rules_path)
     with open(os.path.join(out_dir, "description.md"), "w") as fh:
         fh.write(description_text(data["meta"]))
     with open(os.path.join(out_dir, "hunks.json"), "w") as fh:
@@ -1399,6 +1419,16 @@ def self_test():
         assert read_blobs(tmp, ["HEAD:third party/lib", blob]) == {"HEAD:third party/lib": None, blob: "kept\n"}
     # Tests decide the size only when they outweigh the rest, and one line elsewhere doesn't shrink it.
     assert judged(400, 300) == 400 and judged(1, 3000) == judged(0, 3000) > 1, judged(1, 3000)
+    # Diagram rules: every folder from the clone up adds its file, outermost first, so the repo's own comes last.
+    with tempfile.TemporaryDirectory() as outer:
+        repo = os.path.join(outer, "clones", "app")
+        os.makedirs(os.path.join(repo, ".claude"))
+        assert diagram_rules(repo) == []
+        project, own = (os.path.join(d, ".claude", "pr-review-diagram-rules.md") for d in (outer, repo))
+        os.makedirs(os.path.dirname(project))
+        for path in (own, project):
+            open(path, "w").write("rules\n")
+        assert diagram_rules(repo) == [project, own], diagram_rules(repo)
     # Personas: the repo's file wins, then the user's, then the skill's own; one that doesn't read is passed over.
     with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as claude:
         saved = os.environ.get("CLAUDE_CONFIG_DIR")
@@ -1512,6 +1542,7 @@ def main():
     a.repo = os.path.abspath(a.repo)
     data = collect(a)
     data["meta"]["personas"], persona_file = personas(a.repo)
+    data["meta"]["diagramRules"] = rule_files = diagram_rules(a.repo)
     count, nbatches = write(data, a.out)
     record_pass(pass_path(a.repo, data["meta"]), data)
     s = data["stats"]
@@ -1527,6 +1558,8 @@ def main():
         print(f"moved unchanged: {s['moved']} lines")
     if persona_file:
         print(f"summary personas from {persona_file}")
+    if rule_files:
+        print(f"diagram rules from {', '.join(rule_files)}")
     hunkless = sum(1 for f in data["files"] if not f["noise"] and not f["hunks"])
     if hunkless:
         print(f"files with no line changes (binary, renamed or mode only): {hunkless}")

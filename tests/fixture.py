@@ -161,6 +161,21 @@ def main():
             "unsupported": [{"claim": "old links redirect", "why": "Nothing redirects /posts."}],
             "missing": [{"what": "a title length cap", "hunks": [ids["src/util.ts"] + "h1"]}]}
     json.dump(desc, open(os.path.join(work, "description.json"), "w"))
+    sequence = "\n".join([
+        "sequenceDiagram", "  participant B as Browser", "  participant R as Router", "  participant P as postPath",
+        "  B->>R: open a post link",
+        "  alt link starts with /blog", "    rect changed", "      R->>P: build the path", "      P-->>R: /blog/slug", "    end",
+        "    R-->>B: the post",
+        "  else an old /posts link", "    R-->>B: not found", "  end",
+        "  loop each post in the index", "    R->>P: postPath(title)", "    P-->>R: path", "  end"])
+    flow = "\n".join([
+        "flowchart LR", '  posts["posts.ts postPath"] --> slug["slug.ts slugify"]', '  posts -.-> util["util.ts helpers"]',
+        "  class posts changed", "  class slug added", "  class util removed"])
+    json.dump({"diagrams": [
+        {"title": "Opening a post", "why": "Only [the path](%s) changes; old links stop resolving." % ids["src/posts.ts"],
+         "sections": [1], "source": sequence},
+        {"title": "Where slugs come from", "why": "Slugs move into a module of their own.", "sections": [1, 2], "source": flow},
+    ]}, open(os.path.join(work, "diagrams.json"), "w"))
     render(work)
     # A stack page from two copies of the same layer, numbered as PRs, for the stack's own code paths.
     stack = os.path.join(out, "stack")

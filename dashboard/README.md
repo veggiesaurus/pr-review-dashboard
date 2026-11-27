@@ -27,13 +27,14 @@ It needs `git` and `gh` on the path, and `gh` logged in. `LINEAR_API_KEY` is opt
 
 ## What the page does
 
-Everything the skill's page does, in three tabs that all take the width of the window:
+Everything the skill's page does, in four tabs that all take the width of the window:
 
 - Overview has the PR's details and description, the "Before you mark it ready" checks, the stack panel, the live panel and your notes. The checks are one list, each row with a dot: red where something is wrong, amber where there is something to look at, green once it is settled, as its chip in the header is coloured.
 - Guide walks the sections, with the section text sticky on the left and its file cards on the right. Each section has a counter (`01 / 03`) and a Reviewed tick, and a thin rail at the left edge shows where you are. A thing to try by hand shows in the section its link points into, with what Claude found when it tried it.
 - Diff is every file in one list.
+- Visualize shows where the change fits in, as mermaid diagrams the skill's diagram worker draws from the code around the change, and a second reader checks against that code: sequence diagrams for what happens over time, flowcharts for what calls what, and state, class or data model diagrams where those are the point. What the change adds, alters or removes is marked, and everything else is drawn quietly. They are shown one at a time, each shrunk to fit on screen and centred, picked from a row of their titles above it, each with the sections it covers. A sequence diagram's `loop`, `alt` and `opt` blocks fold from their headings, and each diagram opens full screen, where the arrows or the arrow keys step through them. Every colour and the font come from the theme, so the diagrams are drawn again whenever light or dark, the palette or its fonts change. A change that needs no diagram says so.
 
-Diffs are unified or split, with formatting-only lines hidden unless asked for, moved blocks shown once, CI annotations under their lines, "N unchanged lines" expanders, and a filter for what's new since the last build or one commit, each commit listed with its author, date and size. Clicking a name in a changed line of code lists the lines that use it on the PR's branch (not in markdown, JSON, YAML or TOML, or in anything generated). Reviewed ticks are per file and per section and are kept by the server. A card ticked before its code changed says so, marks the hunks that are new and dims the ones already read. Each section names whoever else has reviewed all of it, and a tick lapses when its code changes, so a second look does too. `u` asks the same of a name you type. Shift-click the theme button to pick another tweakcn palette (colours, corner radius and fonts), which is remembered in the browser. Its fonts come from Google Fonts through the server, so the page itself still asks no other host for anything; `bun run palettes` fetches the list again. `?` lists the keys (`j`/`k` files, `n`/`p` sections, `r` reviewed, `1` `2` `3` tabs).
+Diffs are unified or split, with formatting-only lines hidden unless asked for, moved blocks shown once, CI annotations under their lines, "N unchanged lines" expanders, and a filter for what's new since the last build or one commit, each commit listed with its author, date and size. Clicking a name in a changed line of code lists the lines that use it on the PR's branch (not in markdown, JSON, YAML or TOML, or in anything generated). Reviewed ticks are per file and per section and are kept by the server. A card ticked before its code changed says so, marks the hunks that are new and dims the ones already read. Each section names whoever else has reviewed all of it, and a tick lapses when its code changes, so a second look does too. `u` asks the same of a name you type. Shift-click the theme button to pick another tweakcn palette (colours, corner radius and fonts), which is remembered in the browser. Its fonts come from Google Fonts through the server, so the page itself still asks no other host for anything; `bun run palettes` fetches the list again. `?` lists the keys (`j`/`k` files, `n`/`p` sections, `r` reviewed, `1` to `4` tabs).
 
 On a stack a dropdown in the header picks the layer, and the stack panel at the top of the Overview lists each layer with its checks and what the stack check found, including a layer that needs a rebase or conflicts with its base. The layer, the tab and the last file or line jumped to are in the URL, so Back works and a link can point at one file.
 
@@ -100,14 +101,17 @@ bun run typecheck
 bunx biome check .
 bun tests/smoke.mjs [STATIC_DIR]
 bun tests/shot.mjs STATE OUT_DIR [light|dark] [WIDTH] [HASH]
+bun scripts/diagrams.mjs WORK/diagrams.json
 ```
 
-`smoke.mjs` walks the page in headless Chromium against a fresh fixture and fails on any console error, page error or CSP violation. `shot.mjs` takes a full-page screenshot of a running server's page under the same rule.
+`smoke.mjs` walks the page in headless Chromium against a fresh fixture and fails on any console error, page error or CSP violation. `shot.mjs` takes a full-page screenshot of a running server's page under the same rule. `diagrams.mjs` draws each diagram in a `diagrams.json` with the page's own mermaid and fails on any it can't draw; the diagram worker runs it.
 
 ## Not done, or not tried
 
 - Posting to GitHub has only run against a stand-in for `gh`, never against GitHub, so GitHub's own answers to it (a review with no summary, a line it refuses) are untested.
 - Only Chromium has been tried. Not WebKit or Firefox, not a touch device, and not the desktop app's browser pane.
+- The Visualize tab has only shown the fixture's diagrams. The diagram worker hasn't yet drawn any for a real PR, so how often it judges a diagram worth drawing, and how well its diagrams show where a change fits, is untested.
+- A long heading on a folded block can run under the count of what it holds.
 - The re-check of open threads after a rebuild and Fix the open notes have only run with the tests playing the session, so how well a real session judges that a new head deals with a thread is untested.
 - The quiz has only been taken with questions the tests wrote, so whether a real session's questions need the code to answer, or read as trivia, is untested.
 - Review threads on GitHub aren't re-checked after a rebuild or sent by Fix the open notes, only the dashboard's own.

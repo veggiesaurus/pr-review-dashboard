@@ -32,12 +32,12 @@ const KEYS: { keys: string[][]; sep?: string; what: string }[] = [
   { keys: [[MOD, "P"]], what: "Go to a file" },
   { keys: [[ALT, MOD, "G"]], what: "Go to a section" },
   { keys: [["u"]], what: "Where a name is used" },
-  { keys: [["1"], ["2"], ["3"]], what: "Overview, Guide, Diff" },
+  { keys: [["1"], ["2"], ["3"], ["4"]], what: "Overview, Guide, Diff, Visualize" },
   { keys: [[MOD, "B"]], what: "Unified or Split" },
   { keys: [["?"], [MOD, "/"]], sep: "or", what: "These keys" },
 ];
 
-const TABS: Record<string, Tab> = { "1": "overview", "2": "guide", "3": "diff" };
+const TABS: Record<string, Tab> = { "1": "overview", "2": "guide", "3": "diff", "4": "visualize" };
 const NOT_TYPING = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
 
 function typing(target: EventTarget | null) {

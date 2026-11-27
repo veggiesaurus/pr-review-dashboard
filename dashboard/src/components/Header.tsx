@@ -18,7 +18,7 @@ import { TABS, type Tab } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
 import { ago, fullDate } from "src/utils/dates";
 
-const TAB_NAMES: Record<Tab, string> = { overview: "Overview", guide: "Guide", diff: "Diff" };
+const TAB_NAMES: Record<Tab, string> = { overview: "Overview", guide: "Guide", diff: "Diff", visualize: "Visualize" };
 const https = (url: string | null | undefined): url is string => Boolean(url?.startsWith("https://"));
 
 // An issue the PR links to. The template says in a tooltip whether the PR closes it; here it is said in a word too,
@@ -176,10 +176,10 @@ export function Header({ layer }: { layer: number }) {
         <TabList tab={tab} setTab={setTab} />
         <LayerNav />
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]">
-          {tab !== "overview" && <ViewMenu layer={layer} />}
+          {(tab === "guide" || tab === "diff") && <ViewMenu layer={layer} />}
         </div>
       </div>
-      {tab !== "overview" && <FilterNote layer={layer} />}
+      {(tab === "guide" || tab === "diff") && <FilterNote layer={layer} />}
       {tab === "guide" && <SectionIndex layer={layer} />}
     </header>
   );
