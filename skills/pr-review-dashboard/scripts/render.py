@@ -23,7 +23,8 @@ An optional description.json from the checker is shown on the page:
 "description" or "issue". An optional diagrams.json from the diagram worker,
 {"diagrams": [{"title", "why", "sections": [1, 2], "source"}]}, is shown in the
 dashboard's Visualize tab: source is mermaid that marks parts as added, changed
-or removed and names no colours, and sections are guide section numbers.
+or removed and names no colours, sections are guide section numbers, and
+"allNew": true says every step is new, with nothing marked.
 
 A STACKDIR is what stack.py writes: stack.json and one WORKDIR per layer. Every
 layer is checked as above, links may reach into another layer as
@@ -438,13 +439,16 @@ def self_test():
     assert "must be" in check_stack_guide({"layers": [], "issues": [{"layers": "7"}]}, layers)[0][0]
     seq = "sequenceDiagram\n  participant A as Api\n  rect changed\n    A->>A: save\n  end"
     diagram = {"title": "Save", "why": "Saves [here](f1h2).", "sections": [2], "source": seq}
-    assert check_diagrams({"diagrams": [diagram]}, data, secs) == ([diagram], [])
+    assert check_diagrams({"diagrams": [diagram]}, data, secs) == ([dict(diagram, allNew=False)], [])
+    plain = dict(diagram, source=seq.replace("  rect changed\n", "").replace("\n  end", ""), allNew=True)
+    assert check_diagrams({"diagrams": [plain]}, data, secs) == ([plain], []), "an unmarked all-new diagram passes"
     assert check_diagrams(None, data, secs) == ([], [])
     bad = [dict(diagram, sections=[3]), dict(diagram, source="pie\n  a: 1"), dict(diagram, why="[x](f9)"),
            dict(diagram, source="flowchart LR\n  A --> B\n  style A fill:#f00"),
            dict(diagram, source=seq.replace("rect changed", "rect rgb(1, 2, 3)")),
            dict(diagram, source=seq.replace("save", "save; then load")),
-           dict(diagram, source=seq.replace("rect changed", "loop"))]
+           dict(diagram, source=seq.replace("rect changed", "loop")),
+           dict(diagram, allNew=True), dict(diagram, allNew="yes")]
     for d in bad:
         assert check_diagrams({"diagrams": [d]}, data, secs)[1], d
     assert check_diagrams({"diagrams": [diagram] * 6}, data, secs)[1], "more than five diagrams must fail"
@@ -589,7 +593,12 @@ def check_diagrams(raw, data, sections, layers=None):
             elif kind == "sequenceDiagram" and word in UNLABELLED and len(line.split()) == 1:
                 problems.append(f"{at} line {n}: {word} needs a short label; the page folds it by its heading")
         problems += [f"{at}: {x}" for x in link_problems(why if isinstance(why, str) else "", data, layers)]
-        out.append({"title": title, "why": why, "sections": nums, "source": source.strip()})
+        all_new = d.get("allNew", False)
+        if not isinstance(all_new, bool):
+            problems.append(f'{at}: "allNew" must be true or false')
+        elif all_new and re.search(r"^\s*rect\s+(added|changed|removed)\s*$|:::(added|changed|removed)\b|^\s*(class|cssClass)\s.*\b(added|changed|removed)\b", source, re.M):
+            problems.append(f'{at}: "allNew" is true but the source marks parts; leave an all-new diagram unmarked')
+        out.append({"title": title, "why": why, "sections": nums, "source": source.strip(), "allNew": all_new is True})
     if len(items) > 5:
         problems.append(f"diagrams.json has {len(items)} diagrams; keep the five that show the most")
     return out, problems

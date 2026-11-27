@@ -59,6 +59,7 @@ Text, for the person who wrote the code:
 - `title`: the outcome in a few words, sentence case, no file or function names. "Reset tabs after a switch", not "Update workspaceChange.ts".
 - `why`: one or two sentences on what this part achieves and why it exists.
 - `how`: one or two sentences on how it does it, naming the moving parts in plain words.
+- When new code does what the repo's other code of its kind does, in the same order (a route that locks a row, writes, clears a cache and logs activity, say), say so in `how` in a clause instead of listing the steps. The review page draws no diagram for it, so this clause is the reader's picture.
 - Link one to three phrases across `why` and `how` to the hunk or file that implements them: `[phrase](f4h2)`. Link words already in the sentence; do not add "see here".
 - Plain, specific language. No em-dashes, no "seamlessly", "robust", "comprehensive", "leverage". Do not restate the diff line by line.
 

@@ -22,8 +22,11 @@ const LEGEND: Record<Mark, { label: string; swatch: string }> = {
   removed: { label: "Removed", swatch: "bg-diff-del border-danger border-dashed" },
 };
 
-function Legend({ source }: { source: string }) {
-  const marks = marksIn(source);
+function Legend({ diagram }: { diagram: Diagram }) {
+  if (diagram.allNew) {
+    return <Badge tone="success">All new in this PR</Badge>;
+  }
+  const marks = marksIn(diagram.source);
   if (!marks.length) {
     return null;
   }
@@ -169,7 +172,7 @@ function Viewer({
               )}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <SectionLinks layer={layer} diagram={diagram} />
-                <Legend source={diagram.source} />
+                <Legend diagram={diagram} />
               </div>
               <div className="pt-2">
                 <DiagramView source={diagram.source} theme={theme} folds={foldsOf(index)} onToggle={toggle(index)} fit="width" />
@@ -275,7 +278,7 @@ export function Visualize({ layer }: { layer: number }) {
           <h3 className="flex min-w-0 flex-1 items-baseline gap-2">
             <Heading index={index} diagram={diagram} />
           </h3>
-          <Legend source={diagram.source} />
+          <Legend diagram={diagram} />
           <FoldButtons source={diagram.source} onFolds={next => shared.setFolds(index, next)} />
           <button
             type="button"
