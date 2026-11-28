@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
-import { type ReactNode, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ClaudePanel } from "src/components/chat/ClaudePanel";
 import { useChatStore } from "src/components/chat/chat.store";
@@ -8,7 +8,7 @@ import { useThreads } from "src/components/chat/useThreads";
 import { FileCard } from "src/components/diff/FileCard";
 import { FileList } from "src/components/guide/DiffTab";
 import { diagramHomes, SectionText } from "src/components/guide/Guide";
-import { lineCounts, pad2, shownSections, splitPath } from "src/components/guide/visible";
+import { lineCounts, pad2, type ShownSection, shownSections, splitPath } from "src/components/guide/visible";
 import { Overview } from "src/components/overview/Overview";
 import { ReadyPill } from "src/components/ready/ReadyChips";
 import { ShutdownButton } from "src/components/ShutdownButton";
@@ -79,17 +79,25 @@ function scrollsSideways(target: EventTarget | null) {
 
 const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// The section follows a sideways drag like a carousel's page. Let go past a third of the screen, or with a flick, and
-// it slides off for the next or previous one; otherwise it springs back. With nothing that way it drags stiffly.
-function useCarousel(canGo: (by: 1 | -1) => boolean, onGo: (by: 1 | -1) => void) {
-  const page = useRef<HTMLDivElement>(null);
+// The space between a section and the one beside it while they slide.
+const GAP = "2rem";
+
+// A sideways drag moves the track of sections like a carousel's: the current one and, beside it, the one the drag is
+// heading for. Let go past a third of the screen, or with a flick, and it settles on that one; otherwise it springs
+// back. With nothing that way it drags stiffly. onPeek says when the neighbours are wanted beside it.
+function useCarousel(canGo: (by: 1 | -1) => boolean, onGo: (by: 1 | -1) => void, onPeek: (on: boolean) => void) {
+  const track = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number; at: number; axis: "x" | "y" | null } | null>(null);
   const place = (x: string, animate: boolean) => {
-    const el = page.current;
+    const el = track.current;
     if (el) {
       el.style.transition = animate && !still() ? "transform var(--motion-base) var(--motion-ease)" : "none";
       el.style.transform = x === "0" ? "" : `translateX(${x})`;
     }
+  };
+  const settle = () => {
+    place("0", true);
+    window.setTimeout(() => onPeek(false), still() ? 0 : 200);
   };
   const handlers = {
     onTouchStart: (event: TouchEvent) => {
@@ -108,7 +116,12 @@ function useCarousel(canGo: (by: 1 | -1) => boolean, onGo: (by: 1 | -1) => void)
       const dx = touch.clientX - from.x;
       const dy = touch.clientY - from.y;
       // The first few pixels decide whether this is a swipe or a scroll down the page.
-      from.axis ??= Math.abs(dx) > 8 || Math.abs(dy) > 8 ? (Math.abs(dx) > Math.abs(dy) ? "x" : "y") : null;
+      if (from.axis === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        from.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (from.axis === "x") {
+          onPeek(true);
+        }
+      }
       if (from.axis === "x") {
         place(`${canGo(dx < 0 ? 1 : -1) ? dx : dx / 3}px`, false);
       }
@@ -124,18 +137,25 @@ function useCarousel(canGo: (by: 1 | -1) => boolean, onGo: (by: 1 | -1) => void)
       const by = dx < 0 ? 1 : -1;
       const flick = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, event.timeStamp - from.at) > 0.5;
       if (canGo(by) && (Math.abs(dx) > window.innerWidth / 3 || flick)) {
-        place(by === 1 ? "-100%" : "100%", true);
-        window.setTimeout(() => onGo(by), still() ? 0 : 200);
+        place(by === 1 ? `calc(-100% - ${GAP})` : `calc(100% + ${GAP})`, true);
+        window.setTimeout(
+          () => {
+            // The neighbour now in view becomes the section, where it already is.
+            place("0", false);
+            onGo(by);
+          },
+          still() ? 0 : 200,
+        );
       } else {
-        place("0", true);
+        settle();
       }
     },
     onTouchCancel: () => {
       start.current = null;
-      place("0", true);
+      settle();
     },
   };
-  return { page, handlers };
+  return { track, handlers };
 }
 
 // One file's card on the whole screen, with the way back to its section and on to the next file.
@@ -180,6 +200,71 @@ function FileScreen({
   );
 }
 
+// What a phone shows of one section: its title and text, the diagrams that begin there, its files as rows that each
+// open one, and the button that marks it reviewed. A neighbour drawn beside it during a drag has no actions.
+function SectionPane({
+  layer,
+  part,
+  count,
+  diagrams,
+  last,
+  onOpen,
+  onDone,
+}: {
+  layer: number;
+  part: ShownSection;
+  count: number;
+  diagrams: number[];
+  last: boolean;
+  onOpen?: (file: number) => void;
+  onDone?: () => void;
+}) {
+  const shown = useLayer(layer);
+  const ticked = useTicks();
+  if (!shown) {
+    return null;
+  }
+  return (
+    <div className="grid content-start gap-4">
+      <h2 className="text-balance font-serif text-xl leading-tight">{part.section.title}</h2>
+      <SectionText layer={layer} shown={part} count={count} files={false} />
+      {diagrams.map(index => (
+        <DiagramCard key={index} layer={layer} index={index} />
+      ))}
+      <ul className="grid gap-2" aria-label="Open a file">
+        {part.parts.map((file, index) => {
+          const reviewed = ticked(tickKey(shown, file.id, file.hunks));
+          const found = indexLayer(shown).files.get(file.id);
+          const { name, dir } = splitPath(found?.path ?? file.id);
+          const { add, del } = found ? lineCounts(found, file.hunks) : { add: 0, del: 0 };
+          return (
+            <li key={file.id}>
+              <button
+                type="button"
+                onClick={() => onOpen?.(index)}
+                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border bg-card px-3 text-left text-sm"
+              >
+                <span className={cn("min-w-0 flex-1 truncate", reviewed && "text-muted-foreground")}>
+                  {reviewed && <span className="text-success">✓ </span>}
+                  <span className="font-medium">{name}</span>
+                  {dir && <span className="ml-1.5 text-muted-foreground text-xs">{dir}</span>}
+                </span>
+                <span className="shrink-0 font-mono text-xs">
+                  {add > 0 && <span className="text-success">+{add}</span>} {del > 0 && <span className="text-danger">−{del}</span>}
+                </span>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <Button className={cn("w-full", TOUCH)} onClick={onDone}>
+        {last ? "Mark reviewed" : "Mark reviewed, next section"}
+      </Button>
+    </div>
+  );
+}
+
 // The Changes view on a phone: one section at a time, its explanation and its files as rows that each open a file
 // on the whole screen.
 function PhoneChanges({ layer }: { layer: number }) {
@@ -195,6 +280,13 @@ function PhoneChanges({ layer }: { layer: number }) {
   const [file, setFile] = useState<number | null>(null);
   const jumped = sectionOf(shown, anchor);
   const [at, setAt] = useState(0);
+  // Whether the neighbours are drawn beside the section, and how far down to draw them so that their tops show
+  // where the reader is looking when the section has been scrolled.
+  const [peek, setPeek] = useState<number | null>(null);
+  // How far the page scrolls once a swipe has settled, so the section the reader dragged in stays where it was.
+  const keep = useRef<number | null>(null);
+  // The side the next section slides in from, when the arrows bring it rather than a drag.
+  const enter = useRef<1 | -1 | null>(null);
   // A jump from elsewhere (a link, the ready check, a thread's Show it) opens the section it points into.
   useEffect(() => {
     const step = sections.findIndex(section => section.index === jumped);
@@ -203,19 +295,31 @@ function PhoneChanges({ layer }: { layer: number }) {
       setFile(null);
     }
   }, [jumped, sections]);
-  // A file or another section starts at its top, not wherever the last one was scrolled to.
+  // A file or a section brought by the arrows starts at its top; one dragged in stays where it was dragged to.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the scroll is to happen whenever these change
-  useEffect(() => {
-    window.scrollTo(0, 0);
+  useLayoutEffect(() => {
+    if (keep.current === null) {
+      window.scrollTo(0, 0);
+    } else {
+      window.scrollBy(0, keep.current);
+      keep.current = null;
+    }
+    setPeek(null);
   }, [file, at]);
   // Hooks come before the returns below, so the swipe asks and calls whichever step is current.
-  const steps = useRef<{ can: (by: 1 | -1) => boolean; move: (by: 1 | -1) => void }>({ can: () => false, move: () => {} });
+  const steps = useRef<{ can: (by: 1 | -1) => boolean; move: (by: 1 | -1, dragged: boolean) => void }>({
+    can: () => false,
+    move: () => {},
+  });
   const carousel = useCarousel(
     by => steps.current.can(by),
-    by => steps.current.move(by),
+    by => steps.current.move(by, true),
+    on => {
+      const top = carousel.track.current?.getBoundingClientRect().top ?? 0;
+      const header = document.querySelector("header")?.getBoundingClientRect().bottom ?? 0;
+      setPeek(on ? Math.max(0, header - top) : null);
+    },
   );
-  // The side the next section slides in from, set by the step that brings it.
-  const enter = useRef<1 | -1 | null>(null);
   if (!shown) {
     return null;
   }
@@ -232,12 +336,13 @@ function PhoneChanges({ layer }: { layer: number }) {
     return null;
   }
   const count = shown.sections.filter(section => section.kind === "guide").length;
-  const move = (by: 1 | -1) => {
+  const move = (by: 1 | -1, dragged = false) => {
     const next = sections[step + by];
     if (next) {
-      enter.current = by;
+      enter.current = dragged ? null : by;
+      keep.current = dragged ? -(peek ?? 0) : null;
       setFile(null);
-      // Not a jump: a jump scrolls the section's top under the header, arrows and all. The page goes to its top instead.
+      // Not a jump: a jump scrolls the section's top under the header, arrows and all.
       setAnchor(`s${next.index + 1}`);
     }
   };
@@ -255,8 +360,28 @@ function PhoneChanges({ layer }: { layer: number }) {
       />
     );
   }
+  const pane = (part: ShownSection, position: number) => (
+    <SectionPane
+      layer={layer}
+      part={part}
+      count={count}
+      diagrams={homes.get(part.index) ?? []}
+      last={position === sections.length - 1}
+      onOpen={position === step ? setFile : undefined}
+      onDone={
+        position === step
+          ? () => {
+              setTicks(sectionTickKeys(shown, current.index), true);
+              move(1);
+            }
+          : undefined
+      }
+    />
+  );
+  const prev = sections[step - 1];
+  const next = sections[step + 1];
   return (
-    // The arrows and the count stay put; only the section's own content slides, as a carousel's page does.
+    // The arrows and the count stay put; the sections slide beneath them, as a carousel's pages do.
     <section
       id={sectionElementId(layer, current.index)}
       data-section={current.index}
@@ -303,52 +428,20 @@ function PhoneChanges({ layer }: { layer: number }) {
           <ChevronRight />
         </Button>
       </div>
-      <div
-        key={current.index}
-        ref={carousel.page}
-        className={cn("grid content-start gap-4", enter.current === 1 && "motion-slide-next", enter.current === -1 && "motion-slide-prev")}
-      >
-        <h2 className="text-balance font-serif text-xl leading-tight">{current.section.title}</h2>
-        <SectionText layer={layer} shown={current} count={count} files={false} />
-        {(homes.get(current.index) ?? []).map(index => (
-          <DiagramCard key={index} layer={layer} index={index} />
-        ))}
-        <ul className="grid gap-2" aria-label="Open a file">
-          {current.parts.map((part, index) => {
-            const reviewed = ticked(tickKey(shown, part.id, part.hunks));
-            const file = indexLayer(shown).files.get(part.id);
-            const { name, dir } = splitPath(file?.path ?? part.id);
-            const { add, del } = file ? lineCounts(file, part.hunks) : { add: 0, del: 0 };
-            return (
-              <li key={part.id}>
-                <button
-                  type="button"
-                  onClick={() => setFile(index)}
-                  className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border bg-card px-3 text-left text-sm"
-                >
-                  <span className={cn("min-w-0 flex-1 truncate", reviewed && "text-muted-foreground")}>
-                    {reviewed && <span className="text-success">✓ </span>}
-                    <span className="font-medium">{name}</span>
-                    {dir && <span className="ml-1.5 text-muted-foreground text-xs">{dir}</span>}
-                  </span>
-                  <span className="shrink-0 font-mono text-xs">
-                    {add > 0 && <span className="text-success">+{add}</span>} {del > 0 && <span className="text-danger">−{del}</span>}
-                  </span>
-                  <ChevronRight className="size-4 text-muted-foreground" />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        <Button
-          className={cn("w-full", TOUCH)}
-          onClick={() => {
-            setTicks(sectionTickKeys(shown, current.index), true);
-            move(1);
-          }}
-        >
-          {step < sections.length - 1 ? "Mark reviewed, next section" : "Mark reviewed"}
-        </Button>
+      <div ref={carousel.track} className="relative">
+        {peek !== null && prev && (
+          <div inert className="absolute w-full" style={{ top: peek, right: `calc(100% + ${GAP})` }}>
+            {pane(prev, step - 1)}
+          </div>
+        )}
+        <div key={current.index} className={cn(enter.current === 1 && "motion-slide-next", enter.current === -1 && "motion-slide-prev")}>
+          {pane(current, step)}
+        </div>
+        {peek !== null && next && (
+          <div inert className="absolute w-full" style={{ top: peek, left: `calc(100% + ${GAP})` }}>
+            {pane(next, step + 1)}
+          </div>
+        )}
       </div>
     </section>
   );
