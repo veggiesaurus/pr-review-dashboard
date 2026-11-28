@@ -1,9 +1,11 @@
+import { MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ChatDock } from "src/components/chat/ChatDock";
 import { MentionCard } from "src/components/chat/MentionCard";
 import { RebuildButton } from "src/components/chat/RebuildButton";
 import { useThreads } from "src/components/chat/useThreads";
+import { usePhone } from "src/components/diff/hooks";
 import { DiffTab } from "src/components/guide/DiffTab";
 import { Guide } from "src/components/guide/Guide";
 import { JumpTo } from "src/components/guide/JumpTo";
@@ -17,6 +19,7 @@ import { ShutdownButton } from "src/components/ShutdownButton";
 import { ShareButton } from "src/components/share/ShareButton";
 import { SignIn } from "src/components/share/SignIn";
 import { ThemeButton } from "src/components/ThemeButton";
+import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { Visualize } from "src/components/visualize/Visualize";
 import { useCurrentSection } from "src/hooks/useCurrentSection";
 import { useHashSync } from "src/hooks/useHashSync";
@@ -41,10 +44,43 @@ function useLayerSwapped(layer: number | null, tab: string) {
   return last.swapped;
 }
 
+function PageActions({ owner }: { owner: boolean }) {
+  return (
+    <>
+      {owner && <ShareButton />}
+      {owner && <RebuildButton />}
+      <KeysHelp />
+      <ThemeButton />
+      {owner && <ShutdownButton />}
+    </>
+  );
+}
+
+// A phone has no room beside the crumbs for five icons, and no keys to list, so the rest sit behind one button.
+function PageMenu({ owner }: { owner: boolean }) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label="More"
+        className="grid size-9 cursor-pointer place-items-center rounded-full border border-transparent text-muted-foreground data-[state=open]:border-border data-[state=open]:bg-card"
+      >
+        <MoreHorizontal className="size-5" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="flex w-auto items-center gap-1 p-1.5">
+        {owner && <ShareButton />}
+        {owner && <RebuildButton />}
+        <ThemeButton />
+        {owner && <ShutdownButton />}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function App() {
   const connected = useLiveSocket();
   const { data, isPending, isError, error } = useReview();
   const owner = useIsOwner();
+  const phone = usePhone();
   useHashSync(data);
   useKeyboard();
   const layer = useViewStore(state => state.layer);
@@ -74,11 +110,7 @@ export function App() {
       {/* On the column's right edge, level with the header's first line. */}
       <div className={cn("pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-end", PAGE_COLUMN)}>
         <div className="pointer-events-auto flex items-center gap-1">
-          {owner && <ShareButton />}
-          {owner && <RebuildButton />}
-          <KeysHelp />
-          <ThemeButton />
-          {owner && <ShutdownButton />}
+          {phone ? <PageMenu owner={owner} /> : <PageActions owner={owner} />}
         </div>
       </div>
       {shown && tab === "guide" && <SectionRail layer={shown.id} />}

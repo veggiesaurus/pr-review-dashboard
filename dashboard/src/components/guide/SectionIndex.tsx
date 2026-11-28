@@ -46,11 +46,8 @@ export function SectionIndex({ layer }: { layer: number }) {
   const shown = useLayer(layer);
   const show = useViewStore(state => state.show);
   const formatting = useViewStore(state => state.formatting);
-  // The ones that need a careful read come first, since what is listed last gets the least attention.
-  const sections = useMemo(() => {
-    const risky = ({ section }: { section: Section }) => (section.kind === "guide" && section.risk ? 0 : 1);
-    return (shown ? shownSections(shown, show, formatting) : []).toSorted((a, b) => risky(a) - risky(b));
-  }, [shown, show, formatting]);
+  // In the page's order, so a pill's number matches where it leads; the ! marks the ones that need a careful read.
+  const sections = useMemo(() => (shown ? shownSections(shown, show, formatting) : []), [shown, show, formatting]);
   const readers = usePresenceList().filter(entry => entry.layer === layer && entry.tab === "guide");
   if (!sections.length) {
     return null;

@@ -274,8 +274,8 @@ export function Visualize({ layer }: { layer: number }) {
         </nav>
       )}
       <article key={index} data-diagram={index} className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-        <div className="flex items-center gap-2">
-          <h3 className="flex min-w-0 flex-1 items-baseline gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="flex min-w-[min(100%,18rem)] flex-1 items-baseline gap-2">
             <Heading index={index} diagram={diagram} />
           </h3>
           <Legend diagram={diagram} />

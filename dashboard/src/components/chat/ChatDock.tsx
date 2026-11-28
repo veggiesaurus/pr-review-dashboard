@@ -30,6 +30,8 @@ import { cn } from "src/utils/cn";
 import { arrived } from "src/utils/motion";
 
 // Each part of the drawer that scrolls: capped to the window, and never sideways.
+// An open panel's button looks pressed rather than primary, so solid blue only ever means the main action.
+const PRESSED = "bg-secondary text-foreground hover:bg-secondary";
 const DRAWER_SCROLL = "-mx-1 mt-1 max-h-[min(60dvh,36rem)] overflow-y-auto overflow-x-hidden overscroll-contain p-1";
 
 function ThreadItem({ thread, active }: { thread: ClaudeThread; active: boolean }) {
@@ -465,40 +467,35 @@ export function ChatDock({ connected }: { connected: boolean }) {
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              variant={chatOpen && drawer === "chat" ? "default" : "outline"}
+              variant="outline"
+              className={cn(chatOpen && drawer === "chat" && PRESSED)}
               onClick={() => toggle("chat")}
               aria-pressed={chatOpen && drawer === "chat"}
             >
               <MessageCircle />
               Chat{open ? ` (${open})` : ""}
               {yours.length > 0 && (
-                <span
-                  title={`${yours.length} waiting on you`}
-                  className={cn("size-2 rounded-full", chatOpen && drawer === "chat" ? "bg-primary-foreground" : "bg-primary")}
-                >
+                <span title={`${yours.length} waiting on you`} className="size-2 rounded-full bg-primary">
                   <span className="sr-only">, {yours.length} waiting on you</span>
                 </span>
               )}
             </Button>
             <Button
               size="sm"
-              variant={chatOpen && drawer === "notes" ? "default" : "outline"}
+              variant="outline"
+              className={cn(chatOpen && drawer === "notes" && PRESSED)}
               onClick={() => toggle("notes")}
               aria-pressed={chatOpen && drawer === "notes"}
             >
               <NotebookPen />
               Notes{drafts ? ` (${drafts})` : ""}
             </Button>
-            {/* With nothing to send it is only a label, which a phone has no room for. */}
-            <Button
-              size="sm"
-              onClick={() => send.mutate()}
-              disabled={drafts === 0 || send.isPending}
-              className={cn(drafts === 0 && "max-sm:hidden")}
-            >
-              <Send />
-              {drafts === 0 ? "No notes to send" : `Send ${drafts} ${drafts === 1 ? "note" : "notes"}`}
-            </Button>
+            {drafts > 0 && (
+              <Button size="sm" onClick={() => send.mutate()} disabled={send.isPending}>
+                <Send />
+                Send {drafts} {drafts === 1 ? "note" : "notes"}
+              </Button>
+            )}
           </div>
         </div>
       </div>
