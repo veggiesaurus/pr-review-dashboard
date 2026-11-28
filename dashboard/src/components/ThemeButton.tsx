@@ -1,25 +1,14 @@
-import { Check, ChevronUp } from "lucide-react";
+import { Check } from "lucide-react";
 import { RadioGroup } from "radix-ui";
-import { type MouseEvent, type PointerEvent, type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 
-import { Popover, PopoverAnchor, PopoverContent } from "src/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "src/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { applyPalette, currentPalette, type Palette } from "src/utils/palette";
 
 const KEY = "prg:theme";
 
-// The icons and the system, light, dark cycle are the skill's page template's.
-const THEMES: { value: string; name: string; icon: ReactNode }[] = [
-  {
-    value: "",
-    name: "System",
-    icon: (
-      <>
-        <circle cx="8" cy="8" r="6" />
-        <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
-      </>
-    ),
-  },
+// The icons are the skill's page template's.
+const MODES: { value: string; name: string; icon: ReactNode }[] = [
   {
     value: "light",
     name: "Light",
@@ -31,7 +20,32 @@ const THEMES: { value: string; name: string; icon: ReactNode }[] = [
     ),
   },
   { value: "dark", name: "Dark", icon: <path d="M13.5 9.5A5.5 5.5 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" /> },
+  {
+    value: "system",
+    name: "System",
+    icon: (
+      <>
+        <circle cx="8" cy="8" r="6" />
+        <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
+      </>
+    ),
+  },
 ];
+
+const Icon = ({ children }: { children: ReactNode }) => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="size-4"
+  >
+    {children}
+  </svg>
+);
 
 // A palette at a glance: its page, primary, secondary and accent colours in the mode the page is in.
 function Swatch({ colours }: { colours: Record<string, string> }) {
@@ -44,152 +58,79 @@ function Swatch({ colours }: { colours: Record<string, string> }) {
   );
 }
 
-// Click cycles system, light and dark. Shift-click opens the tweakcn palettes, fetched only then.
+// One menu: light, dark or system across the top, then the tweakcn palettes, fetched the first time it opens.
 export function ThemeButton() {
-  const [value, setValue] = useState(() => document.documentElement.dataset.theme ?? "");
-  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState(() => document.documentElement.dataset.theme ?? "system");
   const [palettes, setPalettes] = useState<Palette[]>();
   const [palette, setPalette] = useState(currentPalette);
-  const hold = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const held = useRef(false);
-  // A hold opens the palettes while the finger is still down, and what the phone sends as the press ends (focus
-  // going back to the button, its own long-press menu) can close them again. So nothing that happens on the button
-  // closes them, and for a moment after a hold nothing else does either.
-  const settling = useRef(0);
-  const anchor = useRef<HTMLButtonElement>(null);
-  const index = Math.max(
-    0,
-    THEMES.findIndex(theme => theme.value === value),
-  );
-  const current = THEMES[index];
-  const next = THEMES[(index + 1) % THEMES.length];
-  if (!current || !next) {
-    return null;
-  }
+  const current = MODES.find(entry => entry.value === mode) ?? MODES[2];
 
-  const cycle = () => {
-    if (next.value) {
-      document.documentElement.dataset.theme = next.value;
+  const pickMode = (value: string) => {
+    if (value !== "system") {
+      document.documentElement.dataset.theme = value;
     } else {
       delete document.documentElement.dataset.theme;
     }
     try {
-      localStorage.setItem(KEY, next.value);
+      localStorage.setItem(KEY, value === "system" ? "" : value);
     } catch {
       // Storage can be blocked; the theme still changes for this visit.
     }
-    setValue(next.value);
+    setMode(value);
   };
-
-  // Opened once the list is there, so the focus lands on the palette in use.
-  const openPalettes = () => {
-    import("src/styles/palettes").then(module => {
-      setPalettes(module.PALETTES);
-      setOpen(true);
-    });
-  };
-  // A touch screen has no shift key, so holding the button opens the palettes there. The tap that ends the hold is
-  // not also a click.
-  const onPointerDown = (event: PointerEvent) => {
-    held.current = false;
-    if (event.pointerType !== "mouse") {
-      hold.current = setTimeout(() => {
-        held.current = true;
-        settling.current = Date.now() + 900;
-        openPalettes();
-      }, 450);
-    }
-  };
-  const release = () => clearTimeout(hold.current);
-  const onClick = (event: MouseEvent) => {
-    if (held.current) {
-      held.current = false;
-    } else if (open) {
-      // With the palettes up the button puts them away, and shows a chevron to say so.
-      setOpen(false);
-    } else if (event.shiftKey) {
-      openPalettes();
-    } else {
-      cycle();
-    }
-  };
-  const pick = (name: string) => {
+  const pickPalette = (name: string) => {
     const picked = palettes?.find(entry => entry.name === name);
     if (picked) {
       applyPalette(picked);
       setPalette(name);
     }
   };
-  const dark = value ? value === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const onOpenChange = (open: boolean) => {
+    if (open && !palettes) {
+      import("src/styles/palettes").then(module => setPalettes(module.PALETTES));
+    }
+  };
+  const dark = mode !== "system" ? mode === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-  const title = open
-    ? `Theme: ${current.name}. Click to close the palettes.`
-    : `Theme: ${current.name}. Click for ${next.name}; shift-click, right-click or hold for the palettes.`;
-  const button = (
-    <button
-      ref={anchor}
-      type="button"
-      onClick={onClick}
-      onPointerDown={onPointerDown}
-      onPointerUp={release}
-      onPointerLeave={release}
-      onPointerCancel={release}
-      // The browser's own long-press or right-click menu would cover the palettes, so that opens them too.
-      onContextMenu={event => {
-        event.preventDefault();
-        release();
-        if (event.nativeEvent instanceof PointerEvent && event.nativeEvent.pointerType !== "mouse") {
-          held.current = true;
-          settling.current = Date.now() + 900;
-        }
-        openPalettes();
-      }}
-      aria-label={title}
-      aria-expanded={open}
-      className="grid size-7 cursor-pointer select-none place-items-center rounded-full [-webkit-touch-callout:none] border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground"
-    >
-      {open ? (
-        <ChevronUp className="size-4" aria-hidden="true" />
-      ) : (
-        <svg
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-          className="size-4"
-        >
-          {current.icon}
-        </svg>
-      )}
-    </button>
-  );
   return (
-    <Popover open={open} onOpenChange={next => (next || Date.now() > settling.current) && setOpen(next)}>
-      <Tooltip disableHoverableContent>
-        <TooltipTrigger asChild>
-          <PopoverAnchor asChild>{button}</PopoverAnchor>
-        </TooltipTrigger>
-        {!open && (
-          <TooltipContent side="bottom" align="end">
-            Theme: {current.name}
-            <span className="block opacity-70">Click for {next.name}. Shift-click or right-click for the palettes.</span>
-          </TooltipContent>
-        )}
-      </Tooltip>
-      <PopoverContent
-        align="end"
-        className="w-64 p-1"
-        onInteractOutside={event => anchor.current?.contains(event.target as Node) && event.preventDefault()}
-      >
+    <Popover onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Theme: ${current?.name}`}
+          className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground"
+        >
+          <Icon>{current?.icon}</Icon>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-1">
+        <RadioGroup.Root
+          value={mode}
+          onValueChange={pickMode}
+          aria-label="Mode"
+          orientation="horizontal"
+          className="grid grid-cols-3 gap-1 p-1"
+        >
+          {MODES.map(entry => (
+            <RadioGroup.Item
+              key={entry.name}
+              value={entry.value}
+              aria-label={entry.name}
+              title={entry.name}
+              className="flex h-8 cursor-pointer items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-accent data-[state=checked]:text-foreground"
+            >
+              <Icon>{entry.icon}</Icon>
+            </RadioGroup.Item>
+          ))}
+        </RadioGroup.Root>
+        <div className="mt-1 border-t px-2 pt-2 pb-1 font-medium text-muted-foreground text-xs">Palette</div>
         <RadioGroup.Root
           value={palette}
-          onValueChange={pick}
+          onValueChange={pickPalette}
           aria-label="Palette"
           className="grid max-h-[min(26rem,60vh)] overflow-y-auto overscroll-contain"
         >
+          {!palettes && <p className="px-2 py-1.5 text-muted-foreground">Loading…</p>}
           {palettes?.map(entry => (
             <RadioGroup.Item
               key={entry.name}

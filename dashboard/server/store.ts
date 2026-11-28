@@ -952,6 +952,18 @@ export class Store {
 
   // Frames wait here until a session is watching the socket or holding the long-poll open. Going out isn't
   // delivery: a message is delivered once the session is heard from.
+  // A last word to whatever listens, sent straight out: the server is about to stop and won't wait to hear back.
+  tellSession(frame: string) {
+    for (const sink of this.sessionSinks) {
+      sink(frame);
+    }
+    const waiters = [...this.waiters];
+    this.waiters.clear();
+    for (const waiter of waiters) {
+      waiter(frame);
+    }
+  }
+
   private flush() {
     if (this.pending.length === 0 || !this.listening) {
       this.armWake();

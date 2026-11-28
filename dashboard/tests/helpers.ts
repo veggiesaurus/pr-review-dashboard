@@ -105,6 +105,7 @@ export function setup(
     githubComments?: boolean;
     raw?: unknown;
     onActivity?: () => void;
+    onShutdown?: () => void;
     host?: string;
     repo?: string;
     claudeDir?: string;
@@ -156,6 +157,7 @@ export function setup(
     runner: options.runner,
     githubComments: options.githubComments,
     onActivity: options.onActivity,
+    onShutdown: options.onShutdown,
     host: options.host,
     people,
     permissions,
