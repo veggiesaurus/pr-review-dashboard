@@ -4,7 +4,6 @@ import { Fragment, type KeyboardEvent, useMemo, useState } from "react";
 import type { Diagram, Layer } from "shared/payload";
 import { LINK, Prose } from "src/components/links/Prose";
 import { Badge } from "src/components/ui/badge";
-import { Button } from "src/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "src/components/ui/dialog";
 import { DiagramView } from "src/components/visualize/Diagram";
 import { type Folds, NONE, outermost, parse, type Toggle } from "src/components/visualize/fold";
@@ -24,7 +23,8 @@ const LEGEND: Record<Mark, { label: string; swatch: string }> = {
 };
 
 // Short enough for the three to share a phone's row.
-const CONTROL = "px-2.5 pointer-coarse:h-11";
+const ICON =
+  "grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:size-11";
 
 function Legend({ diagram }: { diagram: Diagram }) {
   if (diagram.allNew) {
@@ -88,34 +88,21 @@ function FoldButtons({ source, onFolds }: { source: string; onFolds: (folds: Fol
   }
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className={CONTROL}
+      <button
+        type="button"
+        className={ICON}
         aria-label="Fold all"
         title="Fold every block"
         onClick={() => onFolds({ blocks, sections: [] })}
       >
-        <ChevronsDownUp />
-        Fold
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className={CONTROL}
-        aria-label="Unfold all"
-        title="Unfold every block"
-        onClick={() => onFolds(NONE)}
-      >
-        <ChevronsUpDown />
-        Unfold
-      </Button>
+        <ChevronsDownUp className="size-4" />
+      </button>
+      <button type="button" className={ICON} aria-label="Unfold all" title="Unfold every block" onClick={() => onFolds(NONE)}>
+        <ChevronsUpDown className="size-4" />
+      </button>
     </>
   );
 }
-
-const ICON =
-  "grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:size-11";
 
 type Shared = {
   layer: Layer;
@@ -156,26 +143,28 @@ function Viewer({
               <DialogTitle className="flex min-w-[min(100%,18rem)] flex-1 items-baseline gap-2 pr-0 font-sans text-base">
                 <Heading index={index} diagram={diagram} />
               </DialogTitle>
-              <FoldButtons source={diagram.source} onFolds={next => setFolds(index, next)} />
-              {many && (
-                <>
-                  <span className="px-1 font-mono text-muted-foreground text-xs" data-count>
-                    {index + 1} / {diagrams.length}
-                  </span>
-                  <button
-                    type="button"
-                    className={ICON}
-                    aria-label="Previous diagram"
-                    title="Previous diagram (←)"
-                    onClick={() => step(-1)}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
-                  <button type="button" className={ICON} aria-label="Next diagram" title="Next diagram (→)" onClick={() => step(1)}>
-                    <ChevronRight className="size-4" />
-                  </button>
-                </>
-              )}
+              <div className="flex shrink-0 items-center">
+                <FoldButtons source={diagram.source} onFolds={next => setFolds(index, next)} />
+                {many && (
+                  <>
+                    <span className="px-1 font-mono text-muted-foreground text-xs" data-count>
+                      {index + 1} / {diagrams.length}
+                    </span>
+                    <button
+                      type="button"
+                      className={ICON}
+                      aria-label="Previous diagram"
+                      title="Previous diagram (←)"
+                      onClick={() => step(-1)}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <button type="button" className={ICON} aria-label="Next diagram" title="Next diagram (→)" onClick={() => step(1)}>
+                      <ChevronRight className="size-4" />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
             <div key={index} className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
               {diagram.why && (
@@ -232,18 +221,17 @@ export function DiagramCard({ layer, index }: { layer: number; index: number }) 
       <h3 className="flex items-baseline gap-2">
         <Heading index={index} diagram={diagram} />
       </h3>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center">
         <FoldButtons source={diagram.source} onFolds={next => shared.setFolds(index, next)} />
-        <Button
-          variant="outline"
-          size="sm"
-          className={CONTROL}
+        <button
+          type="button"
+          className={ICON}
           aria-label={`Open ${diagram.title} full screen`}
           title="Full screen"
           onClick={() => setViewing(index)}
         >
-          <Maximize2 />
-        </Button>
+          <Maximize2 className="size-4" />
+        </button>
         <div className="ml-auto">
           <Legend diagram={diagram} />
         </div>
