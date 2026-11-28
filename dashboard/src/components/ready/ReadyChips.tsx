@@ -233,11 +233,14 @@ export function ReadyPill({ layer }: { layer: number }) {
   const label = open.length + (rebase ? 1 : 0) ? `${open.length + (rebase ? 1 : 0)} to check` : "Nothing to check";
   return (
     <Popover>
-      <PopoverTrigger className="shrink-0 cursor-pointer rounded-full" aria-label={`${label} before it's ready`}>
-        <Badge tone={bad ? "danger" : open.length ? "warning" : "success"} className="gap-1 hover:opacity-85">
-          {label}
-          <ChevronDown aria-hidden className="size-3" />
-        </Badge>
+      {/* The palette's own surface, with the status as a dot: the signal colours don't follow the palettes. */}
+      <PopoverTrigger
+        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-2.5 py-0.5 font-medium text-foreground/80 text-xs hover:bg-muted pointer-coarse:min-h-11 pointer-coarse:px-3"
+        aria-label={`${label} before it's ready`}
+      >
+        <span aria-hidden className={cn("size-2 rounded-full", bad ? "bg-danger" : open.length ? "bg-warning" : "bg-success")} />
+        {label}
+        <ChevronDown aria-hidden className="size-3" />
       </PopoverTrigger>
       <PopoverContent align="start" className="grid w-[26rem] max-w-[calc(100vw-2rem)] gap-3">
         <ReadyChips layer={layer} />
