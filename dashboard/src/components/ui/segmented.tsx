@@ -70,7 +70,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(segment.value)}
             className={cn(
               // Each keeps room for its bold form out of sight, so choosing one doesn't nudge what sits beside the switch.
-              "relative cursor-pointer whitespace-nowrap rounded-md px-2.5 py-1 text-sm pointer-coarse:min-h-11 pointer-coarse:px-3.5",
+              "relative cursor-pointer whitespace-nowrap rounded-md px-2.5 py-1 text-sm pointer-coarse:min-h-11",
               "after:invisible after:block after:h-0 after:overflow-hidden after:font-medium after:content-[attr(data-label)]",
               on ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
             )}

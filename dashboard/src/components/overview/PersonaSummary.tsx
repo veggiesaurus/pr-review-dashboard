@@ -84,7 +84,7 @@ export function PersonaSummary({ summary, personas, layer }: { summary: Summary;
           setReader(id);
           setStatus("");
         }}
-        className="max-w-full justify-self-start overflow-x-auto"
+        className="max-w-full justify-self-start overflow-x-auto [scrollbar-width:none]"
         segments={shown.map(({ id, name }) => ({ value: id, label: name }))}
       />
       <div className="grid gap-2.5 text-base leading-relaxed" aria-live="polite" data-summary-text>

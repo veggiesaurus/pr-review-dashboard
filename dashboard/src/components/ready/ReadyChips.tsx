@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import type { Checks, Layer, Ready } from "shared/payload";
-import { LineCount } from "src/components/guide/LineCount";
+import { LineCountTable } from "src/components/guide/LineCount";
 import { useChecks, useConflicts } from "src/components/ready/checks";
 import { Badge, type Tone } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
@@ -240,11 +240,8 @@ export function ReadyPill({ layer }: { layer: number }) {
         </Badge>
       </PopoverTrigger>
       <PopoverContent align="start" className="grid w-[26rem] max-w-[calc(100vw-2rem)] gap-3">
-        <div className="flex items-center gap-2 text-sm">
-          <LineCount layer={layer} />
-          <span className="text-muted-foreground">lines changed</span>
-        </div>
         <ReadyChips layer={layer} />
+        <LineCountTable layer={layer} />
         <Button size="sm" variant="outline" className="justify-self-start" onClick={showReadyCheck}>
           Open the ready check
         </Button>
