@@ -135,7 +135,7 @@ function Viewer({
         aria-describedby={undefined}
         onKeyDown={onKeyDown}
         data-viewer
-        className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden bg-card p-0"
+        className="flex h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden bg-card p-0"
       >
         {diagram && index !== null && (
           <>
@@ -143,7 +143,7 @@ function Viewer({
               <DialogTitle className="flex min-w-[min(100%,18rem)] flex-1 items-baseline gap-2 pr-0 font-sans text-base">
                 <Heading index={index} diagram={diagram} />
               </DialogTitle>
-              <div className="flex shrink-0 items-center">
+              <div className="ml-auto flex shrink-0 items-center">
                 <FoldButtons source={diagram.source} onFolds={next => setFolds(index, next)} />
                 {many && (
                   <>
