@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ClaudePanel } from "src/components/chat/ClaudePanel";
 import { useChatStore } from "src/components/chat/chat.store";
@@ -63,6 +63,42 @@ function sectionOf(layer: ReturnType<typeof useLayer>, anchor: string | null) {
   }
   const at = layer.sections.findIndex(section => section.files.some(part => part.id === target.file));
   return at < 0 ? undefined : at;
+}
+
+// Whether a touch began on something that scrolls sideways itself (a wide diagram, the readers' switch), which keeps
+// the swipe rather than giving it to the section.
+function scrollsSideways(target: EventTarget | null) {
+  for (let el = target instanceof Element ? target : null; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowX;
+    if ((overflow === "auto" || overflow === "scroll") && el.scrollWidth > el.clientWidth) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// A mostly sideways swipe of at least 60px: left for the next section, right for the one before.
+function useSwipe(onSwipe: (by: 1 | -1) => void) {
+  const start = useRef<{ x: number; y: number } | null>(null);
+  return {
+    onTouchStart: (event: TouchEvent) => {
+      const touch = event.touches[0];
+      start.current = touch && event.touches.length === 1 && !scrollsSideways(event.target) ? { x: touch.clientX, y: touch.clientY } : null;
+    },
+    onTouchEnd: (event: TouchEvent) => {
+      const from = start.current;
+      const touch = event.changedTouches[0];
+      start.current = null;
+      if (!from || !touch) {
+        return;
+      }
+      const dx = touch.clientX - from.x;
+      const dy = touch.clientY - from.y;
+      if (Math.abs(dx) >= 60 && Math.abs(dx) > 2 * Math.abs(dy)) {
+        onSwipe(dx < 0 ? 1 : -1);
+      }
+    },
+  };
 }
 
 // One file's card on the whole screen, with the way back to its section and on to the next file.
@@ -135,6 +171,9 @@ function PhoneChanges({ layer }: { layer: number }) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [file, at]);
+  // Hooks come before the returns below, so the swipe calls whichever move is current.
+  const moveTo = useRef<(by: number) => void>(() => {});
+  const swipe = useSwipe(by => moveTo.current(by));
   if (!shown) {
     return null;
   }
@@ -159,6 +198,7 @@ function PhoneChanges({ layer }: { layer: number }) {
       setAnchor(`s${next.index + 1}`);
     }
   };
+  moveTo.current = move;
   const title = current.section.kind === "guide" ? `Section ${pad2(current.index + 1)}` : current.section.title;
   if (file !== null && current.parts[file]) {
     return (
@@ -173,7 +213,12 @@ function PhoneChanges({ layer }: { layer: number }) {
     );
   }
   return (
-    <section id={sectionElementId(layer, current.index)} data-section={current.index} className="grid scroll-mt-16 content-start gap-4 pb-4">
+    <section
+      id={sectionElementId(layer, current.index)}
+      data-section={current.index}
+      className="grid scroll-mt-16 content-start gap-4 pb-4"
+      {...swipe}
+    >
       <div className="flex items-center gap-2">
         <Button
           variant="outline"
