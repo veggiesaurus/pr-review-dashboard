@@ -143,10 +143,11 @@ function Viewer({
               <DialogTitle className="flex min-w-[min(100%,18rem)] flex-1 items-baseline gap-2 pr-0 font-sans text-base">
                 <Heading index={index} diagram={diagram} />
               </DialogTitle>
-              <div className="ml-auto flex shrink-0 items-center">
+              {/* Fold on the left and the diagram switcher on the right, each icon lined up with the title and the close. */}
+              <div className="-ml-2 -mr-10 pointer-coarse:-mr-11.5 pointer-coarse:-ml-3.5 flex grow basis-full items-center">
                 <FoldButtons source={diagram.source} onFolds={next => setFolds(index, next)} />
                 {many && (
-                  <>
+                  <div className="ml-auto flex items-center">
                     <span className="px-1 font-mono text-muted-foreground text-xs" data-count>
                       {index + 1} / {diagrams.length}
                     </span>
@@ -162,7 +163,7 @@ function Viewer({
                     <button type="button" className={ICON} aria-label="Next diagram" title="Next diagram (→)" onClick={() => step(1)}>
                       <ChevronRight className="size-4" />
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
