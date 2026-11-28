@@ -235,7 +235,7 @@ export function ReadyPill({ layer }: { layer: number }) {
     <Popover>
       {/* The palette's own surface, with the status as a dot: the signal colours don't follow the palettes. */}
       <PopoverTrigger
-        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-2.5 py-0.5 font-medium text-foreground/80 text-xs hover:bg-muted pointer-coarse:min-h-11 pointer-coarse:px-3"
+        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-2.5 py-0.5 font-medium text-foreground/80 text-xs hover:bg-muted pointer-coarse:min-h-9 pointer-coarse:px-3"
         aria-label={`${label} before it's ready`}
       >
         <span aria-hidden className={cn("size-2 rounded-full", bad ? "bg-danger" : open.length ? "bg-warning" : "bg-success")} />

@@ -34,7 +34,7 @@ function PageMenu({ owner }: { owner: boolean }) {
     <Popover>
       <PopoverTrigger
         aria-label="More"
-        className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground data-[state=open]:bg-card"
+        className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground data-[state=open]:bg-card"
       >
         <MoreHorizontal className="size-5" />
       </PopoverTrigger>
@@ -77,28 +77,65 @@ function scrollsSideways(target: EventTarget | null) {
   return false;
 }
 
-// A mostly sideways swipe of at least 60px: left for the next section, right for the one before.
-function useSwipe(onSwipe: (by: 1 | -1) => void) {
-  const start = useRef<{ x: number; y: number } | null>(null);
-  return {
+const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// The section follows a sideways drag like a carousel's page. Let go past a third of the screen, or with a flick, and
+// it slides off for the next or previous one; otherwise it springs back. With nothing that way it drags stiffly.
+function useCarousel(canGo: (by: 1 | -1) => boolean, onGo: (by: 1 | -1) => void) {
+  const page = useRef<HTMLElement>(null);
+  const start = useRef<{ x: number; y: number; at: number; axis: "x" | "y" | null } | null>(null);
+  const place = (x: string, animate: boolean) => {
+    const el = page.current;
+    if (el) {
+      el.style.transition = animate && !still() ? "transform var(--motion-base) var(--motion-ease)" : "none";
+      el.style.transform = x === "0" ? "" : `translateX(${x})`;
+    }
+  };
+  const handlers = {
     onTouchStart: (event: TouchEvent) => {
       const touch = event.touches[0];
-      start.current = touch && event.touches.length === 1 && !scrollsSideways(event.target) ? { x: touch.clientX, y: touch.clientY } : null;
+      start.current =
+        touch && event.touches.length === 1 && !scrollsSideways(event.target)
+          ? { x: touch.clientX, y: touch.clientY, at: event.timeStamp, axis: null }
+          : null;
     },
-    onTouchEnd: (event: TouchEvent) => {
+    onTouchMove: (event: TouchEvent) => {
       const from = start.current;
-      const touch = event.changedTouches[0];
-      start.current = null;
+      const touch = event.touches[0];
       if (!from || !touch) {
         return;
       }
       const dx = touch.clientX - from.x;
       const dy = touch.clientY - from.y;
-      if (Math.abs(dx) >= 60 && Math.abs(dx) > 2 * Math.abs(dy)) {
-        onSwipe(dx < 0 ? 1 : -1);
+      // The first few pixels decide whether this is a swipe or a scroll down the page.
+      from.axis ??= Math.abs(dx) > 8 || Math.abs(dy) > 8 ? (Math.abs(dx) > Math.abs(dy) ? "x" : "y") : null;
+      if (from.axis === "x") {
+        place(`${canGo(dx < 0 ? 1 : -1) ? dx : dx / 3}px`, false);
       }
     },
+    onTouchEnd: (event: TouchEvent) => {
+      const from = start.current;
+      const touch = event.changedTouches[0];
+      start.current = null;
+      if (!from || !touch || from.axis !== "x") {
+        return;
+      }
+      const dx = touch.clientX - from.x;
+      const by = dx < 0 ? 1 : -1;
+      const flick = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, event.timeStamp - from.at) > 0.5;
+      if (canGo(by) && (Math.abs(dx) > window.innerWidth / 3 || flick)) {
+        place(by === 1 ? "-100%" : "100%", true);
+        window.setTimeout(() => onGo(by), still() ? 0 : 200);
+      } else {
+        place("0", true);
+      }
+    },
+    onTouchCancel: () => {
+      start.current = null;
+      place("0", true);
+    },
   };
+  return { page, handlers };
 }
 
 // One file's card on the whole screen, with the way back to its section and on to the next file.
@@ -171,9 +208,14 @@ function PhoneChanges({ layer }: { layer: number }) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [file, at]);
-  // Hooks come before the returns below, so the swipe calls whichever move is current.
-  const moveTo = useRef<(by: number) => void>(() => {});
-  const swipe = useSwipe(by => moveTo.current(by));
+  // Hooks come before the returns below, so the swipe asks and calls whichever step is current.
+  const steps = useRef<{ can: (by: 1 | -1) => boolean; move: (by: 1 | -1) => void }>({ can: () => false, move: () => {} });
+  const carousel = useCarousel(
+    by => steps.current.can(by),
+    by => steps.current.move(by),
+  );
+  // The side the next section slides in from, set by the step that brings it.
+  const enter = useRef<1 | -1 | null>(null);
   if (!shown) {
     return null;
   }
@@ -190,15 +232,16 @@ function PhoneChanges({ layer }: { layer: number }) {
     return null;
   }
   const count = shown.sections.filter(section => section.kind === "guide").length;
-  const move = (by: number) => {
+  const move = (by: 1 | -1) => {
     const next = sections[step + by];
     if (next) {
+      enter.current = by;
       setFile(null);
       // Not a jump: a jump scrolls the section's top under the header, arrows and all. The page goes to its top instead.
       setAnchor(`s${next.index + 1}`);
     }
   };
-  moveTo.current = move;
+  steps.current = { can: by => Boolean(sections[step + by]), move };
   const title = current.section.kind === "guide" ? `Section ${pad2(current.index + 1)}` : current.section.title;
   if (file !== null && current.parts[file]) {
     return (
@@ -214,10 +257,16 @@ function PhoneChanges({ layer }: { layer: number }) {
   }
   return (
     <section
+      key={current.index}
+      ref={carousel.page}
       id={sectionElementId(layer, current.index)}
       data-section={current.index}
-      className="grid scroll-mt-16 content-start gap-4 pb-4"
-      {...swipe}
+      className={cn(
+        "grid touch-pan-y scroll-mt-16 content-start gap-4 pb-4",
+        enter.current === 1 && "motion-slide-next",
+        enter.current === -1 && "motion-slide-prev",
+      )}
+      {...carousel.handlers}
     >
       <div className="flex items-center gap-2">
         <Button
@@ -335,20 +384,21 @@ export function PhoneShell({ layer }: { layer: number }) {
   const place = chatOpen ? "claude" : tab === "overview" ? "overview" : "changes";
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b bg-background/95 px-4 py-1.5 backdrop-blur">
+      {/* The title would only ever show cut short here, and the Overview leads with it in full. */}
+      <header className="sticky top-0 z-30 flex items-center gap-2 border-b bg-background/95 px-4 py-1 backdrop-blur">
         {stacked ? (
           <LayerNav />
         ) : (
-          <h1 className="min-w-0 flex-1 truncate font-serif text-base">
-            {shown.meta.number ? <span className="mr-1.5 font-mono text-muted-foreground text-xs">#{shown.meta.number}</span> : null}
-            {shown.meta.title}
+          <h1 className="min-w-0 flex-1">
+            {shown.meta.number ? <span className="font-mono text-muted-foreground text-xs">#{shown.meta.number}</span> : null}
+            <span className="sr-only"> {shown.meta.title}</span>
           </h1>
         )}
         {stacked && <span className="flex-1" />}
         <ReadyPill layer={layer} />
         <PageMenu owner={owner} />
       </header>
-      <main className="min-w-0 flex-1 px-4 pt-3">
+      <main className="min-w-0 flex-1 overflow-x-clip px-4 pt-3">
         {place === "claude" ? <ClaudePanel page /> : place === "overview" ? <Overview layer={layer} /> : <PhoneChanges layer={layer} />}
       </main>
       <nav
