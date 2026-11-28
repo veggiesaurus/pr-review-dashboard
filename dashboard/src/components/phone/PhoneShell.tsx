@@ -114,7 +114,7 @@ function PhoneChanges({ layer }: { layer: number }) {
   const show = useViewStore(state => state.show);
   const formatting = useViewStore(state => state.formatting);
   const anchor = useViewStore(state => state.anchor);
-  const goTo = useViewStore(state => state.goTo);
+  const setAnchor = useViewStore(state => state.setAnchor);
   const ticked = useTicks();
   const setTicks = useSetTicks();
   const sections = useMemo(() => (shown ? shownSections(shown, show, formatting) : []), [shown, show, formatting]);
@@ -155,7 +155,8 @@ function PhoneChanges({ layer }: { layer: number }) {
     const next = sections[step + by];
     if (next) {
       setFile(null);
-      goTo(layer, `s${next.index + 1}`);
+      // Not a jump: a jump scrolls the section's top under the header, arrows and all. The page goes to its top instead.
+      setAnchor(`s${next.index + 1}`);
     }
   };
   const title = current.section.kind === "guide" ? `Section ${pad2(current.index + 1)}` : current.section.title;
@@ -172,7 +173,7 @@ function PhoneChanges({ layer }: { layer: number }) {
     );
   }
   return (
-    <section id={sectionElementId(layer, current.index)} data-section={current.index} className="grid content-start gap-4 pb-4">
+    <section id={sectionElementId(layer, current.index)} data-section={current.index} className="grid scroll-mt-16 content-start gap-4 pb-4">
       <div className="flex items-center gap-2">
         <Button
           variant="outline"
