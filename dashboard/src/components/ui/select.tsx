@@ -21,7 +21,7 @@ export function SelectTrigger({ className, children, ...props }: ComponentProps<
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        "inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card py-0.5 pr-2 pl-2.5 text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-muted",
+        "inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border bg-card py-1.5 pr-2 pl-2.5 text-foreground text-sm pointer-coarse:min-h-11 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 data-[state=open]:bg-muted",
         // Radix drops a className on the value, so the trigger is what lets a long one truncate instead of pushing the chevron out.
         "*:data-[slot=select-value]:min-w-0",
         className,

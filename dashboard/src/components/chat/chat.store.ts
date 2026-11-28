@@ -10,6 +10,9 @@ type ChatState = {
   // What the open composer is about; a line's composer opens under the line, any other in the drawer.
   composer: Anchor | null;
   chatOpen: boolean;
+  // Whether the page's socket to the server is up, which the panel and its button both show.
+  connected: boolean;
+  setConnected: (connected: boolean) => void;
   drawer: "chat" | "notes";
   focus: Focus;
   // Drafts copied for pasting into the session, by id with the text copied, until cleared.
@@ -93,6 +96,8 @@ const remember = (anchor: Anchor | null) => write(COMPOSER_KEY, anchor ? JSON.st
 export const useChatStore = create<ChatState>(set => ({
   composer: reopened,
   chatOpen: reopened !== null && reopened.kind !== "line",
+  connected: false,
+  setConnected: connected => set({ connected }),
   drawer: "chat",
   focus: reopened && reopened.kind !== "line" ? { kind: "anchor", anchor: reopened } : null,
   copied: {},

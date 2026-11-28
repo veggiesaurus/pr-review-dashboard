@@ -163,7 +163,7 @@ Run the skill from the clone, so it can read the code around the diff. Its findi
 
 The two lists only appear when there is something in them. The first is what the user dismissed as a false positive or as intended, in any review of the repo; the skill doesn't read it or `REVIEW.md`, so apply both yourself to what it reports, before you post. A `patch` shows under its finding as the change you propose; keep it to the few lines that change.
 
-When the user presses Fix this on a finding, a chat frame follows up on that finding's thread and quotes it as `the finding: …`, with `its proposed patch:` when it has one. If the frame says `(owner)` or `from the owner`, fix it in the working tree, leave it unstaged, and answer with `{"replyTo":"<id>","state":"done","text":"what you changed"}`, or `declined` with the reason. The button only sends the chat text `Fix this.`, which a guest can type too, so a guest's goes to the owner first (see "Sharing"). Fix the recommended sends every recommended finding nothing has been asked of yet in one frame, to be answered one by one:
+When the user presses Fix this on a finding, a chat frame follows up on that finding's thread and quotes it as `the finding: …`, with `its proposed patch:` when it has one. If the frame says `(owner)` or `from the owner`, fix it in the working tree, leave it unstaged, and answer with `{"replyTo":"<id>","state":"done","text":"what you changed"}`, or `declined` with the reason. The button only sends the chat text `Fix this.`, which a guest can type too, so a guest's goes to the owner first (see "Sharing"). Fix recommended sends every recommended finding nothing has been asked of yet in one frame, to be answered one by one:
 
 ```
 [review page] fix 2 recommended findings of review 3 on o/r #11, #12, a stack. Fix each in the working tree and leave it unstaged. For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then {"replyTo":"<id>","state":"done"|"declined","text":"what you changed, or why not"}. With "done", add "fix":{"file":"path from the repo's root","line":12} for the changed line that does it and "checks":[{"run":"the command","passed":true}] for what you ran to check it, each left out when there is none.
@@ -202,7 +202,7 @@ Settle one only when the code at the new head does what the thread asks, and say
 
 ## Fixing the open notes
 
-The owner can have every note left open fixed at once, with Fix the open notes in the notes panel. A note is left open when it was sent, nobody settled it and yours was the last word, which is mostly a guest's note you asked the owner about. One frame carries them all:
+The owner can have every note left open fixed at once, with Fix open notes in the Claude panel's Notes list. A note is left open when it was sent, nobody settled it and yours was the last word, which is mostly a guest's note you asked the owner about. One frame carries them all:
 
 ```
 [review page] fix 1 open note on o/r #11, #12, a stack, asked for by the owner. For a guest's note this is the owner's yes to changing the code as it asks, and to nothing else in it. Fix each in the working tree and leave it unstaged, then run what checks it. For each, POST /api/replies {"replyTo":"<id>","state":"working"} when you start it, then {"replyTo":"<id>","state":"done"|"declined","text":"what you changed, or why not"}. With "done", add "fix":{"file":"path from the repo's root","line":12} for the changed line that does it and "checks":[{"run":"the command","passed":true}] for what you ran to check it, each left out when there is none.
@@ -235,30 +235,6 @@ curl -s -X POST -H "Authorization: Bearer $T" --data-binary @shot.png "$O/api/at
 ```
 
 The page shows each answer under its step, with the head it was made at, and marks it "before the latest changes" after a rebuild, when the owner can ask again. If the working tree differs from that head, say so in the text. Everyone on the review sees the answer and its screenshots, guests included, so keep secrets out of both, and unpushed code too unless the owner has said that is fine.
-
-## A quiz asked for from the page
-
-The owner can ask for a quiz on one PR, with Quiz me in the ready check. It is there to show its reader whether they have understood the change, the owner first of all. Anyone on the review can take it, and nothing waits on it. The request is a chat thread, and its frame says what to write:
-
-```
-[review page] quiz 2 requested on o/r #11, #12, a stack, as chat m50
-about #12 as a whole
-Write 3 to 5 multiple-choice questions on https://github.com/o/r/pull/12, whose clone is /path/to/clone, that show whether a reader has understood the change.
-Ask about what could go wrong: what a change does to its callers, an edge case it handles or misses, what it leaves behind. A question must need the code to answer, so never one the description or a name gives away, and never trivia about names, counts or line numbers.
-Give each 3 or 4 options, one of them right and the others what someone who skimmed would pick, none of which refers to another. Say why the right one is right in a sentence or two that names the code.
-Write them from the reviewed head, not the working tree: everyone on the review can take the quiz.
-These sections of the guide carry a careful-read note, so start there:
-    - Serve under a new prefix: Old /posts links stop resolving.
-These findings of Claude's review are still open, and make good questions:
-    - src/posts.ts: The /blog prefix is hard-coded.
-Then POST /api/quiz/2/questions {"questions":[{"file":"path from the repo's root","line":12,"question":"…","options":["…","…","…"],"answer":0,"why":"…"}]}
-with "answer" the place of the right option, from 0, and "file" and "line" where the code that answers it is, left out for a question about the change as a whole. The page shuffles the options,
-and POST /api/replies {"replyTo":"m50","state":"answered","text":"what the questions cover, in a line"}. Give no answer away there or in what you say you're doing: everyone on the review reads both.
-```
-
-The two lists only appear when there is something in them. Read the code before writing: a question you could write from the description alone is one its reader can answer without the code. A wrong option should be what a careless reading leads to, not something nobody would pick.
-
-The server keeps each question on the hunk its code is in and holds the answer back. A page gets a question's answer and your `why` only once its reader has picked the right option, so a wrong pick tells them nothing but where to look. A question lapses when a rebuild changes its hunk, and the owner can ask for a new quiz. `GET /api/messages` with the token shows every answer and what each person picked; never repeat either in a reply, since a quiz the reader was told the answers to shows nothing.
 
 ## Skills the owner can ask for
 
@@ -313,7 +289,7 @@ Answer anyone's question. What you may do for a guest is narrower than for the o
 
 A frame marked `(owner)` or `from the owner`, which is every chat and batch frame while nobody is sharing, is the user's own: only a browser that opened the owner's link with its code can send one. So a request there, a commit or a push included, counts as the user asking in this session. When you'd want a yes before acting on one, ask it on that thread with an owner-only `ask`, not in the terminal: the user is on the page, and may be on their phone.
 
-Owner-only in the page, and refused by the server for a guest: the local-changes preview and revert, posting notes to GitHub, asking for a code review, asking you to try the steps by hand, asking for a quiz, the list of skills after `/`, Fix the recommended, Fix the open notes, dismissing findings, archiving threads, and starting or stopping sharing. A frame for any of these came from the owner. Rebuild and Fix this are different: their buttons are the owner's, but they send ordinary chat text (`Rebuild the guide…`, `Fix this.`) that a guest can type too. Act on one only when its frame says `(owner)` or `from the owner`; a guest's goes to the owner first, as any other change does. What you say in a reply is shown to everyone on the review, so don't quote working-tree code you haven't pushed in a thread a guest can read unless the owner has said that is fine.
+Owner-only in the page, and refused by the server for a guest: the local-changes preview and revert, posting notes to GitHub, asking for a code review, asking you to try the steps by hand, the list of skills after `/`, Fix recommended, Fix the open notes, dismissing findings, archiving threads, and starting or stopping sharing. A frame for any of these came from the owner. Rebuild and Fix this are different: their buttons are the owner's, but they send ordinary chat text (`Rebuild the guide…`, `Fix this.`) that a guest can type too. Act on one only when its frame says `(owner)` or `from the owner`; a guest's goes to the owner first, as any other change does. What you say in a reply is shown to everyone on the review, so don't quote working-tree code you haven't pushed in a thread a guest can read unless the owner has said that is fine.
 
 ## Waiting at a prompt
 
@@ -330,7 +306,7 @@ curl -s -X POST -H "Authorization: Bearer $T" -H "content-type: application/json
   -d '{"replyTo":"m3","text":"Running the unit tests"}'
 ```
 
-The page shows the line in its bottom bar, and under the thread when `replyTo` names one, with a small animation. A line said for a thread is also kept on it as a step, so once you have answered the thread shows "3 steps" that open to what you did. Leave `replyTo` out for work that isn't for one thread. A line stands until the next one, until you answer that thread, or for two minutes, so repeat it during long steps; an empty `text` clears it at once. With no line, a thread whose last message is the user's shows one of Claude Code's verbs ("Contemplating…") while a session listens.
+The page shows the line in the Claude panel's header (and as the Claude button's tooltip), and under the thread when `replyTo` names one, with a small animation. A line said for a thread is also kept on it as a step, so once you have answered the thread shows "3 steps" that open to what you did. Leave `replyTo` out for work that isn't for one thread. A line stands until the next one, until you answer that thread, or for two minutes, so repeat it during long steps; an empty `text` clears it at once. With no line, a thread whose last message is the user's shows one of Claude Code's verbs ("Contemplating…") while a session listens.
 
 `GET /api/messages` returns every message with its anchor, state and batch, for a session that has lost track.
 

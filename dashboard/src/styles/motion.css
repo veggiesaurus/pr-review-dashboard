@@ -384,6 +384,24 @@
   }
 }
 
+/* A phone's next or previous section sliding in from the side it was swiped from. */
+@keyframes motion-slide-next {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes motion-slide-prev {
+  from {
+    transform: translateX(-100%);
+  }
+}
+.motion-slide-next {
+  animation: motion-slide-next var(--motion-base) var(--motion-ease-enter);
+}
+.motion-slide-prev {
+  animation: motion-slide-prev var(--motion-base) var(--motion-ease-enter);
+}
+
 /* Unlayered, so it beats every layer Tailwind writes without !important. */
 @media (prefers-reduced-motion: reduce) {
   html {

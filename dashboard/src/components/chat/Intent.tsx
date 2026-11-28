@@ -1,7 +1,10 @@
+import { Check, ChevronDown } from "lucide-react";
 import { NOTE_INTENTS, type NoteIntent } from "shared/intents";
 import type { Message } from "shared/messages";
 
 import { Badge } from "src/components/ui/badge";
+import { Button } from "src/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "src/components/ui/dropdown-menu";
 
 const LABEL: Record<NoteIntent, string> = { fix: "Fix", question: "Question", nit: "Nit" };
 const MEANS: Record<NoteIntent, string> = {
@@ -19,24 +22,37 @@ export function IntentBadge({ message }: { message: Message }) {
   ) : null;
 }
 
-// Optional: pressing the chosen one again leaves the note unmarked, and Claude works out what it asks for.
+// Optional: No tag leaves the note unmarked, and Claude works out what it asks for.
 export function IntentPicker({ value, onChange }: { value: NoteIntent | undefined; onChange: (intent: NoteIntent | undefined) => void }) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset brings its own border and legend layout
-    <div role="group" aria-label="What the note asks for" className="flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs">
-      Mark the note as
-      {NOTE_INTENTS.map(intent => (
-        <button
-          key={intent}
-          type="button"
-          aria-pressed={value === intent}
-          title={MEANS[intent]}
-          onClick={() => onChange(value === intent ? undefined : intent)}
-          className="cursor-pointer rounded-full"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="px-2 pointer-coarse:h-11"
+          aria-label={`What the note asks for: ${value ? LABEL[value] : "no tag"}`}
+          title={value ? MEANS[value] : "Tag the note as a fix, a question or a nit"}
         >
-          <Badge tone={value === intent ? "primary" : "outline"}>{LABEL[intent]}</Badge>
-        </button>
-      ))}
-    </div>
+          {value ? LABEL[value] : "Tag"}
+          <ChevronDown />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {[...NOTE_INTENTS, undefined].map(intent => (
+          <DropdownMenuItem
+            key={intent ?? "none"}
+            onSelect={() => onChange(intent)}
+            className="grid grid-cols-[1rem_1fr] gap-x-2 pointer-coarse:py-3"
+          >
+            {value === intent ? <Check className="mt-0.5 size-4" /> : <span />}
+            <span className="grid">
+              {intent ? LABEL[intent] : "No tag"}
+              <span className="text-muted-foreground text-xs">{intent ? MEANS[intent] : "Claude works out what it asks for"}</span>
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

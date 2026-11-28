@@ -8,6 +8,7 @@ import { Button } from "src/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { errorText } from "src/queries/messages.mutation";
 import { useAnswerGuest, useOwnerLink, useShare, useStartShare, useStopShare } from "src/queries/share.query";
+import { copyToClipboard } from "src/utils/clipboard";
 
 function Who({ person }: { person: Person }) {
   return (
@@ -35,7 +36,10 @@ function CopyLink({ label, url }: { label: string; url: string }) {
         size="sm"
         variant="outline"
         onClick={() => {
-          void navigator.clipboard?.writeText(url).then(() => setCopied(true));
+          copyToClipboard(url).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          );
         }}
       >
         {copied ? <Check /> : <Copy />}
@@ -93,10 +97,10 @@ export function ShareButton() {
           type="button"
           // The word is hidden on a phone, which would leave the button with no name.
           aria-label={waiting.length ? `Share, ${waiting.length} waiting to be let in` : "Share"}
-          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-transparent px-2 text-muted-foreground text-sm hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground data-[state=open]:border-border data-[state=open]:bg-card"
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full pointer-coarse:h-11 pointer-coarse:px-3 border border-transparent px-2 text-muted-foreground text-sm hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground data-[state=open]:border-border data-[state=open]:bg-card"
         >
           <Share2 className="size-4" />
-          <span className="max-sm:hidden">Share</span>
+          <span className="max-[100rem]:hidden">Share</span>
           {waiting.length > 0 && (
             <span className="rounded-full bg-primary px-1.5 text-primary-foreground text-xs leading-4">{waiting.length}</span>
           )}
@@ -117,7 +121,10 @@ export function ShareButton() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(link).then(() => setCopied(true));
+                  copyToClipboard(link).then(
+                    () => setCopied(true),
+                    () => setCopied(false),
+                  );
                 }}
               >
                 {copied ? <Check /> : <Copy />}

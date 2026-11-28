@@ -98,7 +98,7 @@ export function ThemeButton() {
         <button
           type="button"
           aria-label={`Theme: ${current?.name}`}
-          className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground"
+          className="grid size-7 cursor-pointer place-items-center rounded-full pointer-coarse:size-11 border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground"
         >
           <Icon>{current?.icon}</Icon>
         </button>

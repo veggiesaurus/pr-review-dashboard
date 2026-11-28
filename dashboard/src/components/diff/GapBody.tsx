@@ -232,14 +232,14 @@ export const GapBody = memo(function GapBody({ gap, hunk, prev, marks, composer,
   }
 
   const bar = (
-    <FullRow className="flex min-h-6 items-center gap-x-3 bg-muted px-2.5 py-0.5 text-[12.5px] text-muted-foreground">
+    <FullRow className="flex min-h-6 items-center gap-x-3 bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
       {what}
       {hunk?.header && <span className="min-w-0 truncate font-mono opacity-80">{hunk.header}</span>}
       {hunk && (
         <AskClaude
           anchor={{ kind: "hunk", layer: layer.id, file: file.id, hunk: hunk.id }}
-          label="Ask Claude"
-          className="ml-auto shrink-0"
+          hint="Ask Claude about this hunk"
+          className="ml-auto shrink-0 pointer-coarse:-my-2.5 pointer-coarse:size-11 pointer-coarse:justify-center"
         />
       )}
     </FullRow>

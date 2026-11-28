@@ -721,6 +721,24 @@ describe("after a reload", () => {
     expect(new Store(single(14), { db }).addUserMessage({ kind: "chat", text: "elsewhere" }, null)).toMatchObject({ id: "m4" });
   });
 
+  test("a quiz kept from before the quiz was taken out comes back as no threads and no frames", () => {
+    const { review } = setup();
+    const db = openDb();
+    const store = new Store(review, { db });
+    store.addUserMessage({ kind: "chat", text: "Write a quiz on this pull request." }, null);
+    store.addReply({ replyTo: "m1", text: "Two questions on the old links." });
+    store.addUserMessage({ kind: "chat", text: "What does an old link do now?" }, null);
+    store.addUserMessage({ kind: "chat", text: "a reply to the question", replyTo: "m3" }, null);
+    store.addUserMessage({ kind: "chat", text: "kept" }, null);
+    db.run(`update messages set body = json_set(body, '$.quiz', json('{"n":1}')) where n in (1, 3)`);
+
+    const restarted = new Store(review, { db });
+    const frames: string[] = [];
+    restarted.addSessionSink(frame => frames.push(frame));
+    expect(restarted.messages.map(m => m.text)).toEqual(["kept"]);
+    expect(frames.map(frame => frame.split("\n")[0])).toEqual(["[review page] chat m5 from the owner on acme/shop#12 at aaaaaaa"]);
+  });
+
   test("the database keeps each thread's new place, whether the rebuild came while the server was up or down", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "prg-db-")), "prg.db");
     const places = (store: Store) =>

@@ -98,9 +98,7 @@ function Size({ additions, deletions, files }: { additions: number; deletions: n
   return (
     <span className="font-mono text-xs">
       <span className="text-success">+{additions}</span> <span className="text-danger">−{deletions}</span>
-      {files !== null && (
-        <span className="font-sans text-[13px] text-muted-foreground"> in {files === 1 ? "1 file" : `${files} files`}</span>
-      )}
+      {files !== null && <span className="font-sans text-sm text-muted-foreground"> in {files === 1 ? "1 file" : `${files} files`}</span>}
     </span>
   );
 }
@@ -118,7 +116,7 @@ export function GithubSummary({ info, repo }: { info: GithubRefInfo; repo: strin
     <div className="grid gap-2 text-left">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <Icon className={cn("size-3.5 shrink-0", state?.tone ?? "text-muted-foreground")} />
-        <a href={info.url} target="_blank" rel="noreferrer" className="font-mono text-[13px] text-primary hover:underline">
+        <a href={info.url} target="_blank" rel="noreferrer" className="font-mono text-sm text-primary hover:underline">
           {name}
         </a>
         <span className="font-medium">{kind}</span>
@@ -136,7 +134,7 @@ export function GithubSummary({ info, repo }: { info: GithubRefInfo; repo: strin
       </div>
       <p className="font-medium text-sm leading-snug [overflow-wrap:anywhere]">{info.title}</p>
 
-      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 border-t pt-3 text-[13px]">
+      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 border-t pt-3 text-sm">
         <Row label="Author">
           {info.author ? (
             <>

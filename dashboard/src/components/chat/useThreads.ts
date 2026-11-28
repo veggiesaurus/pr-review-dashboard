@@ -40,9 +40,8 @@ function useThreadList() {
         replies.set(message.replyTo, [...(replies.get(message.replyTo) ?? []), message]);
       }
     }
-    // A quiz's questions are threads only in how they are kept: the ready check shows them, and nothing else does.
     const all: ClaudeThread[] = messages
-      .filter(m => !m.replyTo && !m.quiz?.options)
+      .filter(m => !m.replyTo)
       .map(root => ({ kind: "claude", root, replies: replies.get(root.id) ?? [] }));
     // An archived thread shows nowhere but the drawer's Archived list.
     return { messages, threads: all.filter(t => !t.root.archived), archived: all.filter(t => t.root.archived) };

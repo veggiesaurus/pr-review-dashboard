@@ -5,13 +5,13 @@ import type { Diagram, Layer } from "shared/payload";
 import { LINK, Prose } from "src/components/links/Prose";
 import { Badge } from "src/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle } from "src/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "src/components/ui/empty";
 import { DiagramView } from "src/components/visualize/Diagram";
 import { type Folds, NONE, outermost, parse, type Toggle } from "src/components/visualize/fold";
 import { type DiagramTheme, useDiagramTheme } from "src/components/visualize/mermaid";
 import { diagramKind, KINDS, type Mark, marksIn } from "src/components/visualize/source";
 import { useLayer } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
+import { diagramElementId } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -21,6 +21,10 @@ const LEGEND: Record<Mark, { label: string; swatch: string }> = {
   changed: { label: "Changed", swatch: "bg-accent border-primary" },
   removed: { label: "Removed", swatch: "bg-diff-del border-danger border-dashed" },
 };
+
+// Short enough for the three to share a phone's row.
+const ICON =
+  "grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:size-11";
 
 function Legend({ diagram }: { diagram: Diagram }) {
   if (diagram.allNew) {
@@ -51,7 +55,6 @@ function SectionLinks({ layer, diagram }: { layer: Layer; diagram: Diagram }) {
   if (!titled.length) {
     return null;
   }
-  // Plain links, unnumbered: numbered pills read as the diagram titles above the slides.
   return (
     <p className="text-muted-foreground text-xs">
       In the guide:{" "}
@@ -72,13 +75,11 @@ function Heading({ index, diagram }: { index: number; diagram: Diagram }) {
   return (
     <>
       <span className="font-mono text-muted-foreground text-xs">{pad(index + 1)}</span>
-      <span className="min-w-0 flex-1 truncate font-medium">{diagram.title}</span>
+      <span className="min-w-0 flex-1 font-medium">{diagram.title}</span>
       {kind && <Badge tone="outline">{KINDS[kind]}</Badge>}
     </>
   );
 }
-
-const ICON = "grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
 
 function FoldButtons({ source, onFolds }: { source: string; onFolds: (folds: Folds) => void }) {
   const blocks = useMemo(() => (diagramKind(source) === "sequenceDiagram" ? outermost(parse(source)) : []), [source]);
@@ -90,13 +91,13 @@ function FoldButtons({ source, onFolds }: { source: string; onFolds: (folds: Fol
       <button
         type="button"
         className={ICON}
-        aria-label="Fold all blocks"
-        title="Fold all blocks"
+        aria-label="Fold all"
+        title="Fold every block"
         onClick={() => onFolds({ blocks, sections: [] })}
       >
         <ChevronsDownUp className="size-4" />
       </button>
-      <button type="button" className={ICON} aria-label="Unfold all blocks" title="Unfold all blocks" onClick={() => onFolds(NONE)}>
+      <button type="button" className={ICON} aria-label="Unfold all" title="Unfold every block" onClick={() => onFolds(NONE)}>
         <ChevronsUpDown className="size-4" />
       </button>
     </>
@@ -128,41 +129,43 @@ function Viewer({
       step(event.key === "ArrowLeft" ? -1 : 1);
     }
   };
-  const icon = ICON;
   return (
     <Dialog open={diagram !== undefined} onOpenChange={open => !open && onClose()}>
       <DialogContent
         aria-describedby={undefined}
         onKeyDown={onKeyDown}
         data-viewer
-        className="flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden bg-card p-0"
+        className="flex h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden bg-card p-0"
       >
         {diagram && index !== null && (
           <>
-            <div className="flex items-center gap-2 border-b py-2 pr-12 pl-4">
-              <DialogTitle className="flex min-w-0 flex-1 items-baseline gap-2 pr-0 font-sans text-base">
+            <div className="flex flex-wrap items-center gap-2 border-b py-2 pr-12 pl-4">
+              <DialogTitle className="flex min-w-[min(100%,18rem)] flex-1 items-baseline gap-2 pr-0 font-sans text-base">
                 <Heading index={index} diagram={diagram} />
               </DialogTitle>
-              <FoldButtons source={diagram.source} onFolds={next => setFolds(index, next)} />
-              {many && (
-                <>
-                  <span className="px-1 font-mono text-muted-foreground text-xs" data-count>
-                    {index + 1} / {diagrams.length}
-                  </span>
-                  <button
-                    type="button"
-                    className={icon}
-                    aria-label="Previous diagram"
-                    title="Previous diagram (←)"
-                    onClick={() => step(-1)}
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
-                  <button type="button" className={icon} aria-label="Next diagram" title="Next diagram (→)" onClick={() => step(1)}>
-                    <ChevronRight className="size-4" />
-                  </button>
-                </>
-              )}
+              {/* Fold on the left and the diagram switcher on the right, each icon lined up with the title and the close. */}
+              <div className="-ml-2 -mr-10 pointer-coarse:-mr-11.5 pointer-coarse:-ml-3.5 flex grow basis-full items-center">
+                <FoldButtons source={diagram.source} onFolds={next => setFolds(index, next)} />
+                {many && (
+                  <div className="ml-auto flex items-center">
+                    <span className="px-1 font-mono text-muted-foreground text-xs" data-count>
+                      {index + 1} / {diagrams.length}
+                    </span>
+                    <button
+                      type="button"
+                      className={ICON}
+                      aria-label="Previous diagram"
+                      title="Previous diagram (←)"
+                      onClick={() => step(-1)}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <button type="button" className={ICON} aria-label="Next diagram" title="Next diagram (→)" onClick={() => step(1)}>
+                      <ChevronRight className="size-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             <div key={index} className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
               {diagram.why && (
@@ -185,39 +188,20 @@ function Viewer({
   );
 }
 
-// One diagram at a time across the page's width, picked from the titles above it, folding in place and opening full
-// screen.
-export function Visualize({ layer }: { layer: number }) {
+// One diagram as a card of its own, folding in place; its full-screen viewer steps through the layer's other diagrams.
+export function DiagramCard({ layer, index }: { layer: number; index: number }) {
   const shown = useLayer(layer);
-  const diagrams = shown?.diagrams ?? [];
   const theme = useDiagramTheme();
   const [folds, setFoldsState] = useState<Record<number, Folds>>({});
-  const [current, setCurrent] = useState(0);
   const [viewing, setViewing] = useState<number | null>(null);
-  const count = diagrams.length;
-  const diagram = diagrams[Math.min(current, count - 1)];
-
-  if (!shown) {
+  const diagram = shown?.diagrams[index];
+  if (!shown || !diagram) {
     return null;
   }
-  if (!diagram) {
-    return (
-      <Empty className="mt-6 border">
-        <EmptyHeader>
-          <EmptyTitle>No diagrams for this change</EmptyTitle>
-          <EmptyDescription>
-            Claude draws one where a change has a flow, a set of states or parts that call each other worth seeing. This build has none:
-            either the change doesn't need one, or its guide was written before diagrams were.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
 
-  const index = diagrams.indexOf(diagram);
   const shared: Shared = {
     layer: shown,
-    diagrams,
+    diagrams: shown.diagrams,
     theme,
     foldsOf: at => folds[at] ?? NONE,
     toggle: at => (kind, ordinal) =>
@@ -228,89 +212,41 @@ export function Visualize({ layer }: { layer: number }) {
       }),
     setFolds: (at, next) => setFoldsState(all => ({ ...all, [at]: next })),
   };
-  const arrow =
-    "grid size-8 cursor-pointer place-items-center rounded-full border bg-card text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-40";
 
   return (
-    <section aria-label="Diagrams" className="mt-4 flex flex-col gap-3">
-      {count > 1 && (
-        <nav aria-label="Diagrams" className="flex flex-wrap items-center gap-1.5">
-          {diagrams.map((each, at) => (
-            <button
-              // biome-ignore lint/suspicious/noArrayIndexKey: a layer's diagrams never reorder between renders
-              key={at}
-              type="button"
-              aria-current={at === index || undefined}
-              onClick={() => setCurrent(at)}
-              className={cn(
-                "cursor-pointer rounded-full border px-2.5 py-1 text-xs",
-                at === index ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <span className="font-mono">{pad(at + 1)}</span> {each.title}
-            </button>
-          ))}
-          <span className="ml-auto px-1 font-mono text-muted-foreground text-xs">
-            {index + 1} / {count}
-          </span>
-          <button
-            type="button"
-            className={arrow}
-            aria-label="Previous diagram"
-            disabled={index === 0}
-            onClick={() => setCurrent(index - 1)}
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <button
-            type="button"
-            className={arrow}
-            aria-label="Next diagram"
-            disabled={index === count - 1}
-            onClick={() => setCurrent(index + 1)}
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        </nav>
-      )}
-      <article key={index} data-diagram={index} className="flex flex-col gap-3 rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="flex min-w-[min(100%,18rem)] flex-1 items-baseline gap-2">
-            <Heading index={index} diagram={diagram} />
-          </h3>
+    <article
+      id={diagramElementId(layer, index)}
+      data-diagram={index}
+      className="flex min-w-0 scroll-mt-16 flex-col gap-3 rounded-lg border bg-card p-4"
+    >
+      <h3 className="flex items-baseline gap-2">
+        <Heading index={index} diagram={diagram} />
+      </h3>
+      <div className="flex flex-wrap items-center">
+        <FoldButtons source={diagram.source} onFolds={next => shared.setFolds(index, next)} />
+        <button
+          type="button"
+          className={ICON}
+          aria-label={`Open ${diagram.title} full screen`}
+          title="Full screen"
+          onClick={() => setViewing(index)}
+        >
+          <Maximize2 className="size-4" />
+        </button>
+        <div className="ml-auto">
           <Legend diagram={diagram} />
-          <FoldButtons source={diagram.source} onFolds={next => shared.setFolds(index, next)} />
-          <button
-            type="button"
-            className={ICON}
-            aria-label={`Open ${diagram.title} full screen`}
-            title="Full screen"
-            onClick={() => setViewing(index)}
-          >
-            <Maximize2 className="size-4" />
-          </button>
         </div>
-        {diagram.why && (
-          <p className="text-muted-foreground text-sm">
-            <Prose text={diagram.why} layer={layer} />
-          </p>
-        )}
-        <SectionLinks layer={shown} diagram={diagram} />
-        <div className="pt-2">
-          <DiagramView source={diagram.source} theme={theme} folds={shared.foldsOf(index)} onToggle={shared.toggle(index)} fit="screen" />
-        </div>
-      </article>
-      <Viewer
-        {...shared}
-        index={viewing}
-        onIndex={setViewing}
-        onClose={() => {
-          if (viewing !== null) {
-            setCurrent(viewing);
-          }
-          setViewing(null);
-        }}
-      />
-    </section>
+      </div>
+      {diagram.why && (
+        <p className="text-muted-foreground text-sm">
+          <Prose text={diagram.why} layer={layer} />
+        </p>
+      )}
+      <SectionLinks layer={shown} diagram={diagram} />
+      <div className="pt-2">
+        <DiagramView source={diagram.source} theme={theme} folds={shared.foldsOf(index)} onToggle={shared.toggle(index)} fit="card" />
+      </div>
+      <Viewer {...shared} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} />
+    </article>
   );
 }

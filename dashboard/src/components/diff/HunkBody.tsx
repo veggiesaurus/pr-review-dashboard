@@ -41,7 +41,7 @@ function MoveRow({ id, move, hunk, onShow }: { id?: string; move: Move; hunk: Hu
     </button>
   );
   return (
-    <FullRow id={id} className="bg-primary/8 px-2.5 py-0.5 text-[12.5px] text-muted-foreground">
+    <FullRow id={id} className="bg-primary/8 px-2.5 py-0.5 text-xs text-muted-foreground">
       {move.side === "-" ? (
         <>
           {count} lines moved unchanged to {link}
@@ -165,7 +165,7 @@ export const HunkBody = memo(function HunkBody({ hunk, dim, changed, threads, co
         );
       })}
       {cut < rows.length && (
-        <FullRow className="bg-muted px-2.5 py-0.5 text-[12.5px] text-muted-foreground">
+        <FullRow className="bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
           <button type="button" onClick={() => setWhole(true)} className="cursor-pointer hover:text-primary">
             Show {rows.length - cut} more removed lines
           </button>

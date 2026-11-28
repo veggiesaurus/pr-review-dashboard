@@ -1,6 +1,7 @@
 import { type ReactNode, useMemo } from "react";
 
 import { plural, shownFiles, shownSections } from "src/components/guide/visible";
+import { Segmented } from "src/components/ui/segmented";
 import {
   Select,
   SelectContent,
@@ -14,7 +15,6 @@ import {
 import { useCommits } from "src/queries/live.query";
 import { useLayer } from "src/queries/review.query";
 import { type Show, useViewStore } from "src/store/view.store";
-import { cn } from "src/utils/cn";
 import { ago, fullDate } from "src/utils/dates";
 
 const showValue = (show: Show) => (show.kind === "commit" ? `c${show.index}` : show.kind);
@@ -107,7 +107,7 @@ function ShowMenu({ layer }: { layer: number }) {
               <SelectLabel>One commit, oldest first</SelectLabel>
               {commits.map(commit => (
                 <SelectItem key={commit.value} value={commit.value} label={commit.subject}>
-                  {commit.body && <span className="line-clamp-2 text-[13px] text-muted-foreground">{commit.body}</span>}
+                  {commit.body && <span className="line-clamp-2 text-sm text-muted-foreground">{commit.body}</span>}
                   <Detail>
                     <span className="font-mono">{commit.sha}</span>
                     {commit.detail && (
@@ -138,28 +138,24 @@ function ShowMenu({ layer }: { layer: number }) {
 // The choices are in the view store; drawing them is the diff's.
 export function ViewMenu({ layer }: { layer: number }) {
   const { layout, formatting, setLayout, setFormatting } = useViewStore();
-  const segment = (value: "unified" | "split", label: string) => (
-    <button
-      type="button"
-      aria-pressed={layout === value}
-      onClick={() => setLayout(value)}
-      className={cn(
-        "cursor-pointer px-2.5 py-0.5",
-        layout === value ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {label}
-    </button>
-  );
   return (
     <>
       <ShowMenu layer={layer} />
       {/* Below 860px the page stays unified, as the template's does. */}
-      <fieldset aria-label="Diff layout" className="hidden overflow-hidden rounded-full border min-[861px]:inline-flex">
-        {segment("unified", "Unified")}
-        {segment("split", "Split")}
-      </fieldset>
-      <label className="inline-flex cursor-pointer items-center gap-1.5 text-muted-foreground" title="Show formatting-only changes, dimmed">
+      <Segmented
+        label="Diff layout"
+        value={layout}
+        onChange={setLayout}
+        className="max-[860px]:hidden"
+        segments={[
+          { value: "unified", label: "Unified" },
+          { value: "split", label: "Split" },
+        ]}
+      />
+      <label
+        className="inline-flex cursor-pointer items-center gap-1.5 text-muted-foreground text-sm"
+        title="Show formatting-only changes, dimmed"
+      >
         <input type="checkbox" checked={formatting} onChange={event => setFormatting(event.target.checked)} className="accent-primary" />
         Formatting
       </label>
@@ -189,7 +185,7 @@ export function FilterNote({ layer }: { layer: number }) {
     return null;
   }
   return (
-    <p className="text-[13px] text-muted-foreground" role="status">
+    <p className="text-sm text-muted-foreground" role="status">
       Showing {plural(counts.hunks, "hunk")} in {plural(counts.files, "file")}.{" "}
       <button
         type="button"

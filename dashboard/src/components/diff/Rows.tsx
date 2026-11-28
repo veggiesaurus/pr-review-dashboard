@@ -95,7 +95,7 @@ export function Half({ row, old, anchor, tone, segments, marks, fresh, selected,
             type="button"
             data-note=""
             onClick={() => openComposer(anchor)}
-            title="Add a note or ask Claude about this line"
+            title="Add to notes, or ask Claude about this line"
             aria-label={`Note on line ${number}`}
             className={cn(
               "absolute top-0.5 grid size-4 cursor-pointer place-items-center rounded-[4px] bg-primary text-primary-foreground opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100",
@@ -113,7 +113,7 @@ export function Half({ row, old, anchor, tone, segments, marks, fresh, selected,
             onClick={() => openComposer({ kind: "tell", layer: layer.id, file: file.id, line: at })}
             title={`${flags.map(flag => flag.label).join(", ")}. Click to ask Claude about it.`}
             aria-label={`Flagged: ${flags.map(flag => flag.label).join(", ")}. Ask Claude about it`}
-            className="absolute top-0 right-0.5 cursor-pointer font-bold font-sans text-[11px] text-danger leading-[1.6]"
+            className="absolute top-0 right-0.5 cursor-pointer font-bold font-sans text-xs text-danger leading-[1.6]"
           >
             !
           </button>
@@ -135,9 +135,7 @@ export function Half({ row, old, anchor, tone, segments, marks, fresh, selected,
         className={cn(
           "align-top [&_mark]:rounded-[2px] [&_mark]:text-inherit data-hot:cursor-pointer",
           // On a phone a long line wraps rather than running off the side of the card.
-          split
-            ? "whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]"
-            : "whitespace-pre pr-6 max-sm:whitespace-pre-wrap max-sm:pr-2 max-sm:[overflow-wrap:anywhere]",
+          split ? "whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]" : "whitespace-pre pr-6",
           fill,
           sign === "+" ? "[&_mark]:bg-diff-add-edge" : "[&_mark]:bg-diff-del-edge",
           tone === "noise" && "opacity-55",
@@ -230,9 +228,7 @@ function LocalRows({ edits }: { edits: LocalEdit[] | undefined }) {
         <td
           className={cn(
             "align-top",
-            split
-              ? "whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]"
-              : "whitespace-pre pr-6 max-sm:whitespace-pre-wrap max-sm:pr-2 max-sm:[overflow-wrap:anywhere]",
+            split ? "whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]" : "whitespace-pre pr-6",
             fill,
             text === null && "font-sans text-muted-foreground",
           )}
@@ -262,7 +258,7 @@ export function LineExtras({
     <>
       <LocalRows edits={local.shown.get(at)} />
       {annotations.get(at)?.map(({ annotation, index }) => (
-        <FullRow key={`a${index}`} className="border-y bg-card py-1.5 pr-3 pl-3 text-[13px] sm:pl-[4.6rem]">
+        <FullRow key={`a${index}`} className="border-y bg-card py-1.5 pr-3 pl-3 text-sm sm:pl-[4.6rem]">
           <Badge tone={annotation.level === "failure" ? "danger" : "warning"} className="mr-2 capitalize">
             {annotation.level}
           </Badge>
@@ -277,7 +273,11 @@ export function LineExtras({
               annotation.check
             )}
           </span>
-          <AskClaude anchor={{ kind: "annotation", layer: layer.id, index }} label="Ask Claude" className="ml-3 align-middle" />
+          <AskClaude
+            anchor={{ kind: "annotation", layer: layer.id, index }}
+            hint="Ask Claude about this CI annotation"
+            className="ml-3 align-middle"
+          />
         </FullRow>
       ))}
       {threads?.map(thread => (

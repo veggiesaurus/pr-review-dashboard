@@ -73,7 +73,7 @@ function LayerRow({ layer, stack, current, summary }: { layer: Layer; stack: Sta
           <Counts add={impl.add} del={impl.del} />
         </span>
         <ChipRow small chips={layerChips(layer, row?.needsRebase ?? false, checks, conflicts)} className="col-[2/-1]" />
-        {summary && <span className="col-[2/-1] text-[13.5px] text-muted-foreground">{plain(summary)}</span>}
+        {summary && <span className="col-[2/-1] text-sm text-muted-foreground">{plain(summary)}</span>}
       </button>
     </li>
   );
@@ -132,13 +132,13 @@ export function StackPanel() {
           )}
         </div>
         {stack.forks.length > 0 && (
-          <p className="text-[13.5px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             The stack forks above #{top} into {and(hashes(stack.forks))}; build the page from the top PR of a branch to include it.
           </p>
         )}
         {!stack.check &&
           stack.churn.map(group => (
-            <p key={`${group.path}:${group.fromLayer}:${group.toLayer}`} className="text-[13.5px] text-muted-foreground">
+            <p key={`${group.path}:${group.fromLayer}:${group.toLayer}`} className="text-sm text-muted-foreground">
               #{group.toLayer} removes {group.lines === 1 ? "a line" : `${group.lines} lines`} of{" "}
               <code className="font-mono text-foreground text-xs">{group.path}</code> that #{group.fromLayer} adds.
             </p>

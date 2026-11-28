@@ -91,7 +91,7 @@ export function CrossLayerRow({ links }: { links: CrossLink[] }) {
     );
   };
   return (
-    <FullRow className="border-t border-dashed bg-muted px-2.5 py-1 text-[12.5px] text-muted-foreground">
+    <FullRow className="border-t border-dashed bg-muted px-2.5 py-1 text-xs text-muted-foreground">
       {part(true, "Used further up the stack:")}
       {part(false, "Defined further down the stack:")}
     </FullRow>

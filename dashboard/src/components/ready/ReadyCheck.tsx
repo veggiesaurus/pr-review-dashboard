@@ -6,7 +6,6 @@ import { prKey, TICK_PREFIX } from "shared/ticks";
 import { AskClaude } from "src/components/chat/AskClaude";
 import { ReviewBlock, ReviewButton } from "src/components/chat/Review";
 import { Prose } from "src/components/links/Prose";
-import { QuizBlock, QuizButton } from "src/components/ready/Quiz";
 import { TriedAnswer } from "src/components/ready/Tried";
 import { stepEvidence } from "src/components/ready/tries";
 import { Badge } from "src/components/ui/badge";
@@ -174,7 +173,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
         )}
         {elsewhere.length > 0 && (
           <>
-            <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               {elsewhere.length} on lines this PR doesn't change{elsewhere.length > ELSEWHERE_SHOWN && ", the first 12 here"}:
             </p>
             <ul className={BLOCK_LIST}>
@@ -241,7 +240,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
         title={role === "guest" ? "Where a second look matters" : "Needs a careful read"}
         note={
           role === "guest" && (
-            <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               The owner has reviewed {ownerRead} of {guides.length} sections. What they reviewed starts folded, apart from the sections
               listed here.
             </p>
@@ -287,9 +286,9 @@ export function ReadyCheck({ layer }: { layer: number }) {
             <p className="mt-1.5 flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" disabled={askTries.isPending} onClick={() => askTries.mutate(layer)}>
                 <FlaskConical />
-                {evidence.some(step => step.answer) ? "Have Claude try them again" : "Have Claude try them"}
+                {evidence.some(step => step.answer) ? "Ask Claude to try them again" : "Ask Claude to try them"}
               </Button>
-              {askTries.isError && <span className="text-danger text-sm">{errorText(askTries.error, "That didn't send.")}</span>}
+              {askTries.isError && <span className="text-danger text-sm">{errorText(askTries.error, "That didn't go through.")}</span>}
             </p>
           )
         }
@@ -334,7 +333,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
         key="split"
         tone="quiet"
         title={`Could be ${split.prs.length} PRs`}
-        note={split.note && <p className="mt-1.5 text-[13.5px] text-muted-foreground">{split.note}</p>}
+        note={split.note && <p className="mt-1.5 text-sm text-muted-foreground">{split.note}</p>}
       >
         {split.prs.map((pr, k) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: the split's PRs are in a fixed order
@@ -372,14 +371,12 @@ export function ReadyCheck({ layer }: { layer: number }) {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 className="font-serif text-xl">Before you mark it ready</h2>
         <span className="flex flex-wrap items-center justify-end gap-2">
-          <QuizButton layer={layer} />
           <ReviewButton layer={layer} />
         </span>
       </div>
       <div className={BLOCKS}>
         <ReviewBlock layer={layer} />
         {blocks}
-        <QuizBlock layer={layer} />
       </div>
       {!blocks.length && <p className="text-muted-foreground text-sm">Nothing more to settle than the chips above say.</p>}
     </section>

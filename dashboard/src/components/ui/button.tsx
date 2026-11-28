@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { cn } from "src/utils/cn";
 
 export const buttonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md font-medium text-sm whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md font-medium text-sm whitespace-nowrap transition-colors pointer-coarse:min-h-11 disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -14,8 +14,8 @@ export const buttonVariants = cva(
       },
       size: {
         default: "h-9 px-4",
-        sm: "h-8 px-3 text-[13px]",
-        icon: "size-8",
+        sm: "h-8 px-3 text-sm",
+        icon: "size-8 pointer-coarse:size-11",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

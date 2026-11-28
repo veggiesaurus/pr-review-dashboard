@@ -29,7 +29,7 @@ export function LayerNav() {
         {[...layers].reverse().map((item, index) => (
           <SelectItem key={item.id} value={String(item.id)} label={`#${item.id} ${item.meta.title}`}>
             {summaries.get(item.id) && (
-              <span className="line-clamp-2 text-[13px] text-muted-foreground">{plain(summaries.get(item.id) ?? "")}</span>
+              <span className="line-clamp-2 text-sm text-muted-foreground">{plain(summaries.get(item.id) ?? "")}</span>
             )}
             <span className="flex flex-wrap gap-x-2 text-muted-foreground text-xs">
               <span>

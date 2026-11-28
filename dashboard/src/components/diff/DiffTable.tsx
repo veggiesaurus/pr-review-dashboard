@@ -308,7 +308,7 @@ export function DiffTable({ layer, file, hunks, section, changed = NONE_CHANGED 
         onClick={onClick}
       >
         {elsewhere.length > 0 && (
-          <p className="border-b bg-card px-3 py-1.5 font-sans text-[12.5px] text-muted-foreground">
+          <p className="border-b bg-card px-3 py-1.5 font-sans text-xs text-muted-foreground">
             Your checkout also changes {elsewhere.length === 1 ? "line" : "lines"} {elsewhere.join(", ")} of this file, outside what the
             pull request touches. Open the unchanged lines there to preview it.
           </p>

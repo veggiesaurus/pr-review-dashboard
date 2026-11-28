@@ -1,7 +1,10 @@
+import { ChevronDown, ListChecks } from "lucide-react";
 import type { Checks, Layer, Ready } from "shared/payload";
-
+import { LineCountTable } from "src/components/guide/LineCount";
 import { useChecks, useConflicts } from "src/components/ready/checks";
 import { Badge, type Tone } from "src/components/ui/badge";
+import { Button } from "src/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { useLayer, useReview } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
 import { reveal } from "src/utils/anchors";
@@ -143,7 +146,7 @@ export function ChipRow({ chips, small, className }: { chips: Chip[]; small?: bo
           tone={TONES[chip.tone]}
           title={chip.title}
           data-status={chip.status}
-          className={cn(small && "px-1.5 py-px text-[11.5px]", chip.status && "motion-status")}
+          className={cn(small && "px-1.5 py-px text-xs", chip.status && "motion-status")}
         >
           {chip.status === "pending" && <span aria-hidden className="motion-pending size-1.5 rounded-full bg-current" />}
           {chip.label}
@@ -196,5 +199,81 @@ export function ReadyChips({ layer }: { layer: number }) {
       )}
       <ChipRow chips={readyChips(shown, checks)} className="contents" />
     </span>
+  );
+}
+
+// The ready check on the Overview, scrolled into view from wherever the reader is.
+function showReadyCheck() {
+  useViewStore.getState().setTab("overview");
+  const until = performance.now() + 3000;
+  const look = () => {
+    const region = document.querySelector<HTMLElement>("[aria-label='Before you mark it ready']");
+    if (region) {
+      region.scrollIntoView({ block: "start" });
+    } else if (performance.now() < until) {
+      requestAnimationFrame(look);
+    }
+  };
+  requestAnimationFrame(look);
+}
+
+// The top bar's one pill for every chip: how many want a look, which opens to the chips themselves.
+// icon is a phone's: a checklist icon with the count on it, or a dot when there is nothing to check.
+export function ReadyPill({ layer, icon = false }: { layer: number; icon?: boolean }) {
+  const shown = useLayer(layer);
+  const checks = useChecks(shown);
+  const conflicts = useConflicts(shown);
+  const stack = useReview().data?.stack;
+  if (!shown) {
+    return null;
+  }
+  const rebase = Boolean(stack?.layers.find(row => row.number === layer)?.needsRebase);
+  const chips = [...conflictChips(shown, conflicts), ...readyChips(shown, checks)];
+  const open = chips.filter(chip => chip.tone !== "good");
+  const bad = rebase || open.some(chip => chip.tone === "bad");
+  const count = open.length + (rebase ? 1 : 0);
+  const label = count ? `${count} to check` : "Nothing to check";
+  const tone = bad ? "bg-danger" : count ? "bg-warning" : "bg-success";
+  return (
+    <Popover>
+      {/* The palette's own surface, with the status as a dot: the signal colours don't follow the palettes. */}
+      {icon ? (
+        <PopoverTrigger
+          className="relative grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground data-[state=open]:bg-card"
+          aria-label={`${label} before it's ready`}
+        >
+          <ListChecks aria-hidden className="size-5" />
+          {count ? (
+            <span
+              aria-hidden
+              className={cn(
+                "absolute top-1 right-0.5 min-w-4 rounded-full px-1 font-bold text-[10px] text-white leading-4 ring-2 ring-background",
+                tone,
+              )}
+            >
+              {count}
+            </span>
+          ) : (
+            <span aria-hidden className={cn("absolute top-2 right-2 size-2 rounded-full ring-2 ring-background", tone)} />
+          )}
+        </PopoverTrigger>
+      ) : (
+        <PopoverTrigger
+          className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-2.5 py-0.5 font-medium text-foreground/80 text-xs hover:bg-muted pointer-coarse:min-h-9 pointer-coarse:px-3"
+          aria-label={`${label} before it's ready`}
+        >
+          <span aria-hidden className={cn("size-2 rounded-full", tone)} />
+          {label}
+          <ChevronDown aria-hidden className="size-3" />
+        </PopoverTrigger>
+      )}
+      <PopoverContent align="start" className="grid w-[26rem] max-w-[calc(100vw-2rem)] gap-3">
+        <ReadyChips layer={layer} />
+        <LineCountTable layer={layer} />
+        <Button size="sm" variant="outline" className="justify-self-start" onClick={showReadyCheck}>
+          Open the ready check
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

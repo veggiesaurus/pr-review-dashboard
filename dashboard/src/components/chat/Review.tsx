@@ -49,7 +49,7 @@ export function ReviewButton({ layer }: { layer: number }) {
   }
   return (
     <span className="flex flex-wrap items-center justify-end gap-2">
-      {ask.isError && <span className="text-danger text-sm">{errorText(ask.error, "That didn't send.")}</span>}
+      {ask.isError && <span className="text-danger text-sm">{errorText(ask.error, "That didn't go through.")}</span>}
       <ButtonGroup>
         <Button
           size="sm"
@@ -87,7 +87,7 @@ export function ReviewButton({ layer }: { layer: number }) {
   );
 }
 
-const NOTE = "mt-1.5 text-[13.5px] text-muted-foreground";
+const NOTE = "mt-1.5 text-sm text-muted-foreground";
 
 // What the latest review found, in the same list as the other things to settle: Claude's recommendation, how many
 // findings stand where, then each with where it is, whether Claude says to act on it, and what has become of it.
@@ -132,7 +132,7 @@ export function ReviewBlock({ layer }: { layer: number }) {
               {counts.map(c => `${c.count} ${c.name}`).join(", ")}
               {owner && toFix > 0 && (
                 <Button size="sm" variant="outline" className="text-foreground" disabled={fix.isPending} onClick={() => fix.mutate(n)}>
-                  Fix the recommended ({toFix})
+                  Fix recommended ({toFix})
                 </Button>
               )}
             </p>
