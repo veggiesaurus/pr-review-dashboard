@@ -184,20 +184,26 @@ export function DraftNote({ message }: { message: Message }) {
   const remove = useDeleteDraft();
   return (
     <div id={`t-${message.id}`} className="grid gap-1.5 border-l-2 border-l-warning bg-card px-3 py-2.5 font-sans">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge tone="warning">Draft note</Badge>
+      <div className="flex items-center gap-2 text-xs">
+        <Badge tone="warning" title="Kept until you send your notes">
+          Draft note
+        </Badge>
         <IntentBadge message={message} />
         <Posted message={message} />
-        <span className="text-muted-foreground">kept until you send your notes</span>
         {!editing && (
-          <span className="ml-auto flex items-center gap-1">
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(true)}>
+          <span className="ml-auto flex items-center">
+            <Button size="icon" variant="ghost" aria-label="Edit" title="Edit" onClick={() => setEditing(true)}>
               <Pencil />
-              Edit
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2 hover:text-danger" onClick={() => remove.mutate(message.id)}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="hover:text-danger"
+              aria-label="Delete"
+              title="Delete"
+              onClick={() => remove.mutate(message.id)}
+            >
               <Trash2 />
-              Delete
             </Button>
           </span>
         )}

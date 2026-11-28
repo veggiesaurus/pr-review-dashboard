@@ -164,37 +164,6 @@ export function reviewFrame(
   return lines.join("\n");
 }
 
-// A quiz request says what makes a question worth asking and how the questions come back. aim is what the guide and
-// the last review already call risky, for the questions to start from.
-export function quizFrame(
-  message: Message,
-  scope: string,
-  target: string,
-  repo: string | undefined,
-  aim: { risks: string[]; open: Message[] },
-) {
-  const n = message.quiz?.n ?? 0;
-  const lines = [
-    `[review page] quiz ${n} requested on ${flat(scope)}, as chat ${message.id}`,
-    about(message),
-    `Write 3 to 5 multiple-choice questions on ${flat(target)}${repo ? `, whose clone is ${flat(repo)}` : ""}, that show whether a reader has understood the change.`,
-    "Ask about what could go wrong: what a change does to its callers, an edge case it handles or misses, what it leaves behind. A question must need the code to answer, so never one the description or a name gives away, and never trivia about names, counts or line numbers.",
-    "Give each 3 or 4 options, one of them right and the others what someone who skimmed would pick, none of which refers to another. Say why the right one is right in a sentence or two that names the code.",
-    "Write them from the reviewed head, not the working tree: everyone on the review can take the quiz.",
-    ...(aim.risks.length
-      ? [
-          "These sections of the guide carry a careful-read note, so start there:",
-          ...aim.risks.map(risk => `    - ${flat(risk).slice(0, 300)}`),
-        ]
-      : []),
-    ...(aim.open.length ? ["These findings of Claude's review are still open, and make good questions:", ...aim.open.map(brief)] : []),
-    `Then POST /api/quiz/${n}/questions {"questions":[{"file":"path from the repo's root","line":12,"question":"…","options":["…","…","…"],"answer":0,"why":"…"}]}`,
-    'with "answer" the place of the right option, from 0, and "file" and "line" where the code that answers it is, left out for a question about the change as a whole. The page shuffles the options,',
-    `and POST /api/replies {"replyTo":"${message.id}","state":"answered","text":"what the questions cover, in a line"}. Give no answer away there or in what you say you're doing: everyone on the review reads both.`,
-  ];
-  return lines.join("\n");
-}
-
 const findingItem = (finding: Message) =>
   clip([`${finding.id} ${about(finding)}`, indent(finding.text), ...patchOf(finding, "proposed patch")].join("\n"), NOTE_LIMIT);
 

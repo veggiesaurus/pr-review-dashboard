@@ -139,18 +139,6 @@ export type Message = {
   intent?: NoteIntent;
   // Screenshots the user or Claude attached, by id under GET /api/attachments/<id>.
   images?: string[];
-  // On the threads of a quiz the owner asked Claude for: its number, on the request and on each question.
-  quiz?: {
-    n: number;
-    // On a question: its choices, which one is right and why, and what each person picked, by "owner" or guest id.
-    options?: string[];
-    answer?: number;
-    why?: string;
-    picks?: Record<string, number[]>;
-    // What a reader gets in place of picks: their own, and who else has the right one. answer and why come with theirs.
-    picked?: number[];
-    solvers?: Solver[];
-  };
   // On Claude's answer to a step it tried by hand: how it went, and the head it was tried at.
   tried?: { outcome: Tried; head: string };
   // On Claude's answer that a thread is dealt with: where the change is, and what it ran to check it.
@@ -192,31 +180,6 @@ export const editSchema = z.object({ text: z.string().trim().min(1).max(8000) })
 export const archiveSchema = z.object({ archived: z.boolean(), reason: z.enum(DISMISS_REASONS).optional() });
 export const reviewRequestSchema = z.object({ layer, effort: z.enum(REVIEW_EFFORTS) });
 export const triesRequestSchema = z.object({ layer });
-export const quizRequestSchema = z.object({ layer });
-// Someone who has a quiz question right: the owner, or a guest by id.
-export type Solver = "owner" | number;
-// What the session writes for a quiz: each question with where its code is, its choices, the right one and why.
-export const questionsSchema = z.object({
-  questions: z
-    .array(
-      z
-        .object({
-          file: z.string().trim().min(1).max(500).nullish(),
-          line: z.union([z.number(), z.string()]).nullish(),
-          question: z.string().trim().min(1).max(600),
-          options: z.array(z.string().trim().min(1).max(300)).min(2).max(5),
-          // The place of the right option, from 0.
-          answer: z.number().int().min(0),
-          why: z.string().trim().min(1).max(1200),
-        })
-        .refine(q => q.answer < q.options.length, "answer is the place of the right option, from 0")
-        .refine(q => new Set(q.options).size === q.options.length, "each option is different"),
-    )
-    .min(1)
-    .max(8),
-});
-export type QuizQuestion = z.infer<typeof questionsSchema>["questions"][number];
-export const pickSchema = z.object({ choice: z.number().int().min(0).max(4) });
 // What the code-review skill reports for each finding, plus whether Claude says to act on it.
 export const findingsSchema = z.object({
   findings: z

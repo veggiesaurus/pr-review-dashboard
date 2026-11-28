@@ -1486,69 +1486,6 @@ try {
   }
   console.log("closing the loop ok");
 
-  {
-    // The owner asks for a quiz and takes it. A wrong pick points back at the code, and the right one says why.
-    await open(work.link);
-    const layer = (await (await fetch(`${work.origin}/api/review`, { headers: auth })).json()).layers[0];
-    const file = layer.files.find(f => f.hunks.some(hunk => hunk.lines.some(row => row[0] === "+")));
-    const hunk = file.hunks.find(h => h.lines.some(row => row[0] === "+"));
-    const ready = page.getByRole("region", { name: "Before you mark it ready" });
-    const quiz = ready.locator("details[data-quiz]");
-    await ready.getByRole("button", { name: "Quiz me", exact: true }).click();
-    await check("a quiz asked for with no session listening says it waits for one", () =>
-      quiz.getByText("Waiting for a session to write the questions.").count(),
-    );
-    const request = (await said()).findLast(m => m.quiz && m.from === "user");
-    await asSession(`quiz/${request.quiz.n}/questions`, {
-      questions: [
-        {
-          file: file.path,
-          line: hunk.lines.find(row => row[0] === "+")[2],
-          question: "What does an old link do now?",
-          options: ["It gives a 404", "It redirects"],
-          answer: 0,
-          why: "Nothing serves the old prefix.",
-        },
-        { question: "What else has to change?", options: ["Nothing", "Links elsewhere"], answer: 1, why: "Old links stop resolving." },
-      ],
-    });
-    await asSession("replies", { replyTo: request.id, state: "answered", text: "Two questions on the old links." });
-    const first = quiz.locator("li[data-question]").first();
-    await check(
-      "the questions show in the ready check, none answered",
-      async () => [await quiz.locator("li[data-question]").count(), await quiz.locator("summary").textContent()],
-      ([questions, title]) => questions === 2 && title.endsWith("(0 of 2)"),
-    );
-    await first.getByRole("button", { name: /It redirects/ }).click();
-    await check(
-      "a wrong pick is struck out and points back at the code",
-      async () => [await first.locator("button[data-option='wrong']:disabled").count(), await first.getByText("Not that one.").count()],
-      ([wrong, hint]) => wrong === 1 && hint === 1,
-    );
-    await first.getByRole("button", { name: /It gives a 404/ }).click();
-    await check(
-      "the right pick says why, and counts",
-      async () => [
-        await first.getAttribute("data-question"),
-        await first.getByText("Nothing serves the old prefix.").count(),
-        await quiz.locator("summary").textContent(),
-      ],
-      ([state, why, title]) => state === "right" && why === 1 && title.endsWith("(1 of 2)"),
-    );
-    await claude("Threads");
-    await allThreads();
-    await check(
-      "a question isn't a thread in the panel",
-      async () => [await threadList().isVisible(), await threadList().getByText("What does an old link do now?").count()],
-      ([open, listed]) => open && listed === 0,
-    );
-    await page.keyboard.press("Escape");
-    await first.locator("button.font-mono").click();
-    await check("and where its code is jumps to that hunk", () => page.locator(`#l${layer.id}-${hunk.id}`).isVisible());
-    await page.close();
-  }
-  console.log("quiz ok");
-
   await open(stack.link);
   await check("the stack opens on its top layer", h1, title => title === "layer 12");
   await tab("Sections");

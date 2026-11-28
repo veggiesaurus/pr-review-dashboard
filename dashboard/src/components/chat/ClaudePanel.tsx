@@ -376,7 +376,7 @@ export function ClaudePanel({ page = false }: { page?: boolean }) {
   const archive = useArchiveThread();
   const owner = useIsOwner();
   const connected = useChatStore(state => state.connected);
-  const { chatOpen, drawer, focus, setChatOpen, openDrawer, setFocus, openThread } = useChatStore();
+  const { chatOpen, drawer, focus, composer, setChatOpen, openDrawer, setFocus, openThread } = useChatStore();
   const status = useClaudeStatus(connected);
   const { prompting, permissions, busy, attention } = status;
 
@@ -423,7 +423,7 @@ export function ClaudePanel({ page = false }: { page?: boolean }) {
           : "motion-drawer fixed top-12 right-0 bottom-0 z-40 w-[min(100vw,28rem)] border-l shadow-lg xl:sticky xl:z-auto xl:h-[calc(100dvh-3rem)] xl:w-auto xl:shadow-none",
       )}
     >
-      <div className="grid gap-2 border-b px-4 py-3">
+      <div className={cn("grid gap-2 border-b py-3", page ? "px-0" : "px-4")}>
         <div className="flex items-center gap-2">
           {drawer === "chat" && focus ? (
             <Button size="sm" variant="ghost" className="-ml-2 px-2" onClick={() => setFocus(null)}>
@@ -493,11 +493,15 @@ export function ClaudePanel({ page = false }: { page?: boolean }) {
           ]}
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-3">
+      {/* On a phone the panel is the whole screen and scrolls with the page; a scroll box of its own there would hold
+          the swipe without being able to scroll. */}
+      <div className={cn("py-3", page ? "px-0" : "min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4")}>
         {drawer === "notes" ? (
           <div className="motion-fade">
             <NotesPanel embedded />
           </div>
+        ) : focus && page ? (
+          <Pane threads={threads} archived={archived} focus={focus} />
         ) : focus ? (
           <MessageScrollerProvider autoScroll defaultScrollPosition="end">
             <MessageScroller className="h-auto min-w-0">
@@ -516,8 +520,8 @@ export function ClaudePanel({ page = false }: { page?: boolean }) {
         )}
       </div>
       {/* The Notes list has its own, beside Copy and Post. */}
-      {drafts > 0 && drawer !== "notes" && (
-        <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+      {drafts > 0 && drawer !== "notes" && composer === null && (
+        <div className={cn("flex items-center justify-end gap-2 border-t py-3", page ? "px-0" : "px-4")}>
           <Button onClick={() => send.mutate()} disabled={send.isPending}>
             <Send />
             Send {drafts} {drafts === 1 ? "note" : "notes"}

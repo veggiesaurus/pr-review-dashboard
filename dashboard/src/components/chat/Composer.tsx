@@ -82,7 +82,7 @@ export function Composer({ anchor, label, bare = false }: { anchor: Anchor; labe
         {shots.error && <span className="text-danger text-sm">{shots.error}</span>}
         {add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't save.")}</span>}
         <span className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" className="pointer-coarse:h-11" onClick={cancel}>
+          <Button size="sm" variant="ghost" className="px-2 pointer-coarse:h-11" onClick={cancel}>
             Cancel
           </Button>
           <ButtonGroup>

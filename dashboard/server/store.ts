@@ -10,7 +10,6 @@ import {
   type NewMessage,
   type NoteState,
   type Push,
-  type QuizQuestion,
   type Reply,
   type SessionInfo,
   settled,
@@ -23,17 +22,7 @@ import { awaitsTry, TRY_TEXT } from "../shared/tries";
 import { leftOpen, openNote } from "../shared/turn";
 import { findingAnchor, reanchor, resolveAnchor } from "./anchors";
 import { openDb } from "./db";
-import {
-  chatFrame,
-  fixFrames,
-  fixNotesFrames,
-  notesFrames,
-  quizFrame,
-  recheckFrames,
-  recheckThreadFrames,
-  reviewFrame,
-  tryFrames,
-} from "./format";
+import { chatFrame, fixFrames, fixNotesFrames, notesFrames, recheckFrames, recheckThreadFrames, reviewFrame, tryFrames } from "./format";
 import { Presence } from "./presence";
 import type { Review } from "./review";
 
@@ -245,21 +234,10 @@ export class Store {
     return this.messages.filter(m => m.status !== "draft" || draftOf(m, author)).map(m => this.viewFor(m, author));
   }
 
-  // A thread's seen mark is the reader's own; other people's marks stay off the wire. So do a quiz question's
-  // answer, until the reader has picked it, and what anyone else picked.
+  // A thread's seen mark is the reader's own; other people's marks stay off the wire.
   viewFor(message: Message, author: Author | null): Message {
     const { seenBy, ...rest } = message;
-    const seen = author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
-    if (!rest.quiz?.options) {
-      return seen;
-    }
-    const { answer, why, picks = {}, ...quiz } = rest.quiz;
-    const me = String(whose(author));
-    const has = (picked: number[] = []) => answer !== undefined && picked.includes(answer);
-    const solvers = Object.keys(picks)
-      .filter(who => who !== me && has(picks[who]))
-      .map(who => (who === "owner" ? who : Number(who)));
-    return { ...seen, quiz: { ...quiz, picked: picks[me] ?? [], solvers, ...(has(picks[me]) && { answer, why }) } };
+    return author?.role === "guest" ? { ...rest, seen: seenBy?.[author.id] } : rest;
   }
 
   addUserMessage(input: NewMessage, author: Author | null, mentions: number[] = []): Message | null | "owner-only" {
@@ -507,88 +485,6 @@ export class Store {
       this.notify("messages");
     }
     return asks.length;
-  }
-
-  // The owner asks Claude for a quiz on one PR. The request is a chat thread, as a review's is, and each question
-  // comes back as a thread of its own, which the page shows as the quiz and nowhere else.
-  requestQuiz(layerId: number): Message | null {
-    const layer = this.review.layer(layerId);
-    const anchor = resolveAnchor(this.review, { kind: "general", layer: layerId });
-    if (!layer || !anchor) {
-      return null;
-    }
-    const last = this.db.query<{ n: number | null }, []>("select max(body ->> '$.quiz.n') as n from messages").get();
-    const message = this.insert({
-      from: "user",
-      kind: "chat",
-      text: "Write a quiz on this pull request.",
-      anchor,
-      status: "sent",
-      state: "open",
-      resolved: false,
-      quiz: { n: (last?.n ?? 0) + 1 },
-      at: new Date().toISOString(),
-    });
-    const risks = layer.sections.flatMap(section =>
-      section.kind === "guide" && section.risk ? [`${section.title}: ${section.risk}`] : [],
-    );
-    const open = this.openFindings().filter(m => this.layerOf(m.anchor) === layer);
-    const target = layer.meta.url ?? (layer.meta.number ? `#${layer.meta.number}` : layer.meta.head);
-    this.deliver([quizFrame(message, scopeOf(this.review), target, this.options.repo, { risks, open })], [message.id]);
-    this.notify("messages");
-    return message;
-  }
-
-  // Each question is kept on the hunk its code is in, so it lapses when that code changes. The options are shuffled
-  // here, since a model tends to put the right one in the same place.
-  addQuestions(n: number, questions: QuizQuestion[]): Message[] | null {
-    const request = this.messages.find(m => m.quiz?.n === n && m.from === "user" && !m.replyTo);
-    const layer = request && "layer" in request.anchor ? request.anchor.layer : undefined;
-    if (!request || layer === undefined) {
-      return null;
-    }
-    const threads = questions.flatMap(question => {
-      const line = Number.parseInt(String(question.line ?? ""), 10);
-      const at = question.file ? findingAnchor(this.review, layer, question.file, line > 0 ? line : undefined) : request.anchor;
-      const anchor = at?.kind === "line" ? resolveAnchor(this.review, { kind: "hunk", layer, file: at.file, hunk: at.hunk }) : at;
-      if (!anchor) {
-        return [];
-      }
-      const right = question.options[question.answer];
-      const options = question.options
-        .map(option => ({ option, order: Math.random() }))
-        .sort((a, b) => a.order - b.order)
-        .map(({ option }) => option);
-      return this.insert({
-        from: "claude",
-        kind: "chat",
-        text: question.question,
-        anchor,
-        status: "delivered",
-        state: "open",
-        resolved: false,
-        quiz: { n, options, answer: options.indexOf(right as string), why: question.why },
-        at: new Date().toISOString(),
-      });
-    });
-    this.notify("messages");
-    return threads;
-  }
-
-  // One person's pick on a question, kept in the order they made them. Nothing more is taken once they have it right.
-  pick(id: string, choice: number, author: Author | null): Message | null {
-    const question = this.messages.find(m => m.id === id && !m.replyTo);
-    const quiz = question?.quiz;
-    if (!question || !quiz?.options || choice >= quiz.options.length) {
-      return null;
-    }
-    const me = String(whose(author));
-    const mine = quiz.picks?.[me] ?? [];
-    if (!mine.includes(choice) && !mine.includes(quiz.answer ?? -1)) {
-      question.quiz = { ...quiz, picks: { ...quiz.picks, [me]: [...mine, choice] } };
-      this.notify("messages");
-    }
-    return this.viewFor(question, author);
   }
 
   // At a new head every finding still open goes back to the session once: its fix may be anywhere in the PR.
@@ -1083,6 +979,14 @@ export class Store {
       )
       .all(prs, this.stack)
       .map(row => ({ ...(JSON.parse(row.body) as Message), id: `m${row.n}` }));
+    // The quiz is gone, so its requests, questions, replies to them and unsent frames kept from before are left unread.
+    const quiz = new Set<string>();
+    for (const m of this.messages) {
+      if ("quiz" in m || (m.replyTo && quiz.has(m.replyTo))) {
+        quiz.add(m.id);
+      }
+    }
+    this.messages = this.messages.filter(m => !quiz.has(m.id));
     for (const message of this.messages) {
       this.written.set(message.id, JSON.stringify(message));
     }
@@ -1092,7 +996,8 @@ export class Store {
         "select n, frame, ids from frames where pr in (select value from json_each(?)) or stack = ? order by n",
       )
       .all(prs, this.stack)
-      .map(row => ({ n: row.n, frame: row.frame, ids: JSON.parse(row.ids) as string[] }));
+      .map(row => ({ n: row.n, frame: row.frame, ids: JSON.parse(row.ids) as string[] }))
+      .filter(p => !p.ids.some(id => quiz.has(id)));
     this.reanchorAll();
     // A message sent before frames were kept has none; it gets one made now.
     const kept = new Set(this.pending.flatMap(p => p.ids));
