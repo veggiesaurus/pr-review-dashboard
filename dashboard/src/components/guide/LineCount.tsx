@@ -48,10 +48,10 @@ export function LineCount({ layer }: { layer: number }) {
         aria-label="Line counts by kind of file"
       >
         <Counts add={impl.add} del={impl.del} />
-        {differs && <span className="font-mono text-[11px] text-muted-foreground">(*)</span>}
+        {differs && <span className="font-mono text-xs text-muted-foreground">(*)</span>}
       </PopoverTrigger>
       <PopoverContent className="w-[19rem]">
-        <table className="w-full border-collapse text-[13px]">
+        <table className="w-full border-collapse text-sm">
           <tbody>
             {rows.map(([category, count]) => (
               <tr key={category}>

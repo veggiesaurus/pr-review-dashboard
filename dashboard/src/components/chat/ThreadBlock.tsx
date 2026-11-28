@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Pencil, Reply, Trash2 } from "lucide-react";
 import { type FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { GithubComment } from "shared/comments";
 import type { Anchor, Message, NoteState } from "shared/messages";
@@ -86,12 +86,12 @@ function Delivery({ message }: { message: Message }) {
     return null;
   }
   if (message.kind === "post") {
-    return <span className="text-muted-foreground text-xs">Not sent to Claude</span>;
+    return <span className="text-muted-foreground text-xs">For reviewers only</span>;
   }
   if (message.status === "sent" && message.state === "open") {
     return <Badge tone="outline">Waiting for a session</Badge>;
   }
-  return message.status === "delivered" && message.state === "open" ? <span className="text-muted-foreground">sent to Claude</span> : null;
+  return message.status === "delivered" && message.state === "open" ? <span className="text-muted-foreground">Claude has it</span> : null;
 }
 
 // Three dots that rise in turn while Claude is at work.
@@ -250,11 +250,15 @@ export function ReplyBox({
   anchor,
   placeholder,
   rootKind,
+  autoFocus,
+  onEscape,
 }: {
   replyTo?: string;
   anchor?: Anchor;
   placeholder: string;
   rootKind?: Message["kind"];
+  autoFocus?: boolean;
+  onEscape?: () => void;
 }) {
   const key = replyTo ? replyKey(replyTo) : anchor ? anchorKey(anchor) : "";
   const [text, setText] = useState(() => draftText(key));
@@ -262,7 +266,9 @@ export function ReplyBox({
   const shots = useScreenshots();
   // In a thread of posts, Enter keeps the reply between people; asking Claude is the deliberate second button.
   const [main, other] = rootKind === "post" ? (["post", "chat"] as const) : (["chat", "post"] as const);
+  const label = { chat: replyTo && rootKind !== "post" ? "Reply" : "Ask Claude", post: "Post for reviewers" };
   const title = { chat: "Goes to Claude now", post: "Everyone on the review sees it; Claude doesn't" };
+  const blocked = !text.trim() || add.isPending || shots.uploading;
 
   const update = (value: string) => {
     setText(value);
@@ -284,36 +290,38 @@ export function ReplyBox({
   };
 
   return (
-    <form onSubmit={event => submit(main, event)} className="grid grid-cols-[minmax(0,1fr)] gap-1" {...shots.handlers}>
+    <form onSubmit={event => submit(main, event)} className="grid grid-cols-[minmax(0,1fr)] gap-1.5" {...shots.handlers}>
       <Screenshots ids={shots.images} onRemove={shots.remove} />
-      <div className="flex gap-2">
-        <MarkdownEditor
-          value={text}
-          onChange={update}
-          onSend={() => submit(main)}
-          onFiles={shots.take}
-          sendKey="enter"
-          label={placeholder}
-          placeholder={placeholder}
-          className="flex-1"
-          skills={main === "chat"}
-        />
-        <Button type="submit" size="sm" variant="outline" disabled={!text.trim() || add.isPending || shots.uploading} title={title[main]}>
-          {main === "post" ? "Post" : "Send"}
-        </Button>
+      <MarkdownEditor
+        autoFocus={autoFocus}
+        value={text}
+        onChange={update}
+        onSend={() => submit(main)}
+        onEscape={onEscape}
+        onFiles={shots.take}
+        sendKey="enter"
+        label={placeholder}
+        placeholder={placeholder}
+        skills={main === "chat"}
+      />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {shots.error && <span className="mr-auto text-danger text-sm">{shots.error}</span>}
+        {add.isError && <span className="mr-auto text-danger text-sm">{errorText(add.error, "That didn't go through.")}</span>}
         <Button
           type="button"
           size="sm"
           variant="ghost"
+          className="pointer-coarse:h-11"
           onClick={() => submit(other)}
-          disabled={!text.trim() || add.isPending || shots.uploading}
+          disabled={blocked}
           title={title[other]}
         >
-          {other === "post" ? "Post" : "Ask Claude"}
+          {label[other]}
+        </Button>
+        <Button type="submit" size="sm" variant="outline" className="pointer-coarse:h-11" disabled={blocked} title={`${title[main]} (↵)`}>
+          {label[main]}
         </Button>
       </div>
-      {shots.error && <span className="text-danger text-sm">{shots.error}</span>}
-      {add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't send.")}</span>}
     </form>
   );
 }
@@ -328,6 +336,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   const typing = () => draftText(replyKey(root.id)) !== "";
   const [open, setOpen] = useState(() => expanded ?? (!(root.resolved || gone) || typing()));
   const [toggled, setToggled] = useState(false);
+  const [replying, setReplying] = useState(typing);
   const [wasResolved, setWasResolved] = useState(root.resolved);
   const add = useAddMessage();
   const archive = useArchiveThread();
@@ -366,6 +375,7 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
   // Questions stand until the user has said something after them.
   const last = replies.findLast(m => m.kind !== "post");
   const asking = last?.from === "claude" && last.ask?.length && !root.archived ? last : undefined;
+  const fixing = owner && finding && fixable(root, replies);
   return (
     <div
       ref={box}
@@ -439,37 +449,55 @@ export function ClaudeThreadBlock({ thread, className, expanded }: { thread: Cla
               onAnswer={text => add.mutate({ kind: "chat", text, replyTo: root.id, answer: true })}
             />
           )}
-          {asking && add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't send.")}</span>}
+          {asking && add.isError && <span className="text-danger text-sm">{errorText(add.error, "That didn't go through.")}</span>}
           {!(live && "steps" in (entries.at(-1) ?? {})) && <Working thread={root.id} waiting={awaited(root, replies)} />}
-          {owner && finding && fixable(root, replies) && (
+          {(fixing || !replying) && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" disabled={add.isPending} onClick={() => add.mutate({ kind: "chat", text: "Fix this.", replyTo: root.id })}>
-                Fix this
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="ghost" disabled={archive.isPending}>
-                    Dismiss
-                    <ChevronDown />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {DISMISS_REASONS.map(reason => (
-                    <DropdownMenuItem key={reason} onSelect={() => archive.mutate({ id: root.id, archived: true, reason })}>
-                      {DISMISS_TEXT[reason]}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {fixing && (
+                <Button
+                  size="sm"
+                  disabled={add.isPending}
+                  onClick={() => add.mutate({ kind: "chat", text: "Fix this.", replyTo: root.id })}
+                >
+                  Fix this
+                </Button>
+              )}
+              {!replying && (
+                <Button size="sm" variant="outline" className="pointer-coarse:h-11" onClick={() => setReplying(true)}>
+                  <Reply />
+                  Reply
+                </Button>
+              )}
+              {fixing && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="ghost" disabled={archive.isPending}>
+                      Dismiss
+                      <ChevronDown />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {DISMISS_REASONS.map(reason => (
+                      <DropdownMenuItem key={reason} onSelect={() => archive.mutate({ id: root.id, archived: true, reason })}>
+                        {DISMISS_TEXT[reason]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           )}
-          <ReplyBox
-            replyTo={root.id}
-            rootKind={root.kind}
-            placeholder={
-              root.kind === "post" ? "Reply to the thread" : root.resolved ? "Reopen it with a follow-up" : "Follow up with Claude"
-            }
-          />
+          {replying && (
+            <ReplyBox
+              replyTo={root.id}
+              rootKind={root.kind}
+              autoFocus
+              onEscape={() => setReplying(false)}
+              placeholder={
+                root.kind === "post" ? "Reply to the thread" : root.resolved ? "Reopen it with a reply to Claude" : "Reply to Claude"
+              }
+            />
+          )}
         </div>
       ) : (
         <button

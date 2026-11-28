@@ -1,5 +1,5 @@
 // A full-page screenshot of a running server's page, failing on console errors, page errors and CSP violations.
-// Usage: bun tests/shot.mjs STATE OUT_DIR [light|dark] [WIDTH] [HASH], STATE the server's state file, HASH like #12/guide.
+// Usage: bun tests/shot.mjs STATE OUT_DIR [light|dark] [WIDTH] [HASH], STATE the server's state file, HASH like #12/guide or #12/diff.
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -28,9 +28,10 @@ try {
     }
   });
   await page.goto(`${link}${hash}`);
-  await page.waitForSelector("[role=tablist]", { timeout: 15_000 });
+  // The top bar, which a phone draws too, is there once the review has loaded.
+  await page.getByRole("banner").waitFor({ timeout: 15_000 });
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
-  // A viewport as tall as the page keeps the fixed chat bar at the bottom instead of across the middle.
+  // A viewport as tall as the page keeps a phone's bar of places at the bottom instead of across the middle.
   await page.setViewportSize({ width: Number(width), height: await page.evaluate(() => document.documentElement.scrollHeight) });
   await page.waitForTimeout(300);
   mkdirSync(out, { recursive: true });

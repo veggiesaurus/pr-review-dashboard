@@ -174,7 +174,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
         )}
         {elsewhere.length > 0 && (
           <>
-            <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               {elsewhere.length} on lines this PR doesn't change{elsewhere.length > ELSEWHERE_SHOWN && ", the first 12 here"}:
             </p>
             <ul className={BLOCK_LIST}>
@@ -241,7 +241,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
         title={role === "guest" ? "Where a second look matters" : "Needs a careful read"}
         note={
           role === "guest" && (
-            <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+            <p className="mt-1.5 text-sm text-muted-foreground">
               The owner has reviewed {ownerRead} of {guides.length} sections. What they reviewed starts folded, apart from the sections
               listed here.
             </p>
@@ -287,9 +287,9 @@ export function ReadyCheck({ layer }: { layer: number }) {
             <p className="mt-1.5 flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" disabled={askTries.isPending} onClick={() => askTries.mutate(layer)}>
                 <FlaskConical />
-                {evidence.some(step => step.answer) ? "Have Claude try them again" : "Have Claude try them"}
+                {evidence.some(step => step.answer) ? "Ask Claude to try them again" : "Ask Claude to try them"}
               </Button>
-              {askTries.isError && <span className="text-danger text-sm">{errorText(askTries.error, "That didn't send.")}</span>}
+              {askTries.isError && <span className="text-danger text-sm">{errorText(askTries.error, "That didn't go through.")}</span>}
             </p>
           )
         }
@@ -334,7 +334,7 @@ export function ReadyCheck({ layer }: { layer: number }) {
         key="split"
         tone="quiet"
         title={`Could be ${split.prs.length} PRs`}
-        note={split.note && <p className="mt-1.5 text-[13.5px] text-muted-foreground">{split.note}</p>}
+        note={split.note && <p className="mt-1.5 text-sm text-muted-foreground">{split.note}</p>}
       >
         {split.prs.map((pr, k) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: the split's PRs are in a fixed order

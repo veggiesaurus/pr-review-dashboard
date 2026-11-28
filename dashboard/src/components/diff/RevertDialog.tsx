@@ -26,11 +26,11 @@ export function RevertDialog({
       <DialogContent>
         <DialogTitle>Revert this change in your checkout?</DialogTitle>
         <DialogDescription>
-          This puts the reviewed code back in <code className="font-mono text-[13px]">{path}</code>
+          This puts the reviewed code back in <code className="font-mono text-sm">{path}</code>
           {where && (
             <>
               {" "}
-              in <code className="font-mono text-[13px]">{where}</code>
+              in <code className="font-mono text-sm">{where}</code>
             </>
           )}
           , taking out {plural(edit.add.length, "local line")}

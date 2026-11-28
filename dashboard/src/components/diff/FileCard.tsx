@@ -21,7 +21,7 @@ function Tag({ title, className, children }: { title?: string; className?: strin
     <span
       title={title}
       className={cn(
-        "inline-block whitespace-nowrap rounded-full border px-2 py-px text-[11px] text-muted-foreground first-letter:uppercase",
+        "inline-block whitespace-nowrap rounded-full border px-2 py-px text-xs text-muted-foreground first-letter:uppercase",
         className,
       )}
     >
@@ -127,7 +127,7 @@ export function FileCard({
       <Note>
         {file.status === "renamed" ? (
           <span>
-            Renamed from <code className="font-mono text-[13px]">{file.oldPath}</code> with no changes.
+            Renamed from <code className="font-mono text-sm">{file.oldPath}</code> with no changes.
           </span>
         ) : (
           "No line changes."
@@ -175,9 +175,9 @@ export function FileCard({
           >
             {name}
           </span>
-          <span className="truncate text-[12.5px] text-muted-foreground">{folder}</span>
+          <span className="truncate text-xs text-muted-foreground">{folder}</span>
           {file.status === "renamed" && (
-            <span className="truncate text-[12.5px] text-muted-foreground" title={`Renamed from ${file.oldPath}`}>
+            <span className="truncate text-xs text-muted-foreground" title={`Renamed from ${file.oldPath}`}>
               from <span className="font-mono">{file.oldPath}</span>
             </span>
           )}
@@ -211,8 +211,8 @@ export function FileCard({
           {additions === 0 && deletions === 0 && <span className="text-muted-foreground">±0</span>}
         </span>
         <ReviewedTick layer={layer.id} file={file.id} hunkIds={hunkIds} />
-        {folded && !open && <p className="basis-full pl-8 text-[12.5px] text-muted-foreground">{FORMATTING_HIDDEN}</p>}
-        {skim && !ticked && !folded && !open && <p className="basis-full pl-8 text-[12.5px] text-muted-foreground">{SKIM}</p>}
+        {folded && !open && <p className="basis-full pl-8 text-xs text-muted-foreground">{FORMATTING_HIDDEN}</p>}
+        {skim && !ticked && !folded && !open && <p className="basis-full pl-8 text-xs text-muted-foreground">{SKIM}</p>}
       </header>
       <details open={open} onToggle={event => setOpen(event.currentTarget.open)} className="motion-expand">
         <summary hidden />

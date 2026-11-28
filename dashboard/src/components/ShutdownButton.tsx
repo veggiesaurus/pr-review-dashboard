@@ -27,7 +27,7 @@ export function ShutdownButton() {
         <button
           type="button"
           aria-label="Stop the dashboard"
-          className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground"
+          className="grid size-7 cursor-pointer place-items-center rounded-full pointer-coarse:size-11 border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground"
         >
           <Power className="size-4" aria-hidden="true" />
         </button>

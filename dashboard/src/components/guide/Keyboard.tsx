@@ -32,12 +32,12 @@ const KEYS: { keys: string[][]; sep?: string; what: string }[] = [
   { keys: [[MOD, "P"]], what: "Go to a file" },
   { keys: [[ALT, MOD, "G"]], what: "Go to a section" },
   { keys: [["u"]], what: "Where a name is used" },
-  { keys: [["1"], ["2"], ["3"], ["4"]], what: "Overview, Guide, Diff, Visualize" },
+  { keys: [["1"], ["2"], ["3"]], what: "Overview, Changes by section, Changes by file" },
   { keys: [[MOD, "B"]], what: "Unified or Split" },
   { keys: [["?"], [MOD, "/"]], sep: "or", what: "These keys" },
 ];
 
-const TABS: Record<string, Tab> = { "1": "overview", "2": "guide", "3": "diff", "4": "visualize" };
+const TABS: Record<string, Tab> = { "1": "overview", "2": "guide", "3": "diff" };
 const NOT_TYPING = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
 
 function typing(target: EventTarget | null) {
@@ -149,7 +149,7 @@ export function KeysHelp() {
       <Tooltip disableHoverableContent>
         <TooltipTrigger asChild>
           <PopoverTrigger
-            className="grid size-7 cursor-pointer place-items-center rounded-full border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground data-[state=open]:border-border data-[state=open]:bg-card data-[state=open]:text-foreground"
+            className="grid size-7 cursor-pointer place-items-center rounded-full pointer-coarse:size-11 border border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground data-[state=open]:border-border data-[state=open]:bg-card data-[state=open]:text-foreground"
             aria-label="Keyboard keys"
           >
             <Keyboard className="size-4" />
@@ -163,7 +163,7 @@ export function KeysHelp() {
       </Tooltip>
       <PopoverContent align="end" className="w-[25rem]">
         <p className="mb-2 font-medium">Keys</p>
-        <table className="w-full border-collapse text-[13px]">
+        <table className="w-full border-collapse text-sm">
           <tbody>
             {KEYS.map(row => (
               <tr key={row.what}>

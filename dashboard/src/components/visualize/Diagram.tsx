@@ -5,18 +5,22 @@ import { type DiagramTheme, renderDiagram } from "src/components/visualize/merma
 import { diagramKind, prepare } from "src/components/visualize/source";
 import "src/components/visualize/visualize.css";
 
-// screen: the whole drawing in the window as the page is laid out, from where it starts down to the bottom bar, never
-// enlarged. width: across its column, up to twice its natural size, for the full-screen viewer to scroll.
-type Fit = "screen" | "width";
-const BOTTOM_BAR = 96;
-const LEAST_ROOM = 320;
+// card: across its card, but never shrinking the labels under MIN_LABEL pixels (its box scrolls sideways instead) nor
+// enlarging past 1.5x. width: across its column, up to twice its natural size, for the full-screen viewer to scroll.
+type Fit = "card" | "width";
+const MIN_LABEL = 11;
+// And no larger than the page's body text, however much room the card has.
+const MAX_LABEL = 14;
 
 const viewBox = (svg: SVGSVGElement) => (svg.getAttribute("viewBox") ?? "").split(/[\s,]+/).map(Number);
 
-// Everything the page lays out under the diagram, its bottom padding clear of the bottom bar included, or it scrolls.
-function below(host: HTMLElement, box: DOMRect) {
-  const page = host.closest("main");
-  return page ? page.getBoundingClientRect().bottom - box.bottom : BOTTOM_BAR;
+// The drawing's typical label size in its own units, from the styles mermaid gave it.
+function labelSize(svg: SVGSVGElement) {
+  const sizes = [...svg.querySelectorAll("text, foreignObject span")]
+    .map(label => Number.parseFloat(getComputedStyle(label).fontSize))
+    .filter(size => size > 0)
+    .sort((a, b) => a - b);
+  return sizes[Math.floor(sizes.length / 2)] ?? 14;
 }
 
 export function DiagramView({
@@ -38,8 +42,7 @@ export function DiagramView({
   const toggle = useRef(onToggle);
   toggle.current = onToggle;
   const interactive = Boolean(onToggle);
-  // The drawing's height with nothing folded, so folding a block shortens it without zooming the rest in.
-  const unfolded = useRef(0);
+  const label = useRef(14);
 
   const size = () => {
     const root = host.current?.querySelector("svg");
@@ -47,17 +50,9 @@ export function DiagramView({
     if (!root || !host.current || !width || !height) {
       return;
     }
-    const box = host.current.getBoundingClientRect();
     const across = host.current.clientWidth / width;
     const scale =
-      fit === "width"
-        ? Math.min(2, across)
-        : Math.min(
-            1,
-            across,
-            Math.max(LEAST_ROOM, window.innerHeight - (box.top + window.scrollY) - below(host.current, box)) /
-              Math.max(height, unfolded.current),
-          );
+      fit === "width" ? Math.min(2, across) : Math.min(1.5, MAX_LABEL / label.current, Math.max(across, MIN_LABEL / label.current));
     root.style.maxWidth = "none";
     root.style.width = `${Math.floor(width * scale)}px`;
     root.style.height = `${Math.floor(height * scale)}px`;
@@ -92,8 +87,8 @@ export function DiagramView({
         if (root && model) {
           decorate(root, model, folds, interactive ? (kind, ordinal) => toggle.current?.(kind, ordinal) : undefined);
         }
-        if (root && !folds.blocks.length && !folds.sections.length) {
-          unfolded.current = viewBox(root)[3] ?? 0;
+        if (root) {
+          label.current = labelSize(root);
         }
         resize.current();
         setError(null);
@@ -111,7 +106,7 @@ export function DiagramView({
 
   return (
     <>
-      <span ref={host} className="prg-diagram block" hidden={Boolean(error)} />
+      <span ref={host} className="prg-diagram block overflow-x-auto" hidden={Boolean(error)} />
       {error && (
         <span className="block text-left text-sm" role="alert">
           <span className="block text-danger">Mermaid couldn't draw this diagram: {error}</span>

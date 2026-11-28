@@ -28,7 +28,7 @@ export function RenderError() {
               onClick={() => setTab("diff")}
               className="cursor-pointer text-primary underline underline-offset-3 hover:decoration-2"
             >
-              Open the Diff tab
+              Show the changes by file
             </button>{" "}
             for every file.
           </>

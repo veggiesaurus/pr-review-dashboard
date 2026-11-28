@@ -254,7 +254,7 @@ export function Markdown({
       h1: ({ children }) => <h3 className="mt-5 font-semibold text-xl">{children}</h3>,
       h2: ({ children }) => <h3 className="mt-5 font-semibold text-lg">{children}</h3>,
       h3: ({ children }) => <h4 className="mt-4 font-semibold text-base">{children}</h4>,
-      h4: ({ children }) => <h5 className="mt-4 font-semibold text-[15px]">{children}</h5>,
+      h4: ({ children }) => <h5 className="mt-4 font-semibold text-base">{children}</h5>,
       h5: ({ children }) => <h6 className="mt-4 font-semibold text-sm">{children}</h6>,
       h6: ({ children }) => <h6 className="mt-4 font-semibold text-muted-foreground text-sm">{children}</h6>,
       ul: ({ children }) => <ul className="grid list-disc gap-1 pl-6">{children}</ul>,
@@ -279,7 +279,7 @@ export function Markdown({
         );
       },
       pre: ({ children }) => (
-        <pre className="whitespace-pre-wrap rounded-md border bg-muted/60 p-3 font-mono text-[13px] leading-normal [overflow-wrap:anywhere] [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[1em]">
+        <pre className="whitespace-pre-wrap rounded-md border bg-muted/60 p-3 font-mono text-sm leading-normal [overflow-wrap:anywhere] [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-[1em]">
           {children}
         </pre>
       ),
@@ -304,7 +304,7 @@ export function Markdown({
   );
 
   return (
-    <div className={cn("text-[15px] leading-relaxed [overflow-wrap:anywhere] [&>*+*]:mt-3", className)}>
+    <div className={cn("text-base leading-relaxed [overflow-wrap:anywhere] [&>*+*]:mt-3", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkHtmlText]} rehypePlugins={[[rehypeRefs, { repo }]]} skipHtml components={components}>
         {source}
       </ReactMarkdown>

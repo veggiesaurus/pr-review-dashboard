@@ -34,8 +34,8 @@ export function ToneDot({ tone }: { tone: BlockTone }) {
     </>
   );
 }
-export const BLOCK_TITLE = "font-semibold text-[13.5px]";
-export const BLOCK_LIST = "mt-1.5 mb-0.5 grid list-disc gap-1.5 pl-5 text-[13.5px] [overflow-wrap:anywhere]";
+export const BLOCK_TITLE = "font-semibold text-sm";
+export const BLOCK_LIST = "mt-1.5 mb-0.5 grid list-disc gap-1.5 pl-5 text-sm [overflow-wrap:anywhere]";
 
 // A titled block that folds, holding a list of findings. Each item reads the same way: a bold label and a colon,
 // the text, anything secondary muted, then its Ask Claude button. tone puts its mark before the title.

@@ -34,11 +34,11 @@ export function RebuildButton() {
           }
           disabled={add.isPending}
           aria-label={label}
-          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-transparent px-2 text-muted-foreground text-sm hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground disabled:opacity-60"
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full pointer-coarse:h-11 pointer-coarse:px-3 border border-transparent px-2 text-muted-foreground text-sm hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground disabled:opacity-60"
         >
           <RefreshCw className={cn("size-4", busy && "animate-spin [animation-duration:2s]")} />
           {/* A phone has room for the icon alone beside the header's first line. */}
-          <span className="max-sm:hidden">{busy ? "Rebuilding…" : "Rebuild"}</span>
+          <span className="max-[100rem]:hidden">{busy ? "Rebuilding…" : "Rebuild"}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" align="end">

@@ -6,7 +6,6 @@ import {
   CircleSlash,
   CircleX,
   ExternalLink,
-  GitBranch,
   LoaderCircle,
   type LucideIcon,
   RefreshCw,
@@ -86,7 +85,7 @@ function CheckRow({ check, layer, now }: { check: Check; layer: number; now: num
   const time = took(check, now);
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 py-1" data-check={check.bucket}>
-      <span className="min-w-0">
+      <span className="min-w-0 [overflow-wrap:anywhere]">
         {check.link ? (
           <a href={check.link} target="_blank" rel="noreferrer" className="font-medium hover:text-primary hover:underline">
             {check.name}
@@ -94,7 +93,7 @@ function CheckRow({ check, layer, now }: { check: Check; layer: number; now: num
         ) : (
           <span className="font-medium">{check.name}</span>
         )}
-        {check.workflow && <span className="ml-2 text-muted-foreground text-xs">{check.workflow}</span>}
+        {check.workflow && <span className="block text-muted-foreground text-xs">{check.workflow}</span>}
       </span>
       <span className="flex items-center gap-2 whitespace-nowrap">
         {time && <span className="font-mono text-muted-foreground text-xs">{time}</span>}
@@ -126,7 +125,7 @@ function Checks({ live, layer }: { live: GithubLive; layer: number }) {
               {group.label}
               <span className="font-mono text-muted-foreground text-xs">{checks.length}</span>
             </summary>
-            <ul className="mt-0.5 border-l pl-3 ml-[7px] text-sm">
+            <ul className="mt-1 ml-[7px] border-l pl-3 text-sm">
               {checks.map(check => (
                 <CheckRow key={`${check.workflow}/${check.name}`} check={check} layer={layer} now={now} />
               ))}
@@ -232,7 +231,7 @@ function LinearCard({ issueKey, enabled }: { issueKey: string; enabled: boolean 
   }
   if (isPending) {
     return (
-      <div className="grid gap-2 rounded-md border bg-background p-3" aria-hidden>
+      <div className="grid gap-2 border-t pt-3" aria-hidden>
         <div className="motion-skeleton h-4 w-2/3" />
         <div className="motion-skeleton h-3 w-full" />
         <div className="motion-skeleton h-3 w-5/6" />
@@ -246,7 +245,7 @@ function LinearCard({ issueKey, enabled }: { issueKey: string; enabled: boolean 
     return <p className="text-muted-foreground text-sm">Linear didn't answer for {issueKey}.</p>;
   }
   return (
-    <div className="rounded-md border bg-background p-3">
+    <div className="border-t pt-3">
       <IssueSummary issue={data.issue} />
     </div>
   );
@@ -256,7 +255,7 @@ function NotifySwitch() {
   const { data } = useCiNotify();
   const set = useSetCiNotify();
   return (
-    <div className="flex items-start gap-2.5 text-sm">
+    <div className="flex items-start gap-2.5 text-sm pointer-coarse:min-h-11">
       <Switch
         id="ci-notify"
         checked={data?.on ?? false}
@@ -296,7 +295,7 @@ export function LivePanel({ layer }: { layer: number }) {
   return (
     <section className="grid gap-4 rounded-lg border bg-card p-4 shadow-xs" aria-label="Live from GitHub and Linear">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto font-serif text-lg">Live from GitHub{issueKeys.length > 0 ? " and Linear" : ""}</h2>
+        <h2 className="mr-auto font-serif text-base">Live from GitHub{issueKeys.length > 0 ? " and Linear" : ""}</h2>
         {pr?.previews.map((preview, i) => (
           <a
             key={preview.url}
@@ -305,7 +304,7 @@ export function LivePanel({ layer }: { layer: number }) {
             rel="noreferrer"
             title={preview.url}
             className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-3 font-medium text-[13px] hover:bg-accent",
+              "inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-3 font-medium text-xs hover:bg-accent pointer-coarse:h-11",
               i > 0 && "font-normal text-muted-foreground",
             )}
           >
@@ -334,23 +333,20 @@ export function LivePanel({ layer }: { layer: number }) {
       {pr && (
         <>
           <MovedNotice pr={pr} layer={layer} />
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-            <Badge tone={pr.isDraft ? "neutral" : (STATE_TONES[pr.state] ?? "neutral")}>
+          {/* The branches are in the PR's facts just above, so only the state and how it merges are said here. */}
+          <div className="flex items-baseline gap-2 text-sm">
+            <Badge tone={pr.isDraft ? "neutral" : (STATE_TONES[pr.state] ?? "neutral")} className="shrink-0">
               {pr.isDraft ? "Draft" : pr.state.toLowerCase()}
             </Badge>
-            <span className="inline-flex min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs [overflow-wrap:anywhere]">
-              <GitBranch className="size-3.5 shrink-0" />
-              {pr.base} ← {pr.head}
-            </span>
-            {merge && <span className={cn("font-medium", merge.tone)}>{merge.text}</span>}
+            {merge && <span className={cn("min-w-0 font-medium", merge.tone)}>{merge.text}</span>}
           </div>
           <Checks live={live} layer={layer} />
           <Reviewers pr={pr} />
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-            {owner ? <NotifySwitch /> : <span />}
+          <div className="grid gap-2 border-t pt-3">
+            {owner && <NotifySwitch />}
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-muted-foreground text-xs">Checked {ago(live.at)}</span>
+                <span className="w-fit text-muted-foreground text-xs">Checked {ago(live.at)}</span>
               </TooltipTrigger>
               <TooltipContent>
                 {fullDate(live.at)}. The server asks again every 20 seconds while checks run and every few minutes once they settle, only

@@ -35,7 +35,7 @@ export function Usages({ layer, onJump }: { layer: number; onJump: () => void })
             placeholder="A name, searched across this branch"
             aria-label="Identifier to search for"
             spellCheck={false}
-            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-[13px] placeholder:font-sans placeholder:text-muted-foreground"
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm placeholder:font-sans placeholder:text-muted-foreground"
           />
           <Button type="submit" variant="outline" disabled={!valid || isFetching}>
             <Search />

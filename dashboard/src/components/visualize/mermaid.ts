@@ -4,7 +4,7 @@ import type { MarkColours, Rgb } from "src/components/visualize/source";
 
 type Mermaid = typeof import("mermaid")["default"];
 
-// Loaded only when the tab opens: it is most of the page's weight.
+// Loaded only when a diagram is first drawn: it is most of the page's weight.
 let loading: Promise<Mermaid> | undefined;
 const load = () => {
   loading ??= import("mermaid").then(module => module.default);

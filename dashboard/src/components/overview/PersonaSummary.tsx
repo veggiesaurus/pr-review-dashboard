@@ -7,7 +7,7 @@ import { type SummaryPart, summaryParts } from "shared/summary";
 import { AskClaude } from "src/components/chat/AskClaude";
 import { Prose } from "src/components/links/Prose";
 import { Button } from "src/components/ui/button";
-import { ButtonGroup } from "src/components/ui/button-group";
+import { Segmented } from "src/components/ui/segmented";
 import { useViewStore } from "src/store/view.store";
 
 // Each paragraph, and each run of list items, with every part open to a thread of its own.
@@ -77,23 +77,17 @@ export function PersonaSummary({ summary, personas, layer }: { summary: Summary;
           </Button>
         </span>
       </div>
-      <ButtonGroup aria-label="Written for" className="max-w-full flex-wrap">
-        {shown.map(({ id, name }) => (
-          <Button
-            key={id}
-            size="sm"
-            variant={id === reader ? "default" : "outline"}
-            aria-pressed={id === reader}
-            onClick={() => {
-              setReader(id);
-              setStatus("");
-            }}
-          >
-            {name}
-          </Button>
-        ))}
-      </ButtonGroup>
-      <div className="grid max-w-prose gap-2.5 text-[15px] leading-relaxed" aria-live="polite" data-summary-text>
+      <Segmented
+        label="Written for"
+        value={reader}
+        onChange={id => {
+          setReader(id);
+          setStatus("");
+        }}
+        className="max-w-full justify-self-start overflow-x-auto"
+        segments={shown.map(({ id, name }) => ({ value: id, label: name }))}
+      />
+      <div className="grid gap-2.5 text-base leading-relaxed" aria-live="polite" data-summary-text>
         <Parts parts={summaryParts(text)} layer={layer} reader={reader} />
       </div>
     </section>

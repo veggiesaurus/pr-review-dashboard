@@ -46,7 +46,7 @@ export function FileItem({
           setAnchor(hunkIds?.[0] ?? file.id);
           openCard(document.getElementById(cardElementId(layer, file.id, section)));
         }}
-        className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md border bg-card px-2.5 py-1.5 text-left text-[13px] hover:border-ring"
+        className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md border bg-card px-2.5 py-1.5 text-left text-sm hover:border-ring"
       >
         <span className="truncate">
           {done && (

@@ -36,6 +36,7 @@ export function parseTarget(text: string): Target | null {
 // Element ids. Only the shown tab is in the page, so a hunk or line has one element; a file split across sections
 // has a card in each, so a card's id names its section when it is in one.
 export const sectionElementId = (layer: number, index: number) => `l${layer}-s${index + 1}`;
+export const diagramElementId = (layer: number, at: number) => `l${layer}-d${at + 1}`;
 export const cardElementId = (layer: number, file: string, section?: number) =>
   section === undefined ? `l${layer}-${file}` : `l${layer}-s${section + 1}-${file}`;
 export const hunkElementId = (layer: number, hunk: string) => `l${layer}-${hunk}`;
@@ -217,6 +218,9 @@ function templateTarget(id: string): Pick<HashState, "target" | "section"> | nul
   return /^s\d+$/.test(id) ? { target: id } : null;
 }
 
+// A link from before the Visualize tab folded into the guide, where the diagrams now are.
+const oldTab = (name: string) => (name === "visualize" ? "guide" : name);
+
 export function parseHash(hash: string): HashState {
   let text: string;
   try {
@@ -227,10 +231,10 @@ export function parseHash(hash: string): HashState {
   }
   const full = /^(\d+)\/([a-z]+)(?:\/(.+))?$/.exec(text);
   if (full) {
-    const tab = TABS.find(t => t === full[2]);
+    const tab = TABS.find(t => t === oldTab(full[2] ?? ""));
     return { layer: Number(full[1]), tab, target: full[3] && parseTarget(full[3]) ? full[3] : undefined };
   }
-  const tab = TABS.find(t => t === text);
+  const tab = TABS.find(t => t === oldTab(text));
   if (tab) {
     return { tab };
   }

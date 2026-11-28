@@ -155,7 +155,7 @@ export function Ask({ message, pending, onAnswer }: { message: Message; pending:
         <QuestionnairePrevious size="sm" />
         <QuestionnaireNext size="sm" />
         <QuestionnaireSubmit size="sm" disabled={pending}>
-          Send answer
+          Reply
         </QuestionnaireSubmit>
       </QuestionnaireActions>
     </Questionnaire>

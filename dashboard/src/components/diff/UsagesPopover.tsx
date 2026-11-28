@@ -73,7 +73,7 @@ export function UsagesPopover({ layer, target, onClose }: { layer: number; targe
           className="motion-pop z-50 w-[30rem] max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 font-sans text-popover-foreground shadow-md outline-hidden"
         >
           <p className="text-sm">
-            Lines that use <code className="font-mono text-[13px]">{target.word}</code> on this branch
+            Lines that use <code className="font-mono text-sm">{target.word}</code> on this branch
           </p>
           {isPending && <p className="motion-loading mt-2 text-muted-foreground text-sm">Searching…</p>}
           {(error || data?.error) && <p className="mt-2 text-danger text-sm">{data?.error ?? "The search failed."}</p>}

@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ArrowLeft, Crosshair, MessageCircle, NotebookPen, Plus, Send, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Crosshair, MessageCircle, Plus, Send, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Anchor, PermissionsInfo } from "shared/messages";
 import { Composer } from "src/components/chat/Composer";
@@ -19,20 +19,16 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "src/components/ui/message-scroller";
+import { Segmented } from "src/components/ui/segmented";
 import { useIsOwner } from "src/queries/me.query";
 import { errorText, useArchiveReview, useArchiveThread, useSendDrafts } from "src/queries/messages.mutation";
 import { useSession } from "src/queries/messages.query";
 import { useAnswerPermission, usePermissions } from "src/queries/permissions.query";
 import { useReview } from "src/queries/review.query";
-import { PAGE_COLUMN, useViewStore } from "src/store/view.store";
+import { useViewStore } from "src/store/view.store";
 import { anchorKey } from "src/utils/anchors";
 import { cn } from "src/utils/cn";
 import { arrived } from "src/utils/motion";
-
-// Each part of the drawer that scrolls: capped to the window, and never sideways.
-// An open panel's button looks pressed rather than primary, so solid blue only ever means the main action.
-const PRESSED = "bg-secondary text-foreground hover:bg-secondary";
-const DRAWER_SCROLL = "-mx-1 mt-1 max-h-[min(60dvh,36rem)] overflow-y-auto overflow-x-hidden overscroll-contain p-1";
 
 function ThreadItem({ thread, active }: { thread: ClaudeThread; active: boolean }) {
   const openThread = useChatStore(state => state.openThread);
@@ -50,9 +46,7 @@ function ThreadItem({ thread, active }: { thread: ClaudeThread; active: boolean 
         )}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className={cn("min-w-0 truncate", onCode(root.anchor) ? "font-mono text-xs" : "text-[13px]")}>
-            {shortLabel(root.anchor)}
-          </span>
+          <span className={cn("min-w-0 truncate", onCode(root.anchor) ? "font-mono text-xs" : "text-sm")}>{shortLabel(root.anchor)}</span>
           {root.anchor.outdated && <span className="shrink-0 text-danger text-xs">gone</span>}
           <span className="ml-auto shrink-0">
             <StateBadge state={root.state} />
@@ -94,7 +88,7 @@ function ThreadList({
         onClick={() => setFocus({ kind: "anchor", anchor: { kind: "general" } })}
       >
         <Plus />
-        Ask about the review as a whole
+        Ask Claude about the review as a whole
       </Button>
       {threads.length === 0 && (
         <Empty className="p-4">
@@ -181,7 +175,7 @@ function About({ text, anchor, outdated, code }: { text: string; anchor: Anchor 
     <div className="flex flex-wrap items-start gap-2">
       <p className="min-w-0 flex-1 text-sm">
         <span className="text-muted-foreground">About </span>
-        <span className={cn("[overflow-wrap:anywhere]", code && "font-mono text-[13px]")}>{text}</span>
+        <span className={cn("[overflow-wrap:anywhere]", code && "font-mono text-sm")}>{text}</span>
         {outdated && <span className="text-danger"> (no longer in the diff since a rebuild)</span>}
       </p>
       {canJump && (
@@ -315,14 +309,12 @@ function PermissionBar({ info }: { info: PermissionsInfo }) {
   );
 }
 
-export function ChatDock({ connected }: { connected: boolean }) {
-  const { threads, archived, yours, drafts, latestReply } = useThreads();
+// What the session is up to, as the panel's header and the top bar's button both say it.
+function useClaudeStatus(connected: boolean) {
+  const { threads } = useThreads();
   const { data: session } = useSession();
-  const send = useSendDrafts();
-  const archive = useArchiveThread();
   const owner = useIsOwner();
   const permissions = usePermissions();
-  const { chatOpen, drawer, focus, setChatOpen, openDrawer, setFocus, openThread } = useChatStore();
   const listening = connected && Boolean(session?.listening);
   // What the session last said it is doing, while it's listening.
   const activity = listening ? (session?.activity ?? null) : null;
@@ -332,7 +324,7 @@ export function ChatDock({ connected }: { connected: boolean }) {
   // The prompt is in the owner's terminal, so only the owner can act on it.
   const prompting = connected && owner && (permissions?.prompts.length ?? 0) > 0;
   const attention = connected && owner && !prompting ? (session?.attention ?? null) : null;
-  const status = !connected
+  const text = !connected
     ? "Lost the server"
     : attention
       ? `Waiting for you in the terminal: ${attention.text}`
@@ -343,11 +335,62 @@ export function ChatDock({ connected }: { connected: boolean }) {
           : listening
             ? "Listening"
             : "Not listening. Messages are kept for later.";
-  const open = threads.filter(t => t.root.status !== "draft" && !t.root.resolved).length;
+  const dot = attention || prompting ? "animate-pulse bg-warning" : listening ? "bg-success" : connected ? "bg-warning" : "bg-danger";
+  return { text, dot, busy, attention, prompting, permissions, listening };
+}
 
-  // Escape closes the drawer, unless a dialog or menu over it is open and takes the key first. What was typed is kept.
+const PRESSED_BAR = "bg-secondary text-foreground hover:bg-secondary";
+
+// The top bar's way into the panel: how many threads are open, whether any wait on you, and whether Claude is there.
+export function ClaudeButton() {
+  const { threads, yours } = useThreads();
+  const connected = useChatStore(state => state.connected);
+  const { text, dot } = useClaudeStatus(connected);
+  const { chatOpen, setChatOpen, openDrawer } = useChatStore();
+  const open = threads.filter(t => t.root.status !== "draft" && !t.root.resolved).length;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className={cn("shrink-0", chatOpen && PRESSED_BAR)}
+      onClick={() => (chatOpen ? setChatOpen(false) : openDrawer("chat"))}
+      aria-pressed={chatOpen}
+      title={text}
+    >
+      <span aria-hidden className={cn("motion-status size-2 rounded-full", dot)} />
+      Claude{open ? ` (${open})` : ""}
+      {yours.length > 0 && (
+        <span title={`${yours.length} waiting on you`} className="size-2 rounded-full bg-primary">
+          <span className="sr-only">, {yours.length} waiting on you</span>
+        </span>
+      )}
+    </Button>
+  );
+}
+
+// Everything said with Claude and every draft note, beside the code rather than over it. page is a phone's whole
+// screen for it; otherwise it docks on the right of a wide window and slides over the page on a narrower one.
+export function ClaudePanel({ page = false }: { page?: boolean }) {
+  const { threads, archived, yours, drafts, latestReply } = useThreads();
+  const send = useSendDrafts();
+  const archive = useArchiveThread();
+  const owner = useIsOwner();
+  const connected = useChatStore(state => state.connected);
+  const { chatOpen, drawer, focus, setChatOpen, openDrawer, setFocus, openThread } = useChatStore();
+  const status = useClaudeStatus(connected);
+  const { prompting, permissions, busy, attention } = status;
+
+  // A permission prompt stops the session until someone answers it, so it opens the panel where the answer is.
+  const prompt = prompting ? permissions?.prompts[0]?.id : undefined;
   useEffect(() => {
-    if (!chatOpen) {
+    if (prompt) {
+      openDrawer("chat");
+    }
+  }, [prompt, openDrawer]);
+
+  // Escape closes the panel, unless a dialog or menu over it is open and takes the key first. What was typed is kept.
+  useEffect(() => {
+    if (!chatOpen || page) {
       return;
     }
     const onKey = (event: KeyboardEvent) => {
@@ -357,148 +400,130 @@ export function ChatDock({ connected }: { connected: boolean }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chatOpen, setChatOpen]);
+  }, [chatOpen, page, setChatOpen]);
 
-  // The thread the drawer has open, which the icon beside Close puts away or brings back.
+  if (!chatOpen && !page) {
+    return null;
+  }
+
+  // The thread the panel has open, which the icon beside Close puts away or brings back.
   const shown =
     drawer === "chat" && focus?.kind === "thread"
       ? [...threads, ...archived].find(t => t.root.id === focus.id && t.root.status !== "draft")?.root
       : undefined;
   const archiveLabel = shown?.archived ? "Unarchive this thread" : "Archive this thread";
 
-  const toggle = (which: "chat" | "notes") => (chatOpen && drawer === which ? setChatOpen(false) : openDrawer(which));
-
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 shadow-lg backdrop-blur">
-      <div className={PAGE_COLUMN}>
-        {chatOpen && (
-          <div className="motion-drawer">
-            <div className="border-b py-3">
-              <div className="flex items-center gap-2">
-                {drawer === "chat" && <h2 className="font-serif text-lg">Chat with Claude</h2>}
-                {drawer === "chat" && focus && (
-                  <Button size="sm" variant="ghost" className="h-7 px-2 md:hidden" onClick={() => setFocus(null)}>
-                    <ArrowLeft />
-                    All threads
-                  </Button>
-                )}
-                <span className="ml-auto flex items-center gap-1">
-                  {owner && shown && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={archive.isPending}
-                      onClick={() =>
-                        archive.mutate(
-                          { id: shown.id, archived: !shown.archived },
-                          // Putting a thread away goes back to the list; bringing one back stays on it.
-                          { onSuccess: () => !shown.archived && setFocus(null) },
-                        )
-                      }
-                      aria-label={archiveLabel}
-                      title={archiveLabel}
-                    >
-                      {shown.archived ? <ArchiveRestore /> : <Archive />}
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)} aria-label="Close">
-                    <X />
-                  </Button>
-                </span>
-              </div>
-              {drawer === "notes" ? (
-                <div className={cn("motion-fade", DRAWER_SCROLL)}>
-                  <NotesPanel embedded />
-                </div>
-              ) : (
-                // The list and the open thread scroll apart, so the thread can follow Claude's answers as they come.
-                <div className="motion-fade mt-1 grid gap-4 md:grid-cols-[17rem_minmax(0,1fr)]">
-                  <div className={cn(DRAWER_SCROLL, "mt-0", focus && "max-md:hidden")}>
-                    <ThreadList threads={threads} archived={archived} yours={yours} focus={focus} />
-                  </div>
-                  <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-                    <MessageScroller className={cn("h-auto min-w-0", !focus && "max-md:hidden")}>
-                      <MessageScrollerViewport className={cn(DRAWER_SCROLL, "mt-0 h-auto")}>
-                        <MessageScrollerContent className="min-h-0">
-                          <MessageScrollerItem>
-                            <Pane threads={threads} archived={archived} focus={focus} />
-                          </MessageScrollerItem>
-                        </MessageScrollerContent>
-                      </MessageScrollerViewport>
-                      <MessageScrollerButton className="bottom-2" />
-                    </MessageScroller>
-                  </MessageScrollerProvider>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
-          {prompting && permissions && <PermissionBar key={permissions.prompts[0]?.id} info={permissions} />}
-          <span className={cn("flex min-w-0 items-center gap-2 text-sm", prompting && "hidden")} aria-live="polite">
-            {busy && !attention ? (
-              <Thinking />
-            ) : (
-              <span
-                className={cn(
-                  "motion-status size-2 shrink-0 rounded-full",
-                  attention ? "animate-pulse bg-warning" : listening ? "bg-success" : connected ? "bg-warning" : "bg-danger",
-                )}
-              />
-            )}
-            <span className={cn("truncate", attention && "font-medium")} title={status}>
-              {status}
-            </span>
-          </span>
-          {latestReply && (
-            <button
-              key={latestReply.id}
-              type="button"
-              onClick={() => openThread(latestReply.replyTo ?? latestReply.id)}
-              className={cn(
-                // A phone has room for a few letters of it, which say nothing; the Chat button's count is there instead.
-                "min-w-0 max-w-md flex-1 cursor-pointer truncate text-left text-primary text-sm hover:underline max-sm:hidden",
-                arrived(latestReply.at) && "motion-swap",
-              )}
-            >
-              Claude: {firstLine(latestReply.text)}
-            </button>
+    <aside
+      aria-label="Claude"
+      className={cn(
+        "flex min-h-0 flex-col bg-card",
+        page
+          ? "min-h-[calc(100dvh-7rem)]"
+          : "motion-drawer fixed top-12 right-0 bottom-0 z-40 w-[min(100vw,28rem)] border-l shadow-lg xl:sticky xl:z-auto xl:h-[calc(100dvh-3rem)] xl:w-auto xl:shadow-none",
+      )}
+    >
+      <div className="grid gap-2 border-b px-4 py-3">
+        <div className="flex items-center gap-2">
+          {drawer === "chat" && focus ? (
+            <Button size="sm" variant="ghost" className="-ml-2 px-2" onClick={() => setFocus(null)}>
+              <ArrowLeft />
+              All threads
+            </Button>
+          ) : (
+            <h2 className="font-serif text-xl">Claude</h2>
           )}
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className={cn(chatOpen && drawer === "chat" && PRESSED)}
-              onClick={() => toggle("chat")}
-              aria-pressed={chatOpen && drawer === "chat"}
-            >
-              <MessageCircle />
-              Chat{open ? ` (${open})` : ""}
-              {yours.length > 0 && (
-                <span title={`${yours.length} waiting on you`} className="size-2 rounded-full bg-primary">
-                  <span className="sr-only">, {yours.length} waiting on you</span>
-                </span>
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={cn(chatOpen && drawer === "notes" && PRESSED)}
-              onClick={() => toggle("notes")}
-              aria-pressed={chatOpen && drawer === "notes"}
-            >
-              <NotebookPen />
-              Notes{drafts ? ` (${drafts})` : ""}
-            </Button>
-            {drafts > 0 && (
-              <Button size="sm" onClick={() => send.mutate()} disabled={send.isPending}>
-                <Send />
-                Send {drafts} {drafts === 1 ? "note" : "notes"}
+          <span className="ml-auto flex items-center gap-1">
+            {owner && shown && (
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={archive.isPending}
+                onClick={() =>
+                  archive.mutate(
+                    { id: shown.id, archived: !shown.archived },
+                    // Putting a thread away goes back to the list; bringing one back stays on it.
+                    { onSuccess: () => !shown.archived && setFocus(null) },
+                  )
+                }
+                aria-label={archiveLabel}
+                title={archiveLabel}
+              >
+                {shown.archived ? <ArchiveRestore /> : <Archive />}
               </Button>
             )}
-          </div>
+            {!page && (
+              <Button variant="ghost" size="icon" onClick={() => setChatOpen(false)} aria-label="Close">
+                <X />
+              </Button>
+            )}
+          </span>
         </div>
+        {prompting && permissions ? (
+          <PermissionBar key={permissions.prompts[0]?.id} info={permissions} />
+        ) : (
+          <p className="flex min-w-0 items-center gap-2 text-sm" aria-live="polite">
+            {busy && !attention ? <Thinking /> : <span className={cn("motion-status size-2 shrink-0 rounded-full", status.dot)} />}
+            <span className={cn("truncate", attention && "font-medium")} title={status.text}>
+              {status.text}
+            </span>
+          </p>
+        )}
+        {latestReply && !focus && (
+          <button
+            key={latestReply.id}
+            type="button"
+            onClick={() => openThread(latestReply.replyTo ?? latestReply.id)}
+            className={cn(
+              "min-w-0 cursor-pointer truncate text-left text-primary text-sm hover:underline",
+              arrived(latestReply.at) && "motion-swap",
+            )}
+          >
+            Claude: {firstLine(latestReply.text)}
+          </button>
+        )}
+        <Segmented
+          label="Claude's lists"
+          value={drawer}
+          onChange={openDrawer}
+          className="justify-self-start"
+          segments={[
+            { value: "chat", label: `Threads${threads.length ? ` (${threads.length})` : ""}` },
+            { value: "notes", label: `Notes${drafts ? ` (${drafts})` : ""}` },
+          ]}
+        />
       </div>
-    </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-3">
+        {drawer === "notes" ? (
+          <div className="motion-fade">
+            <NotesPanel embedded />
+          </div>
+        ) : focus ? (
+          <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+            <MessageScroller className="h-auto min-w-0">
+              <MessageScrollerViewport className="h-auto">
+                <MessageScrollerContent className="min-h-0">
+                  <MessageScrollerItem>
+                    <Pane threads={threads} archived={archived} focus={focus} />
+                  </MessageScrollerItem>
+                </MessageScrollerContent>
+              </MessageScrollerViewport>
+              <MessageScrollerButton className="bottom-2" />
+            </MessageScroller>
+          </MessageScrollerProvider>
+        ) : (
+          <ThreadList threads={threads} archived={archived} yours={yours} focus={focus} />
+        )}
+      </div>
+      {/* The Notes list has its own, beside Copy and Post. */}
+      {drafts > 0 && drawer !== "notes" && (
+        <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
+          <Button onClick={() => send.mutate()} disabled={send.isPending}>
+            <Send />
+            Send {drafts} {drafts === 1 ? "note" : "notes"}
+          </Button>
+        </div>
+      )}
+    </aside>
   );
 }

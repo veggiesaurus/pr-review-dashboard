@@ -41,7 +41,7 @@ const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digi
 function Where({ note }: { note: Message }) {
   const review = useReview().data;
   const label = shortLabel(note.anchor);
-  const face = onCode(note.anchor) ? "font-mono text-xs" : "text-[13px]";
+  const face = onCode(note.anchor) ? "font-mono text-xs" : "text-sm";
   if (note.anchor.outdated || note.anchor.kind === "general") {
     return <span className={cn("min-w-0 text-muted-foreground [overflow-wrap:anywhere]", face)}>{label}</span>;
   }
@@ -397,12 +397,12 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
               title="Asks Claude to fix every sent note still open, a guest's included"
             >
               <Wrench />
-              Fix the open notes ({leftOpen})
+              Fix open notes ({leftOpen})
             </Button>
           )}
           {canPost && (
             <Button size="sm" variant="outline" onClick={() => setPosting(true)} disabled={pickedNow.length === 0}>
-              Post {pickedNow.length || ""} to GitHub…
+              Post to GitHub{pickedNow.length ? ` (${pickedNow.length})` : ""}…
             </Button>
           )}
           <Button
@@ -422,7 +422,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
           )}
           <Button size="sm" variant={listening ? "default" : "outline"} onClick={sendAll} disabled={drafts.length === 0 || send.isPending}>
             <Send />
-            {drafts.length ? `Send ${plural(drafts.length, "note")} to Claude` : "No notes to send"}
+            {drafts.length ? `Send ${plural(drafts.length, "note")}` : "No notes to send"}
           </Button>
         </div>
       </div>
@@ -457,7 +457,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
             </EmptyMedia>
             <EmptyTitle>No notes yet</EmptyTitle>
             <EmptyDescription>
-              Notes you leave on lines, sections or anything with an Ask Claude button collect here until you send them.
+              Click a line's number, or any Ask Claude button, and add to notes. They collect here until you send them.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

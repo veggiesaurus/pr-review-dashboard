@@ -16,7 +16,7 @@ import { usePeople } from "src/queries/people.query";
 import { useReview } from "src/queries/review.query";
 import { cn } from "src/utils/cn";
 
-const NOTE = "mt-1.5 text-[13.5px] text-muted-foreground";
+const NOTE = "mt-1.5 text-sm text-muted-foreground";
 
 // The newest quiz the owner asked for on one PR: the request, Claude's line on what it covers, and its questions.
 // One whose code a rebuild changed has lapsed, and is counted but not asked.
@@ -43,7 +43,7 @@ export function QuizButton({ layer }: { layer: number }) {
   }
   return (
     <>
-      {ask.isError && <span className="text-danger text-sm">{errorText(ask.error, "That didn't send.")}</span>}
+      {ask.isError && <span className="text-danger text-sm">{errorText(ask.error, "That didn't go through.")}</span>}
       <Button
         size="sm"
         variant="outline"
@@ -124,7 +124,7 @@ function Question({ question, layer }: { question: Message; layer: number }) {
           );
         })}
       </div>
-      {pick.isError && <p className="mt-1 text-danger">{errorText(pick.error, "That didn't send.")}</p>}
+      {pick.isError && <p className="mt-1 text-danger">{errorText(pick.error, "That didn't go through.")}</p>}
       {solved ? (
         <p className="mt-1.5">
           <Prose text={why ?? ""} layer={layer} /> {code}

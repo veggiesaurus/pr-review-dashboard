@@ -1,7 +1,10 @@
+import { ChevronDown } from "lucide-react";
 import type { Checks, Layer, Ready } from "shared/payload";
-
+import { LineCount } from "src/components/guide/LineCount";
 import { useChecks, useConflicts } from "src/components/ready/checks";
 import { Badge, type Tone } from "src/components/ui/badge";
+import { Button } from "src/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { useLayer, useReview } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
 import { reveal } from "src/utils/anchors";
@@ -143,7 +146,7 @@ export function ChipRow({ chips, small, className }: { chips: Chip[]; small?: bo
           tone={TONES[chip.tone]}
           title={chip.title}
           data-status={chip.status}
-          className={cn(small && "px-1.5 py-px text-[11.5px]", chip.status && "motion-status")}
+          className={cn(small && "px-1.5 py-px text-xs", chip.status && "motion-status")}
         >
           {chip.status === "pending" && <span aria-hidden className="motion-pending size-1.5 rounded-full bg-current" />}
           {chip.label}
@@ -196,5 +199,56 @@ export function ReadyChips({ layer }: { layer: number }) {
       )}
       <ChipRow chips={readyChips(shown, checks)} className="contents" />
     </span>
+  );
+}
+
+// The ready check on the Overview, scrolled into view from wherever the reader is.
+function showReadyCheck() {
+  useViewStore.getState().setTab("overview");
+  const until = performance.now() + 3000;
+  const look = () => {
+    const region = document.querySelector<HTMLElement>("[aria-label='Before you mark it ready']");
+    if (region) {
+      region.scrollIntoView({ block: "start" });
+    } else if (performance.now() < until) {
+      requestAnimationFrame(look);
+    }
+  };
+  requestAnimationFrame(look);
+}
+
+// The top bar's one pill for every chip: how many want a look, which opens to the chips themselves.
+export function ReadyPill({ layer }: { layer: number }) {
+  const shown = useLayer(layer);
+  const checks = useChecks(shown);
+  const conflicts = useConflicts(shown);
+  const stack = useReview().data?.stack;
+  if (!shown) {
+    return null;
+  }
+  const rebase = Boolean(stack?.layers.find(row => row.number === layer)?.needsRebase);
+  const chips = [...conflictChips(shown, conflicts), ...readyChips(shown, checks)];
+  const open = chips.filter(chip => chip.tone !== "good");
+  const bad = rebase || open.some(chip => chip.tone === "bad");
+  const label = open.length + (rebase ? 1 : 0) ? `${open.length + (rebase ? 1 : 0)} to check` : "Nothing to check";
+  return (
+    <Popover>
+      <PopoverTrigger className="shrink-0 cursor-pointer rounded-full" aria-label={`${label} before it's ready`}>
+        <Badge tone={bad ? "danger" : open.length ? "warning" : "success"} className="gap-1 hover:opacity-85">
+          {label}
+          <ChevronDown aria-hidden className="size-3" />
+        </Badge>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="grid w-[26rem] max-w-[calc(100vw-2rem)] gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <LineCount layer={layer} />
+          <span className="text-muted-foreground">lines changed</span>
+        </div>
+        <ReadyChips layer={layer} />
+        <Button size="sm" variant="outline" className="justify-self-start" onClick={showReadyCheck}>
+          Open the ready check
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

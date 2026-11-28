@@ -103,8 +103,11 @@ async function open(link, hash = "", viewport = { width: 1400, height: 900 }) {
     }
   });
   await page.goto(`${owned.url}${hash}`);
-  await page.waitForSelector("[role=tablist]");
+  await loaded(page);
 }
+
+// The page's top bar, which a phone draws too, is there once the review has loaded.
+const loaded = tab => tab.getByRole("banner").waitFor();
 
 // React draws after the event, so each check looks again for a few seconds before it fails.
 async function check(what, probe, ok = Boolean) {
@@ -126,7 +129,36 @@ async function check(what, probe, ok = Boolean) {
 }
 
 const count = selector => page.locator(selector).count();
-const tab = name => page.getByRole("tab", { name, exact: true }).click();
+// Overview is a tab; Sections and Files are the two ways of showing the Changes tab.
+const tab = async name => {
+  if (name === "Overview") {
+    return page.getByRole("tab", { name, exact: true }).click();
+  }
+  await page.getByRole("tab", { name: "Changes", exact: true }).click();
+  await page.getByRole("group", { name: "Show the changes" }).getByRole("button", { name, exact: true }).click();
+};
+const outline = () => page.getByRole("navigation", { name: "Outline" });
+const panel = () => page.getByRole("complementary", { name: "Claude" });
+// Opens the Claude panel from the top bar's button, if it isn't open, on its list of threads or of notes.
+const claude = async (list = "Threads") => {
+  if (!(await panel().isVisible())) {
+    await page
+      .getByRole("banner")
+      .getByRole("button", { name: /^Claude/ })
+      .click();
+  }
+  await panel()
+    .getByRole("group", { name: "Claude's lists" })
+    .getByRole("button", { name: new RegExp(`^${list}`) })
+    .click();
+};
+// The panel keeps the thread it last had open; this goes back to the list.
+const allThreads = async () => {
+  const back = panel().getByRole("button", { name: "All threads" });
+  if (await back.isVisible()) {
+    await back.click();
+  }
+};
 const h1 = () => page.locator("h1").textContent();
 const pick = () => page.getByRole("combobox", { name: "Which part of the change to show" });
 const choose = async name => {
@@ -147,7 +179,8 @@ const typed = box =>
 // sometimes leave text behind in headless Chromium.
 const clear = box => box.last().evaluate(element => element.editor.commands.clearContent(true));
 const composerBox = () => page.getByRole("textbox", { name: /^Note or question about/ });
-const followUp = () => page.getByRole("textbox", { name: /follow.?up/i });
+// A settled thread's box reopens it, and is named "Reopen it with a reply to Claude".
+const followUp = () => page.getByRole("textbox", { name: /reply to Claude$/i });
 // A 1x1 PNG, dropped as a file would be from Finder.
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const dropImage = locator =>
@@ -250,12 +283,12 @@ try {
     .fill("And the RSS feed?", { timeout: 2000 })
     .catch(() => {});
   await page
-    .getByRole("button", { name: "Add note", exact: true })
+    .getByRole("button", { name: "Add to notes", exact: true })
     .click({ timeout: 2000 })
     .catch(() => {});
   await summary.getByRole("button", { name: "Product" }).click();
-  await page.getByRole("button", { name: /^Notes/ }).click();
-  await page
+  await claude("Notes");
+  await panel()
     .getByRole("button", { name: /^an item of the summary for QA/ })
     .last()
     .click({ timeout: 2000 })
@@ -265,19 +298,20 @@ try {
     () => summary.getByRole("button", { name: "QA" }).getAttribute("aria-pressed"),
     pressed => pressed === "true",
   );
-  await page.getByRole("button", { name: /^Notes/ }).click();
-  await page.locator("li", { hasText: "And the RSS feed?" }).last().getByRole("button", { name: "Delete" }).click();
+  await claude("Notes");
+  await panel().locator("li", { hasText: "And the RSS feed?" }).last().getByRole("button", { name: "Delete" }).click();
   await page.keyboard.press("Escape");
-  await check(
-    "the size chip counts the lines outside tests and names the test lines beside them",
-    () => page.locator("header").first().textContent(),
-    text => text.includes("15 lines in 4 files, plus 9 in 1 test file: fits one sitting"),
+  // The chips are behind the top bar's readiness pill.
+  await page
+    .getByRole("banner")
+    .getByRole("button", { name: /before it's ready$/ })
+    .click();
+  const chips = () => page.getByRole("dialog").textContent();
+  await check("the size chip counts the lines outside tests and names the test lines beside them", chips, text =>
+    text.includes("15 lines in 4 files, plus 9 in 1 test file: fits one sitting"),
   );
-  await check(
-    'the header chips have "new since"',
-    () => page.locator("header").first().textContent(),
-    text => text.includes("new since"),
-  );
+  await check('the readiness pill\'s chips have "new since"', chips, text => text.includes("new since"));
+  await page.keyboard.press("Escape");
 
   // Try by hand is a checklist the server keeps, and a step takes a note, here marked as a nit. Both are undone after.
   const tryBlock = page.getByRole("region", { name: "Before you mark it ready" }).locator("details", { hasText: "Try by hand" });
@@ -288,11 +322,11 @@ try {
   await check("a ticked step to try stays ticked after a reload", tried, text => text.endsWith("Try by hand (1 of 1)"));
   await tryBlock.locator("button[data-ask]").click();
   await page.getByRole("textbox", { name: /^Note or question about a thing to try by hand/ }).fill("The old link 404s.");
-  await page.getByRole("group", { name: "What the note asks for" }).getByRole("button", { name: "Nit" }).click();
-  await page.getByRole("button", { name: "Add note", exact: true }).click();
-  await page.getByRole("button", { name: /^Notes/ }).click();
-  // The notes are on Overview as well as in the drawer, which comes last and is the one in reach.
-  const labelled = page.locator("li", { hasText: "The old link 404s." }).last();
+  await page.getByRole("button", { name: /^What the note asks for/ }).click();
+  await page.getByRole("menuitem", { name: /^Nit/ }).click();
+  await page.getByRole("button", { name: "Add to notes", exact: true }).click();
+  await claude("Notes");
+  const labelled = panel().locator("li", { hasText: "The old link 404s." }).last();
   await check("a note on a step, marked as a nit, says so in the notes", () => labelled.getByText("Nit", { exact: true }).count());
   await labelled.getByRole("button", { name: "Delete" }).click();
   await check(
@@ -300,13 +334,13 @@ try {
     () => labelled.count(),
     n => n === 0,
   );
-  // The drawer's box belongs to what it is about: Ask Claude on another thing opens that thing's own text.
+  // The panel's box belongs to what it is about: Ask Claude on another thing opens that thing's own text.
   const ask = key => page.locator(`button[data-ask='${key}']`).first().click();
   await ask("try:0:0");
   await composerBox().fill("About the step.");
   await ask("claim:0:missing:0");
   await check(
-    "text typed about one thing doesn't follow the drawer to another",
+    "text typed about one thing doesn't follow the panel to another",
     () => typed(composerBox()),
     text => text === "",
   );
@@ -335,17 +369,35 @@ try {
   await check("a hash naming a layer the review doesn't hold leaves the page where it was", () =>
     page.getByRole("region", { name: "Before you mark it ready" }).count(),
   );
-  // A reload puts the drawer back on the review as a whole, where the checks below expect it.
+  // A reload puts the panel back on the review as a whole, where the checks below expect it.
   await page.reload();
   await tryBlock.getByRole("checkbox").uncheck();
   await check("and the step unticks", tried, text => text.endsWith("Try by hand (0 of 1)"));
 
-  // The diagrams, in a carousel, drawn in the theme's colours; each opens full screen, where a sequence diagram folds.
-  await page.keyboard.press("4");
+  // The diagrams, each a card in the sections, drawn in the theme's colours; each opens full screen, where a sequence
+  // diagram folds. 1, 2 and 3 are Overview, Changes by section and Changes by file.
+  const showing = () =>
+    page
+      .getByRole("group", { name: "Show the changes" })
+      .getByRole("button", { pressed: true })
+      .textContent({ timeout: 500 })
+      .catch(() => null);
+  await page.keyboard.press("3");
+  await check("3 opens the changes by file", showing, text => text === "Files");
+  await page.keyboard.press("1");
+  await check("1 goes back to the Overview", () => page.getByRole("region", { name: "Before you mark it ready" }).count());
+  await page.keyboard.press("2");
+  await check("2 opens the changes by section", showing, text => text === "Sections");
+  await page.keyboard.press("3");
+  const { layers: workLayers } = await (await fetch(`${work.origin}/api/review`, { headers: auth })).json();
+  const workLayer = workLayers[0];
+  await page.evaluate(id => {
+    location.hash = `#${id}/visualize`;
+  }, workLayer.id);
   await check(
-    "4 opens the Visualize tab, which draws the first diagram",
-    () => count("[data-diagram='0'] .prg-diagram svg"),
-    n => n === 1,
+    "a link to the old Visualize tab opens the sections, which draw the first diagram",
+    async () => [await showing(), await count("[data-diagram='0'] .prg-diagram svg")],
+    ([text, drawn]) => text === "Sections" && drawn === 1,
   );
   const actorFill = () =>
     page
@@ -362,18 +414,31 @@ try {
   await check("and back in the light ones", actorFill, fill => fill === lightFill);
   await modes.getByRole("radio", { name: "System" }).click();
   await page.keyboard.press("Escape");
-  const titles = page.getByRole("navigation", { name: "Diagrams" });
-  await titles.getByRole("button", { name: /^02/ }).click();
+  // A diagram sits above the first shown section it covers, or above them all when it covers none that shows.
+  const shownSectionIndexes = await page.locator(SECTION).evaluateAll(sections => sections.map(s => Number(s.dataset.section)));
+  const homes = workLayer.diagrams.map(diagram => diagram.sections.map(n => n - 1).find(i => shownSectionIndexes.includes(i)) ?? "top");
   await check(
-    "each diagram is named above the slide, and picking one shows it in its place",
+    "each diagram is a card drawn above the first section it covers",
+    () =>
+      page
+        .locator("article[data-diagram]")
+        .evaluateAll(cards => cards.map(card => card.closest("section[data-section]")?.dataset.section ?? "top")),
+    seen => seen.length === homes.length && seen.every((home, i) => home === String(homes[i])),
+  );
+  const secondDiagram = workLayer.diagrams[1].title;
+  await outline().getByRole("button", { name: secondDiagram, exact: true }).click();
+  await check(
+    "the outline names each diagram, and picking one scrolls to its card, every card drawn in place",
     async () => [
-      await titles.locator("span.ml-auto").textContent(),
+      await page.locator("article[data-diagram='1']").evaluate(card => {
+        const { top } = card.getBoundingClientRect();
+        return top >= 0 && top < innerHeight;
+      }),
       await count("[data-diagram] .prg-diagram svg"),
       await count("[data-diagram='1'] .node.changed"),
     ],
-    ([text, drawn, marked]) => text === "2 / 2" && drawn === 1 && marked === 1,
+    ([there, drawn, marked]) => there && drawn === 2 && marked === 1,
   );
-  await titles.getByRole("button", { name: /^01/ }).click();
   await page.getByRole("button", { name: "Open Opening a post full screen" }).click();
   const viewer = page.locator("[data-viewer]");
   const drawnHeight = () =>
@@ -393,14 +458,14 @@ try {
     () => viewer.locator("text.prg-fold[role=button]").count(),
     n => n === 5,
   );
-  await viewer.getByRole("button", { name: "Fold all blocks", exact: true }).click();
+  await viewer.getByRole("button", { name: "Fold all", exact: true }).click();
   await check("Fold all shrinks it to its headings", drawnHeight, height => height !== null && height < full);
   await check(
     "each saying what it holds",
     () => viewer.locator("text.prg-fold-count").allTextContents(),
     texts => texts.join() === "2 cases,2 steps",
   );
-  await viewer.getByRole("button", { name: "Unfold all blocks", exact: true }).click();
+  await viewer.getByRole("button", { name: "Unfold all", exact: true }).click();
   await check("Unfold all draws it whole again", drawnHeight, height => height === full);
   await viewer.getByRole("button", { name: "Fold this section" }).nth(1).click();
   await check("an else section folds by itself", drawnHeight, height => height !== null && height < full);
@@ -435,13 +500,14 @@ try {
     n => n === 0,
   );
 
-  // The template is one page; here the sections are the Guide tab.
-  await tab("Guide");
+  // The template is one page; here the sections are the Changes tab, shown by section.
+  await tab("Sections");
   await page.waitForSelector(SECTION);
-  // A jump lights up the rows it lands on, with a bar down their edge, rather than outlining the file's card.
-  await page.locator(`${SECTION} a[href^='#f']`).first().click();
+  // A jump lights up the rows it lands on, with a bar down their edge, rather than outlining the file's card. A
+  // section's text is in the outline, opened under the section in view.
+  await outline().locator("a[href^='#f']").first().click();
   await check(
-    "a link in a section lights up rows, not the card",
+    "a link in a section's text lights up rows, not the card",
     () => page.locator("[data-flash]").evaluateAll(marked => marked.map(element => element.tagName).join()),
     tags => tags !== "" && tags.split(",").every(tag => tag === "TBODY" || tag === "TR"),
   );
@@ -564,7 +630,7 @@ try {
   await line.hover();
   await line.getByRole("button", { name: "Note on line 5" }).click();
   await page.getByRole("textbox", { name: /^Note or question about/ }).fill("Why /blog and not /posts?");
-  await page.getByRole("button", { name: "Add note", exact: true }).click();
+  await page.getByRole("button", { name: "Add to notes", exact: true }).click();
   // A note is a draft held by the server until sent, where the template keeps it in the browser.
   await check(
     "a note shows under its line",
@@ -572,7 +638,9 @@ try {
     n => n === 1,
   );
 
-  await page.getByRole("button", { name: /^Chat/ }).click();
+  await claude("Threads");
+  await allThreads();
+  await panel().getByRole("button", { name: "Ask Claude about the review as a whole" }).click();
   // The owner's chat box offers the skills the session listed after /.
   const askBox = page.getByRole("textbox", { name: "Ask Claude about this review" });
   await askBox.pressSequentially("/rev");
@@ -606,6 +674,7 @@ try {
     () => page.locator("img[alt='Attached screenshot']").evaluateAll(images => images.map(image => image.naturalWidth)),
     widths => widths.length === 1 && widths[0] === 1,
   );
+  await allThreads();
   await threadList()
     .getByRole("button", { name: /Is this safe to merge/ })
     .click();
@@ -678,14 +747,25 @@ try {
   await check("the button is free again once Claude has answered", () =>
     page.getByRole("button", { name: "Ask Claude for a review" }).isEnabled(),
   );
-  const newest = page.getByRole("button", { name: /^Claude: Act on the first/ });
-  await check("Claude's newest answer shows in the bottom bar", () => newest.count());
+  await claude("Threads");
+  await allThreads();
+  const newest = panel().getByRole("button", { name: /^Claude: Act on the first/ });
+  await check("Claude's newest answer shows at the top of the Claude panel", () => newest.count());
   await newest.click();
+  await page.getByText("Act on the first; the second is a nit.").first().waitFor();
+  await allThreads();
   await check(
     "and leaves it once its thread has been on screen",
-    () => page.getByRole("button", { name: /^Claude: / }).count(),
+    () =>
+      panel()
+        .getByRole("button", { name: /^Claude: / })
+        .count(),
     n => n === 0,
   );
+  await threadList()
+    .locator("button", { hasText: asked.text.split("\n")[0].slice(0, 30) })
+    .first()
+    .click();
   const steps = page.getByRole("button", { name: "2 steps Claude took" });
   await check("the steps Claude took fold into a line under the request", () => steps.count());
   await steps.click();
@@ -697,7 +777,10 @@ try {
     ask: [{ question: "Fix both?", options: ["Both", "Only the first"] }],
   });
   await page.getByRole("radio", { name: "Only the first" }).check();
-  await page.getByRole("button", { name: "Send answer" }).click();
+  await page
+    .locator("form", { has: page.getByRole("radio", { name: "Only the first" }) })
+    .getByRole("button", { name: "Reply", exact: true })
+    .click();
   await check(
     "a question's answer goes back to the thread as the user's follow-up",
     async () => (await (await fetch(`${work.origin}/api/messages`, { headers: auth })).json()).at(-1),
@@ -705,7 +788,7 @@ try {
   );
   await check(
     "and the question leaves once it is answered",
-    () => page.getByRole("button", { name: "Send answer" }).count(),
+    () => page.getByRole("radio", { name: "Only the first" }).count(),
     n => n === 0,
   );
   await page.keyboard.press("Escape");
@@ -717,14 +800,14 @@ try {
   await check(
     "the review counts its findings by where they stand",
     () => found.textContent(),
-    text => text?.includes("3 open") && text.includes("Fix the recommended (1)"),
+    text => text?.includes("3 open") && text.includes("Fix recommended (1)"),
   );
-  await found.getByRole("button", { name: "Fix the recommended (1)" }).click();
+  await found.getByRole("button", { name: "Fix recommended (1)" }).click();
   const finding = async summary =>
     (await (await fetch(`${work.origin}/api/messages`, { headers: auth })).json()).find(m => m.text.startsWith(summary));
   const unescaped = await finding("The slug isn't escaped.");
   await check(
-    "Fix the recommended asks for each open recommended finding at once",
+    "Fix recommended asks for each open recommended finding at once",
     async () => (await (await fetch(`${work.origin}/api/messages`, { headers: auth })).json()).at(-1),
     last => last?.text === "Fix this." && last.replyTo === unescaped.id,
   );
@@ -773,9 +856,9 @@ try {
     ([fix, dismiss]) => fix === 1 && dismiss === 1,
   );
   await check(
-    "and still counts for Fix the recommended",
+    "and still counts for Fix recommended",
     () => found.textContent(),
-    text => text?.includes("Fix the recommended (1)"),
+    text => text?.includes("Fix recommended (1)"),
   );
   await asSession("replies", { replyTo: hardcoded.id, state: "declined", text: "Left as it is: the prefix lives in one place." });
   await check(
@@ -783,16 +866,19 @@ try {
     () => found.textContent(),
     text => text?.includes("1 fixed, 1 declined, 1 dismissed") && !text.includes("Act on this"),
   );
+  await claude("Threads");
+  await allThreads();
   await page.getByRole("button", { name: `Archive every thread of review ${reviewNo}` }).click();
   await check(
     "archiving a review puts all of its threads away",
     () => found.count(),
     n => n === 0,
   );
-  // Claude settles a thread while a follow-up is half typed: the text stays, through the drawer closing and a look at the notes.
+  // Claude settles a thread while a follow-up is half typed: the text stays, through the panel closing and a look at the notes.
   await threadList()
     .getByRole("button", { name: /Is this safe to merge/ })
     .click();
+  await panel().getByRole("button", { name: "Reply", exact: true }).click();
   await followUp().last().fill("And is it safe to dep");
   const safe = (await said()).find(m => m.text === "Is this safe to merge?");
   await asSession("replies", { replyTo: safe.id, state: "answered", text: "Yes, once CI is green." });
@@ -802,14 +888,14 @@ try {
     ([answer, text]) => answer > 0 && text === "And is it safe to dep",
   );
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: /^Chat/ }).click();
+  await claude("Threads");
   await check(
-    "it is still there after the drawer closes and opens",
+    "it is still there after the panel closes and opens",
     () => typed(followUp()),
     text => text === "And is it safe to dep",
   );
-  await page.getByRole("button", { name: /^Notes/ }).click();
-  await page.getByRole("button", { name: /^Chat/ }).click();
+  await claude("Notes");
+  await claude("Threads");
   await check(
     "and after a look at the notes",
     () => typed(followUp()),
@@ -864,7 +950,7 @@ try {
     n => n === 1,
   );
   await page.keyboard.press("Escape");
-  await tab("Guide");
+  await tab("Sections");
   await page.waitForSelector(SECTION);
 
   // The checkout moves on from what was reviewed: one line changed, one added. Each place gets its own preview.
@@ -957,7 +1043,7 @@ try {
   await page.close();
   // A new page here is a new browser profile, as another device would be.
   await open(work.link);
-  await tab("Guide");
+  await tab("Sections");
   await page.waitForSelector(SECTION);
   await check("a tick shows in another browser", () => page.locator("input[data-tick='card']").first().isChecked());
   // A tick this browser kept before the server did goes up on the next load.
@@ -992,12 +1078,12 @@ try {
   // The same person on a second page is not shown to themselves. A guest can't reach a tunnel host from here, so one
   // is faked at the presence endpoint and the walk checks how the page draws and uses it.
   await open(work.link);
-  await tab("Guide");
+  await tab("Sections");
   await page.waitForSelector(SECTION);
   const other = await ownerPage(work.link);
   const second = other.tab;
   await second.goto(other.url);
-  await second.waitForSelector("[role=tablist]");
+  await second.getByRole("banner").waitFor();
   await page.waitForTimeout(1200);
   await check(
     "the same person on two pages shows no avatar",
@@ -1021,10 +1107,10 @@ try {
   await page.route("**/api/presence", route => route.fulfill({ json: [entry] }));
   await page.reload();
   await page.waitForSelector(SECTION);
-  const rail = page.getByRole("navigation", { name: "Sections" });
+  const rail = outline().getByRole("list", { name: "Sections" });
   await check(
-    "the rail shows the guest beside their section",
-    () => rail.locator("div:has(> button[aria-label^='02']) [data-presence=gus]").count(),
+    "the outline shows the guest beside their section",
+    () => rail.locator("button[aria-label^='02'] [data-presence=gus]").count(),
     n => n === 1,
   );
   await page.evaluate(() => window.scrollTo({ top: 0 }));
@@ -1100,13 +1186,13 @@ try {
   page = asOwner.tab;
   await page.route("**/api/me", route => route.fulfill({ json: asGuest }));
   await page.goto(asOwner.url);
-  await page.waitForSelector("[role=tablist]");
+  await page.getByRole("banner").waitFor();
   await check(
     "a guest has no Rebuild or Share button",
-    () => count("button:text-is('Rebuild'), button:text-is('Share')"),
+    () => page.getByRole("button", { name: /^(Rebuild|Share)/ }).count(),
     n => n === 0,
   );
-  await page.getByRole("button", { name: /^Chat/ }).click();
+  await claude("Threads");
   await threadList()
     .getByRole("button", { name: /Is this safe to merge/ })
     .click();
@@ -1131,15 +1217,29 @@ try {
     }
   });
   await page.reload();
-  await tab("Guide");
+  // A phone has its places along the bottom, and shows the changes one section at a time.
+  const places = page.getByRole("navigation", { name: "Places" });
+  await places.getByRole("button", { name: "Changes", exact: true }).click();
   await page.waitForSelector(SECTION);
   await check("at a phone's width nothing runs off the side", () =>
     page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
   );
-  // The first card was ticked above and is folded, so the line is one that shows.
+  await check(
+    "a phone shows one section at a time",
+    async () => [await count(SECTION), await page.getByText(/^Section 1 of \d+$/).count()],
+    ([sections, step]) => sections === 1 && step === 1,
+  );
+  // The first card was ticked above and folds, so the file opened is one that isn't.
+  await page.getByRole("list", { name: "Open a file" }).getByRole("button").filter({ hasNotText: "✓" }).first().click();
+  const backToSection = page.getByRole("button", { name: "Section 01", exact: true });
+  await check(
+    "a file opens on the whole screen, with a way back to its section",
+    async () => [await count(CARD), await backToSection.count()],
+    ([cards, back]) => cards === 1 && back === 1,
+  );
   await page.locator("td[data-ln][data-line^='R']:visible").first().click();
   await composerBox().fill("A note from the phone.");
-  await page.getByRole("button", { name: "Add note", exact: true }).click();
+  await page.getByRole("button", { name: "Add to notes", exact: true }).click();
   const phoneNote = page.locator(NOTE, { hasText: "A note from the phone." });
   await check(
     "a tap on a line's number takes a note there",
@@ -1147,10 +1247,13 @@ try {
     n => n === 1,
   );
   await phoneNote.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("button", { name: /^Chat/ }).click();
+  await backToSection.click();
+  await page.getByRole("button", { name: "Next section", exact: true }).click();
+  await check("Next section steps to the next one", () => page.getByText(/^Section 2 of \d+$/).count());
+  await places.getByRole("button", { name: /^Claude/ }).click();
   const back = page.getByRole("button", { name: "All threads" });
   await check(
-    "the drawer opens on the list of threads alone",
+    "the Claude place opens on the list of threads alone",
     async () => [await threadList().isVisible(), await back.count()],
     ([list, button]) => list && button === 0,
   );
@@ -1164,7 +1267,6 @@ try {
   );
   await back.click();
   await check("and All threads goes back to the list", () => threadList().isVisible());
-  await page.keyboard.press("Escape");
   const status = text => page.locator("[aria-live=polite]", { hasText: text }).count();
   down = true;
   for (const socket of sockets) {
@@ -1180,13 +1282,13 @@ try {
     // Claude tries a step when the owner asks, and what it found shows under the step.
     await open(work.link);
     const tryList = page.getByRole("region", { name: "Before you mark it ready" }).locator("details", { hasText: "Try by hand" }).first();
-    await tryList.getByRole("button", { name: "Have Claude try them" }).click();
+    await tryList.getByRole("button", { name: "Ask Claude to try them" }).click();
     await check("with no session listening, a step asked for says it waits for one", () =>
       tryList.getByText("Waiting for a session to try this").count(),
     );
     await check(
       "and the button goes, since the step says it itself",
-      () => tryList.getByRole("button", { name: /Have Claude try/ }).count(),
+      () => tryList.getByRole("button", { name: /Ask Claude to try/ }).count(),
       n => n === 0,
     );
     const asked = (await said()).findLast(m => m.text === "Try this and show what happened.");
@@ -1212,15 +1314,21 @@ try {
     );
     await check(
       "and a step tried at this head isn't offered again",
-      () => tryList.getByRole("button", { name: /Have Claude try/ }).count(),
+      () => tryList.getByRole("button", { name: /Ask Claude to try/ }).count(),
       n => n === 0,
     );
 
     // The owner ticks the routine section. A guest can't reach a tunnel host from here, so the owner's page is told it
     // is a guest whose own ticks are none and who sees the owner's.
-    await tab("Guide");
+    await tab("Sections");
     await page.waitForSelector(SECTION);
-    const inSection = page.locator("section[data-section='0'] [data-step]");
+    // A section's text is in the outline, opened under the section picked there.
+    const openSection = n =>
+      outline()
+        .getByRole("button", { name: new RegExp(`^0${n} `) })
+        .click();
+    await openSection(1);
+    const inSection = outline().locator("[data-step]");
     await check(
       "the step shows in the section its link points into, with what Claude found folded under it",
       async () => [
@@ -1229,12 +1337,18 @@ try {
       ],
       ([step, tried]) => step === 1 && tried === 1,
     );
+    await openSection(2);
     await check(
       "and in no other section",
-      () => page.locator("section[data-section='1'] [data-step]").count(),
-      n => n === 0,
+      async () => [
+        await outline()
+          .getByText(/^0?2 \/ 0?2$/)
+          .count(),
+        await inSection.count(),
+      ],
+      ([second, steps]) => second === 1 && steps === 0,
     );
-    await page.locator("section[data-section='1'] input[data-tick='section']").check();
+    await outline().locator("input[data-tick='section']").check();
     const ownTicks = await (await fetch(`${work.origin}/api/ticks`, { headers: auth })).json();
     await page.close();
     const guestView = await ownerPage(work.link);
@@ -1246,7 +1360,7 @@ try {
     await page.route("**/api/ticks/people", route => route.fulfill({ json: [{ role: "owner", person: owner, keys: ownTicks }] }));
     await page.route("**/api/ticks", route => (route.request().method() === "GET" ? route.fulfill({ json: [] }) : route.continue()));
     await page.goto(guestView.url);
-    await page.waitForSelector("[role=tablist]");
+    await page.getByRole("banner").waitFor();
     const look = page
       .getByRole("region", { name: "Before you mark it ready" })
       .locator("details", { hasText: "Where a second look matters" });
@@ -1254,10 +1368,11 @@ try {
     await check("and how much the owner has reviewed", () =>
       look.getByText("The owner has reviewed 1 of 2 sections.", { exact: false }).count(),
     );
-    await tab("Guide");
+    await tab("Sections");
     await page.waitForSelector(SECTION);
     const routine = page.locator("section[data-section='1']");
-    await check("a routine section says who reviewed it", () => routine.getByText("@owner (owner) has reviewed this").count());
+    await outline().getByRole("button", { name: /^02 / }).click();
+    await check("a routine section says who reviewed it", () => outline().getByText("@owner (owner) has reviewed this").count());
     await check(
       "and its cards start folded for a guest, saying why",
       async () => [
@@ -1295,10 +1410,10 @@ try {
       text: "That changes how every link is built.",
       ask: [{ question: "Change it?", options: ["Yes", "No"], owner: true }],
     });
-    const dock = page.locator("div.fixed.bottom-0");
-    const mine = () => dock.locator(`#t-${note.id}`);
+    const mine = () => panel().locator(`#t-${note.id}`);
     const openMine = async () => {
-      await dock.getByRole("button", { name: /^Chat/ }).click();
+      await claude("Threads");
+      await allThreads();
       await threadList()
         .getByRole("button", { name: /Escape the slug first/ })
         .first()
@@ -1309,12 +1424,13 @@ try {
       () => page.title(),
       title => /^\(\d+\) /.test(title),
     );
-    await openMine();
-    await check("the drawer lists what waits on the reader first", () =>
+    await claude("Threads");
+    await check("the panel lists what waits on the reader first", () =>
       threadList()
         .getByText(/^Waiting on you \(\d+\)$/)
         .count(),
     );
+    await openMine();
     await check("and the thread says it is the reader's turn", () => mine().getByText("Your turn", { exact: true }).count());
     await asOwner("messages", { kind: "post", text: "Looking at this now.", replyTo: note.id });
     await check(
@@ -1324,14 +1440,19 @@ try {
     );
     await page.keyboard.press("Escape");
 
-    await dock.getByRole("button", { name: /^Notes/ }).click();
-    await dock.getByRole("button", { name: /^Fix the open notes \(\d+\)$/ }).click();
-    await check("Fix the open notes asks for the note on its own thread", async () =>
+    await claude("Notes");
+    await panel()
+      .getByRole("button", { name: /^Fix open notes \(\d+\)$/ })
+      .click();
+    await check("Fix open notes asks for the note on its own thread", async () =>
       (await said()).some(m => m.replyTo === note.id && m.from === "user" && m.text === "Fix this."),
     );
     await check(
       "and a note that has been asked for isn't offered again",
-      () => dock.getByRole("button", { name: /^Fix the open notes/ }).count(),
+      () =>
+        panel()
+          .getByRole("button", { name: /^Fix open notes/ })
+          .count(),
       n => n === 0,
     );
     await page.keyboard.press("Escape");
@@ -1357,9 +1478,9 @@ try {
       .getByRole("button", { name: `${file.path}:${line}`, exact: true })
       .click();
     await check(
-      "and where the change is jumps to that line, closing the drawer",
-      async () => [await page.locator(`#l${layer.id}-${file.id}-R${line}`).isVisible(), await threadList().isVisible()],
-      ([there, drawer]) => there && !drawer,
+      "and where the change is jumps to that line, closing the panel",
+      async () => [await page.locator(`#l${layer.id}-${file.id}-R${line}`).isVisible(), await panel().isVisible()],
+      ([there, open]) => there && !open,
     );
     await page.close();
   }
@@ -1414,11 +1535,12 @@ try {
       ],
       ([state, why, title]) => state === "right" && why === 1 && title.endsWith("(1 of 2)"),
     );
-    await page.locator("div.fixed.bottom-0").getByRole("button", { name: /^Chat/ }).click();
+    await claude("Threads");
+    await allThreads();
     await check(
-      "a question isn't a thread in the drawer",
+      "a question isn't a thread in the panel",
       async () => [await threadList().isVisible(), await threadList().getByText("What does an old link do now?").count()],
-      ([drawer, listed]) => drawer && listed === 0,
+      ([open, listed]) => open && listed === 0,
     );
     await page.keyboard.press("Escape");
     await first.locator("button.font-mono").click();
@@ -1429,7 +1551,7 @@ try {
 
   await open(stack.link);
   await check("the stack opens on its top layer", h1, title => title === "layer 12");
-  await tab("Guide");
+  await tab("Sections");
   await page.waitForSelector(SECTION);
   await check(
     "a hunk names what it shares with another layer",
@@ -1441,7 +1563,7 @@ try {
   await tab("Overview");
   await page.getByRole("list", { name: "Layers, top first" }).getByRole("button", { name: /^#11 / }).click();
   await check("a layer opens from the list", h1, title => title === "layer 11");
-  await tab("Guide");
+  await tab("Sections");
   await page.waitForSelector(SECTION);
   await check("split view holds on every layer", unsplit, n => n === 0);
   console.log("stack page ok");

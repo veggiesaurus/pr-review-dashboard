@@ -86,7 +86,7 @@ export function IssueSummary({ issue }: { issue: LinearIssue }) {
     <div className="grid gap-2 text-left">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <StateIcon issue={issue} />
-        <a href={issue.url} target="_blank" rel="noreferrer" className="font-mono text-[13px] text-primary hover:underline">
+        <a href={issue.url} target="_blank" rel="noreferrer" className="font-mono text-sm text-primary hover:underline">
           {issue.identifier}
         </a>
         {issue.state && <span className="font-medium">{issue.state}</span>}
@@ -100,10 +100,10 @@ export function IssueSummary({ issue }: { issue: LinearIssue }) {
       </div>
       <p className="font-medium text-sm leading-snug">{issue.title}</p>
       {issue.description && (
-        <p className="line-clamp-3 text-[13px] text-foreground/70 leading-normal [overflow-wrap:anywhere]">{issue.description}</p>
+        <p className="line-clamp-3 text-sm text-foreground/70 leading-normal [overflow-wrap:anywhere]">{issue.description}</p>
       )}
 
-      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 border-t pt-3 text-[13px]">
+      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 border-t pt-3 text-sm">
         <Row label="Assignee">
           {assignee ? (
             <>
