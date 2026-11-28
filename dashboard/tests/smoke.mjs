@@ -354,12 +354,14 @@ try {
       .evaluate(node => getComputedStyle(node).fill)
       .catch(() => null);
   const lightFill = await actorFill();
-  const themeButton = page.getByRole("button", { name: /^Theme:/ });
-  await themeButton.click();
-  await themeButton.click();
+  await page.getByRole("button", { name: /^Theme:/ }).click();
+  const modes = page.getByRole("radiogroup", { name: "Mode" });
+  await modes.getByRole("radio", { name: "Dark" }).click();
   await check("the dark theme draws the diagrams again in its colours", actorFill, fill => fill !== null && fill !== lightFill);
-  await themeButton.click();
+  await modes.getByRole("radio", { name: "Light" }).click();
   await check("and back in the light ones", actorFill, fill => fill === lightFill);
+  await modes.getByRole("radio", { name: "System" }).click();
+  await page.keyboard.press("Escape");
   const titles = page.getByRole("navigation", { name: "Diagrams" });
   await titles.getByRole("button", { name: /^02/ }).click();
   await check(
@@ -515,10 +517,10 @@ try {
   await page.getByRole("button", { name: "Show everything" }).click();
   const primary = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--primary"));
   const own = await primary();
-  await page.getByRole("button", { name: /^Theme: / }).click({ modifiers: ["Shift"] });
+  await page.getByRole("button", { name: /^Theme: / }).click();
   await page.getByRole("radio", { name: "Twitter" }).click();
   await check(
-    "shift-click on the theme button lists the palettes, and picking one recolours the page",
+    "the theme menu lists the palettes under the modes, and picking one recolours the page",
     async () => (await primary()) !== own,
   );
   await page.getByRole("radio", { name: "Modern Minimal" }).click();

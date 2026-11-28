@@ -104,7 +104,18 @@ describe("who may call", () => {
     expect(withLinkCode.status).toBe(401);
     expect((await page("/api/replies", post({ text: "hello" }))).status).toBe(403);
     expect((await page("/api/reload", { method: "POST" })).status).toBe(403);
-    expect((await page("/api/shutdown", { method: "POST" })).status).toBe(403);
+  });
+
+  test("the owner can stop the server from the page and the session is told why; a guest can't", async () => {
+    let stopped = 0;
+    const { page, guest, store } = setup({ guestCode: () => GUEST_CODE, onShutdown: () => stopped++ });
+    const heard: string[] = [];
+    store.addSessionSink(frame => heard.push(frame));
+    expect((await guest("/api/shutdown", { method: "POST" })).status).toBe(403);
+    expect((await page("/api/shutdown", { method: "POST" })).status).toBe(200);
+    await Bun.sleep(80);
+    expect(stopped).toBe(1);
+    expect(heard.at(-1)).toContain("stopped the review dashboard");
   });
 
   test("the session can't write as the page, and its token only rides in a query on its own socket", async () => {

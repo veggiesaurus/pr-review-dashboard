@@ -13,6 +13,10 @@ const MAX_LINES = 2000;
 const lines = z.array(z.string()).max(3000);
 const revertSchema = z.object({ file: z.string().max(40), edit: z.object({ after: z.number().int().min(0), gone: lines, add: lines }) });
 
+// SESSION.md's "Stopping" starts from these words.
+export const STOPPED =
+  "[review page] The owner stopped the review dashboard from the page, so the server has shut down (automatic, from the review dashboard server). Don't re-arm the listener or start the server again unless the user asks.";
+
 export function reviewRoutes(deps: AppDeps) {
   const { review } = deps;
   const app = new Hono<Env>();
@@ -83,7 +87,11 @@ export function reviewRoutes(deps: AppDeps) {
     return c.json({ from, to, lines: text.slice(from - 1, to) });
   });
 
-  app.post("/shutdown", only("session"), c => {
+  // The owner can stop it from the page too; the session hears why, so it doesn't re-arm a listener on a dead server.
+  app.post("/shutdown", only("session", "owner"), c => {
+    if (c.get("who") === "owner") {
+      deps.store.tellSession(STOPPED);
+    }
     setTimeout(() => deps.onShutdown?.(), 50);
     return c.json({ ok: true });
   });

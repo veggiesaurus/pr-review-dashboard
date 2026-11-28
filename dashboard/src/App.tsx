@@ -13,6 +13,7 @@ import { SectionRail } from "src/components/guide/SectionRail";
 import { shownSections } from "src/components/guide/visible";
 import { Header } from "src/components/Header";
 import { Overview } from "src/components/overview/Overview";
+import { ShutdownButton } from "src/components/ShutdownButton";
 import { ShareButton } from "src/components/share/ShareButton";
 import { SignIn } from "src/components/share/SignIn";
 import { ThemeButton } from "src/components/ThemeButton";
@@ -77,6 +78,7 @@ export function App() {
           {owner && <RebuildButton />}
           <KeysHelp />
           <ThemeButton />
+          {owner && <ShutdownButton />}
         </div>
       </div>
       {shown && tab === "guide" && <SectionRail layer={shown.id} />}

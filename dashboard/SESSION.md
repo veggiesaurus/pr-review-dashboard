@@ -354,3 +354,5 @@ When `collect.py` and the guide have been run again into the same folder, `POST 
 ## Stopping
 
 `POST /api/shutdown` with the bearer token. It also stops by itself after an hour with nothing connected. The messages file stays for the next start.
+
+The owner can also stop it from the page's power button. The listener then prints a frame starting `[review page] The owner stopped the review dashboard`, followed by the socket closing. Don't re-arm the listener or start the server again; tell the user in one line that the dashboard is stopped, and start it again only when they ask.
