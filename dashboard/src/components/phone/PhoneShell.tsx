@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { type ReactNode, type TouchEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ClaudePanel } from "src/components/chat/ClaudePanel";
@@ -16,7 +16,6 @@ import { ShareButton } from "src/components/share/ShareButton";
 import { LayerNav } from "src/components/stack/LayerNav";
 import { ThemeButton } from "src/components/ThemeButton";
 import { Button } from "src/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { DiagramCard } from "src/components/visualize/DiagramCard";
 import { useIsOwner } from "src/queries/me.query";
 import { useLayer, useReview } from "src/queries/review.query";
@@ -28,25 +27,6 @@ import { cn } from "src/utils/cn";
 import { indexLayer } from "src/utils/payload";
 
 const TOUCH = "min-h-11";
-
-function PageMenu({ owner }: { owner: boolean }) {
-  return (
-    <Popover>
-      <PopoverTrigger
-        aria-label="More"
-        className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground data-[state=open]:bg-card"
-      >
-        <MoreHorizontal className="size-5" />
-      </PopoverTrigger>
-      <PopoverContent align="end" className="flex w-auto items-center gap-1 p-1.5">
-        {owner && <ShareButton />}
-        {owner && <RebuildButton />}
-        <ThemeButton />
-        {owner && <ShutdownButton />}
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // The section a jump points into: a section by number, or the first section holding a hunk or file.
 function sectionOf(layer: ReturnType<typeof useLayer>, anchor: string | null) {
@@ -225,13 +205,13 @@ function SectionPane({
     return null;
   }
   return (
-    <div className="grid content-start gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-4">
       <h2 className="text-balance font-serif text-xl leading-tight">{part.section.title}</h2>
       <SectionText layer={layer} shown={part} count={count} files={false} />
       {diagrams.map(index => (
         <DiagramCard key={index} layer={layer} index={index} />
       ))}
-      <ul className="grid gap-2" aria-label="Open a file">
+      <ul className="grid grid-cols-[minmax(0,1fr)] gap-2" aria-label="Open a file">
         {part.parts.map((file, index) => {
           const reviewed = ticked(tickKey(shown, file.id, file.hunks));
           const found = indexLayer(shown).files.get(file.id);
@@ -385,7 +365,7 @@ function PhoneChanges({ layer }: { layer: number }) {
     <section
       id={sectionElementId(layer, current.index)}
       data-section={current.index}
-      className="grid touch-pan-y scroll-mt-16 content-start gap-4 pb-4"
+      className="grid touch-pan-y scroll-mt-16 grid-cols-[minmax(0,1fr)] content-start gap-4 pb-4"
       {...carousel.handlers}
     >
       <div className="flex items-center gap-2">
@@ -481,7 +461,7 @@ export function PhoneShell({ layer }: { layer: number }) {
   return (
     <div className="flex min-h-dvh flex-col">
       {/* The title would only ever show cut short here, and the Overview leads with it in full. */}
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b bg-background/95 px-4 py-1 backdrop-blur">
+      <header className="sticky top-0 z-30 flex items-center gap-0.5 border-b bg-background/95 py-0.5 pr-2 pl-4 backdrop-blur">
         {stacked ? (
           <LayerNav />
         ) : (
@@ -491,8 +471,11 @@ export function PhoneShell({ layer }: { layer: number }) {
           </h1>
         )}
         {stacked && <span className="flex-1" />}
-        <ReadyPill layer={layer} />
-        <PageMenu owner={owner} />
+        <ReadyPill layer={layer} icon />
+        {owner && <ShareButton />}
+        {owner && <RebuildButton />}
+        <ThemeButton />
+        {owner && <ShutdownButton />}
       </header>
       <main className="min-w-0 flex-1 overflow-x-clip px-4 pt-3">
         {place === "claude" ? <ClaudePanel page /> : place === "overview" ? <Overview layer={layer} /> : <PhoneChanges layer={layer} />}

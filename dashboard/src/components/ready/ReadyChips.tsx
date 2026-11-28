@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ListChecks } from "lucide-react";
 import type { Checks, Layer, Ready } from "shared/payload";
 import { LineCountTable } from "src/components/guide/LineCount";
 import { useChecks, useConflicts } from "src/components/ready/checks";
@@ -218,7 +218,8 @@ function showReadyCheck() {
 }
 
 // The top bar's one pill for every chip: how many want a look, which opens to the chips themselves.
-export function ReadyPill({ layer }: { layer: number }) {
+// icon is a phone's: a checklist icon with the count on it, or a dot when there is nothing to check.
+export function ReadyPill({ layer, icon = false }: { layer: number; icon?: boolean }) {
   const shown = useLayer(layer);
   const checks = useChecks(shown);
   const conflicts = useConflicts(shown);
@@ -230,18 +231,42 @@ export function ReadyPill({ layer }: { layer: number }) {
   const chips = [...conflictChips(shown, conflicts), ...readyChips(shown, checks)];
   const open = chips.filter(chip => chip.tone !== "good");
   const bad = rebase || open.some(chip => chip.tone === "bad");
-  const label = open.length + (rebase ? 1 : 0) ? `${open.length + (rebase ? 1 : 0)} to check` : "Nothing to check";
+  const count = open.length + (rebase ? 1 : 0);
+  const label = count ? `${count} to check` : "Nothing to check";
+  const tone = bad ? "bg-danger" : count ? "bg-warning" : "bg-success";
   return (
     <Popover>
       {/* The palette's own surface, with the status as a dot: the signal colours don't follow the palettes. */}
-      <PopoverTrigger
-        className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-2.5 py-0.5 font-medium text-foreground/80 text-xs hover:bg-muted pointer-coarse:min-h-9 pointer-coarse:px-3"
-        aria-label={`${label} before it's ready`}
-      >
-        <span aria-hidden className={cn("size-2 rounded-full", bad ? "bg-danger" : open.length ? "bg-warning" : "bg-success")} />
-        {label}
-        <ChevronDown aria-hidden className="size-3" />
-      </PopoverTrigger>
+      {icon ? (
+        <PopoverTrigger
+          className="relative grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground data-[state=open]:bg-card"
+          aria-label={`${label} before it's ready`}
+        >
+          <ListChecks aria-hidden className="size-5" />
+          {count ? (
+            <span
+              aria-hidden
+              className={cn(
+                "absolute top-1 right-0.5 min-w-4 rounded-full px-1 font-bold text-[10px] text-white leading-4 ring-2 ring-background",
+                tone,
+              )}
+            >
+              {count}
+            </span>
+          ) : (
+            <span aria-hidden className={cn("absolute top-2 right-2 size-2 rounded-full ring-2 ring-background", tone)} />
+          )}
+        </PopoverTrigger>
+      ) : (
+        <PopoverTrigger
+          className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border bg-card px-2.5 py-0.5 font-medium text-foreground/80 text-xs hover:bg-muted pointer-coarse:min-h-9 pointer-coarse:px-3"
+          aria-label={`${label} before it's ready`}
+        >
+          <span aria-hidden className={cn("size-2 rounded-full", tone)} />
+          {label}
+          <ChevronDown aria-hidden className="size-3" />
+        </PopoverTrigger>
+      )}
       <PopoverContent align="start" className="grid w-[26rem] max-w-[calc(100vw-2rem)] gap-3">
         <ReadyChips layer={layer} />
         <LineCountTable layer={layer} />
