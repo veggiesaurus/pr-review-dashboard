@@ -8,7 +8,7 @@ import { useThreads } from "src/components/chat/useThreads";
 import { FileCard } from "src/components/diff/FileCard";
 import { FileList } from "src/components/guide/DiffTab";
 import { diagramHomes, SectionText } from "src/components/guide/Guide";
-import { pad2, plural, shownSections } from "src/components/guide/visible";
+import { lineCounts, pad2, shownSections, splitPath } from "src/components/guide/visible";
 import { Overview } from "src/components/overview/Overview";
 import { ReadyPill } from "src/components/ready/ReadyChips";
 import { ShutdownButton } from "src/components/ShutdownButton";
@@ -258,14 +258,16 @@ function PhoneChanges({ layer }: { layer: number }) {
         </Button>
       </div>
       <h2 className="text-balance font-serif text-xl leading-tight">{current.section.title}</h2>
-      <SectionText layer={layer} shown={current} count={count} />
+      <SectionText layer={layer} shown={current} count={count} files={false} />
       {(homes.get(current.index) ?? []).map(index => (
         <DiagramCard key={index} layer={layer} index={index} />
       ))}
       <ul className="grid gap-2" aria-label="Open a file">
         {current.parts.map((part, index) => {
           const reviewed = ticked(tickKey(shown, part.id, part.hunks));
-          const path = indexLayer(shown).files.get(part.id)?.path ?? part.id;
+          const file = indexLayer(shown).files.get(part.id);
+          const { name, dir } = splitPath(file?.path ?? part.id);
+          const { add, del } = file ? lineCounts(file, part.hunks) : { add: 0, del: 0 };
           return (
             <li key={part.id}>
               <button
@@ -275,9 +277,12 @@ function PhoneChanges({ layer }: { layer: number }) {
               >
                 <span className={cn("min-w-0 flex-1 truncate", reviewed && "text-muted-foreground")}>
                   {reviewed && <span className="text-success">✓ </span>}
-                  {path.split("/").at(-1)}
+                  <span className="font-medium">{name}</span>
+                  {dir && <span className="ml-1.5 text-muted-foreground text-xs">{dir}</span>}
                 </span>
-                <span className="font-mono text-muted-foreground text-xs">{plural(part.hunks.length, "hunk")}</span>
+                <span className="shrink-0 font-mono text-xs">
+                  {add > 0 && <span className="text-success">+{add}</span>} {del > 0 && <span className="text-danger">−{del}</span>}
+                </span>
                 <ChevronRight className="size-4 text-muted-foreground" />
               </button>
             </li>

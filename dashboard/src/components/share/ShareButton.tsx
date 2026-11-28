@@ -8,6 +8,7 @@ import { Button } from "src/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "src/components/ui/popover";
 import { errorText } from "src/queries/messages.mutation";
 import { useAnswerGuest, useOwnerLink, useShare, useStartShare, useStopShare } from "src/queries/share.query";
+import { copyToClipboard } from "src/utils/clipboard";
 
 function Who({ person }: { person: Person }) {
   return (
@@ -35,7 +36,10 @@ function CopyLink({ label, url }: { label: string; url: string }) {
         size="sm"
         variant="outline"
         onClick={() => {
-          void navigator.clipboard?.writeText(url).then(() => setCopied(true));
+          copyToClipboard(url).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          );
         }}
       >
         {copied ? <Check /> : <Copy />}
@@ -117,7 +121,10 @@ export function ShareButton() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(link).then(() => setCopied(true));
+                  copyToClipboard(link).then(
+                    () => setCopied(true),
+                    () => setCopied(false),
+                  );
                 }}
               >
                 {copied ? <Check /> : <Copy />}

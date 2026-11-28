@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "src/components/ui/button";
 import { errorText } from "src/queries/messages.mutation";
 import { useSignInStatus, useSignInWith, useStartSignIn } from "src/queries/share.query";
+import { copyToClipboard } from "src/utils/clipboard";
 
 const WHY = {
   expired: "That sign-in ran out before you were let in.",
@@ -23,7 +24,10 @@ function CopyCode({ code }: { code: string }) {
         variant="outline"
         size="sm"
         onClick={() => {
-          void navigator.clipboard?.writeText(code).then(() => setCopied(true));
+          copyToClipboard(code).then(
+            () => setCopied(true),
+            () => setCopied(false),
+          );
         }}
       >
         {copied ? <Check /> : <Copy />}

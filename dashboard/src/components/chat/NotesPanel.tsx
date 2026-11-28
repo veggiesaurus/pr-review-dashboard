@@ -32,6 +32,7 @@ import { errorText, useDeleteDraft, useFixOpenNotes, useSendDrafts } from "src/q
 import { useSession } from "src/queries/messages.query";
 import { useLayer, useReview } from "src/queries/review.query";
 import { useViewStore } from "src/store/view.store";
+import { copyToClipboard } from "src/utils/clipboard";
 import { cn } from "src/utils/cn";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -364,7 +365,7 @@ export function NotesPanel({ embedded = false }: { embedded?: boolean }) {
       setStatus("The browser blocked the clipboard: the notes are selected below, so press Cmd+C.");
       requestAnimationFrame(() => box.current?.select());
     };
-    navigator.clipboard?.writeText(text).then(done, fallback) ?? fallback();
+    copyToClipboard(text).then(done, fallback);
   };
 
   const clear = () => {

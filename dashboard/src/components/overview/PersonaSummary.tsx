@@ -9,6 +9,7 @@ import { Prose } from "src/components/links/Prose";
 import { Button } from "src/components/ui/button";
 import { Segmented } from "src/components/ui/segmented";
 import { useViewStore } from "src/store/view.store";
+import { copyToClipboard } from "src/utils/clipboard";
 
 // Each paragraph, and each run of list items, with every part open to a thread of its own.
 function Parts({ parts, layer, reader }: { parts: SummaryPart[]; layer: number; reader: SummaryReader }) {
@@ -58,7 +59,7 @@ export function PersonaSummary({ summary, personas, layer }: { summary: Summary;
 
   // Called from the click, which the clipboard needs; where the browser refuses, the text is there to select.
   const copy = () =>
-    navigator.clipboard?.writeText(text).then(
+    copyToClipboard(text).then(
       () => setStatus("Copied"),
       () => setStatus("The browser blocked copying: select the text instead"),
     );

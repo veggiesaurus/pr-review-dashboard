@@ -23,7 +23,8 @@ const LEGEND: Record<Mark, { label: string; swatch: string }> = {
   removed: { label: "Removed", swatch: "bg-diff-del border-danger border-dashed" },
 };
 
-const CONTROL = "pointer-coarse:h-11";
+// Short enough for the three to share a phone's row.
+const CONTROL = "px-2.5 pointer-coarse:h-11";
 
 function Legend({ diagram }: { diagram: Diagram }) {
   if (diagram.allNew) {
@@ -87,13 +88,27 @@ function FoldButtons({ source, onFolds }: { source: string; onFolds: (folds: Fol
   }
   return (
     <>
-      <Button variant="outline" size="sm" className={CONTROL} onClick={() => onFolds({ blocks, sections: [] })}>
+      <Button
+        variant="outline"
+        size="sm"
+        className={CONTROL}
+        aria-label="Fold all"
+        title="Fold every block"
+        onClick={() => onFolds({ blocks, sections: [] })}
+      >
         <ChevronsDownUp />
-        Fold all
+        Fold
       </Button>
-      <Button variant="outline" size="sm" className={CONTROL} onClick={() => onFolds(NONE)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className={CONTROL}
+        aria-label="Unfold all"
+        title="Unfold every block"
+        onClick={() => onFolds(NONE)}
+      >
         <ChevronsUpDown />
-        Unfold all
+        Unfold
       </Button>
     </>
   );
@@ -224,10 +239,10 @@ export function DiagramCard({ layer, index }: { layer: number; index: number }) 
           size="sm"
           className={CONTROL}
           aria-label={`Open ${diagram.title} full screen`}
+          title="Full screen"
           onClick={() => setViewing(index)}
         >
           <Maximize2 />
-          Full screen
         </Button>
         <div className="ml-auto">
           <Legend diagram={diagram} />

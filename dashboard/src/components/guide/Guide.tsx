@@ -34,7 +34,18 @@ const CLOSING = {
 
 // What a section says about itself: who has reviewed it, the careful read, what to try by hand, why and how, and its
 // files. On a wide window it sits in the outline beside the code; on a narrow one, above the section's cards.
-export function SectionText({ layer, shown, count }: { layer: number; shown: ShownSection; count: number }) {
+// files is off where the files are listed another way, as a phone's rows that each open one.
+export function SectionText({
+  layer,
+  shown,
+  count,
+  files: listed = true,
+}: {
+  layer: number;
+  shown: ShownSection;
+  count: number;
+  files?: boolean;
+}) {
   const review = useLayer(layer);
   const others = useOthersTicks();
   const { data: messages = [] } = useMessages();
@@ -92,23 +103,25 @@ export function SectionText({ layer, shown, count }: { layer: number; shown: Sho
       <p className="text-foreground/75 text-sm leading-relaxed">
         <Prose text={text.how} layer={layer} section={index} />
       </p>
-      <ul className="grid gap-1.5" aria-label="Files in this section">
-        {parts.map(part => {
-          const file = files.get(part.id);
-          return (
-            file && (
-              <FileItem
-                key={part.id}
-                layer={layer}
-                file={file}
-                hunkIds={part.hunks}
-                section={index}
-                keys={[tickKey(review, part.id, part.hunks)]}
-              />
-            )
-          );
-        })}
-      </ul>
+      {listed && (
+        <ul className="grid gap-1.5" aria-label="Files in this section">
+          {parts.map(part => {
+            const file = files.get(part.id);
+            return (
+              file && (
+                <FileItem
+                  key={part.id}
+                  layer={layer}
+                  file={file}
+                  hunkIds={part.hunks}
+                  section={index}
+                  keys={[tickKey(review, part.id, part.hunks)]}
+                />
+              )
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
