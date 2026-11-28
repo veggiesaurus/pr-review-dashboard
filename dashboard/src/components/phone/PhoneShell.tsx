@@ -82,7 +82,7 @@ const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 // The section follows a sideways drag like a carousel's page. Let go past a third of the screen, or with a flick, and
 // it slides off for the next or previous one; otherwise it springs back. With nothing that way it drags stiffly.
 function useCarousel(canGo: (by: 1 | -1) => boolean, onGo: (by: 1 | -1) => void) {
-  const page = useRef<HTMLElement>(null);
+  const page = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number; at: number; axis: "x" | "y" | null } | null>(null);
   const place = (x: string, animate: boolean) => {
     const el = page.current;
@@ -256,16 +256,11 @@ function PhoneChanges({ layer }: { layer: number }) {
     );
   }
   return (
+    // The arrows and the count stay put; only the section's own content slides, as a carousel's page does.
     <section
-      key={current.index}
-      ref={carousel.page}
       id={sectionElementId(layer, current.index)}
       data-section={current.index}
-      className={cn(
-        "grid touch-pan-y scroll-mt-16 content-start gap-4 pb-4",
-        enter.current === 1 && "motion-slide-next",
-        enter.current === -1 && "motion-slide-prev",
-      )}
+      className="grid touch-pan-y scroll-mt-16 content-start gap-4 pb-4"
       {...carousel.handlers}
     >
       <div className="flex items-center gap-2">
@@ -280,16 +275,18 @@ function PhoneChanges({ layer }: { layer: number }) {
           <ChevronLeft />
         </Button>
         <div className="grid flex-1 justify-items-center gap-1">
-          <span className="flex gap-1" aria-hidden>
-            {sections.map((section, index) => (
+          <span className="relative flex gap-1" aria-hidden>
+            {sections.map(section => (
               <span
                 key={section.index}
-                className={cn(
-                  "h-1 w-6 rounded-full",
-                  index === step ? "bg-primary" : sectionTickKeys(shown, section.index).every(ticked) ? "bg-primary/40" : "bg-muted",
-                )}
+                className={cn("h-1 w-6 rounded-full", sectionTickKeys(shown, section.index).every(ticked) ? "bg-primary/40" : "bg-muted")}
               />
             ))}
+            {/* The one marker for where you are, sliding along the dots. */}
+            <span
+              className="absolute top-0 left-0 h-1 w-6 rounded-full bg-primary transition-[translate] duration-(--motion-base) ease-(--motion-ease)"
+              style={{ translate: `calc(${step} * 1.75rem) 0` }}
+            />
           </span>
           <span className="text-muted-foreground text-xs">
             Section {step + 1} of {sections.length}
@@ -306,47 +303,53 @@ function PhoneChanges({ layer }: { layer: number }) {
           <ChevronRight />
         </Button>
       </div>
-      <h2 className="text-balance font-serif text-xl leading-tight">{current.section.title}</h2>
-      <SectionText layer={layer} shown={current} count={count} files={false} />
-      {(homes.get(current.index) ?? []).map(index => (
-        <DiagramCard key={index} layer={layer} index={index} />
-      ))}
-      <ul className="grid gap-2" aria-label="Open a file">
-        {current.parts.map((part, index) => {
-          const reviewed = ticked(tickKey(shown, part.id, part.hunks));
-          const file = indexLayer(shown).files.get(part.id);
-          const { name, dir } = splitPath(file?.path ?? part.id);
-          const { add, del } = file ? lineCounts(file, part.hunks) : { add: 0, del: 0 };
-          return (
-            <li key={part.id}>
-              <button
-                type="button"
-                onClick={() => setFile(index)}
-                className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border bg-card px-3 text-left text-sm"
-              >
-                <span className={cn("min-w-0 flex-1 truncate", reviewed && "text-muted-foreground")}>
-                  {reviewed && <span className="text-success">✓ </span>}
-                  <span className="font-medium">{name}</span>
-                  {dir && <span className="ml-1.5 text-muted-foreground text-xs">{dir}</span>}
-                </span>
-                <span className="shrink-0 font-mono text-xs">
-                  {add > 0 && <span className="text-success">+{add}</span>} {del > 0 && <span className="text-danger">−{del}</span>}
-                </span>
-                <ChevronRight className="size-4 text-muted-foreground" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <Button
-        className={cn("w-full", TOUCH)}
-        onClick={() => {
-          setTicks(sectionTickKeys(shown, current.index), true);
-          move(1);
-        }}
+      <div
+        key={current.index}
+        ref={carousel.page}
+        className={cn("grid content-start gap-4", enter.current === 1 && "motion-slide-next", enter.current === -1 && "motion-slide-prev")}
       >
-        {step < sections.length - 1 ? "Mark reviewed, next section" : "Mark reviewed"}
-      </Button>
+        <h2 className="text-balance font-serif text-xl leading-tight">{current.section.title}</h2>
+        <SectionText layer={layer} shown={current} count={count} files={false} />
+        {(homes.get(current.index) ?? []).map(index => (
+          <DiagramCard key={index} layer={layer} index={index} />
+        ))}
+        <ul className="grid gap-2" aria-label="Open a file">
+          {current.parts.map((part, index) => {
+            const reviewed = ticked(tickKey(shown, part.id, part.hunks));
+            const file = indexLayer(shown).files.get(part.id);
+            const { name, dir } = splitPath(file?.path ?? part.id);
+            const { add, del } = file ? lineCounts(file, part.hunks) : { add: 0, del: 0 };
+            return (
+              <li key={part.id}>
+                <button
+                  type="button"
+                  onClick={() => setFile(index)}
+                  className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md border bg-card px-3 text-left text-sm"
+                >
+                  <span className={cn("min-w-0 flex-1 truncate", reviewed && "text-muted-foreground")}>
+                    {reviewed && <span className="text-success">✓ </span>}
+                    <span className="font-medium">{name}</span>
+                    {dir && <span className="ml-1.5 text-muted-foreground text-xs">{dir}</span>}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs">
+                    {add > 0 && <span className="text-success">+{add}</span>} {del > 0 && <span className="text-danger">−{del}</span>}
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <Button
+          className={cn("w-full", TOUCH)}
+          onClick={() => {
+            setTicks(sectionTickKeys(shown, current.index), true);
+            move(1);
+          }}
+        >
+          {step < sections.length - 1 ? "Mark reviewed, next section" : "Mark reviewed"}
+        </Button>
+      </div>
     </section>
   );
 }
