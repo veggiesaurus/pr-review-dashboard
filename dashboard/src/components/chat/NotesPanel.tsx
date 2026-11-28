@@ -147,7 +147,7 @@ function SentItem({ thread, pick, dot }: { thread: ClaudeThread; pick: boolean; 
         {root.anchor.outdated && <Gone />}
         <StateBadge state={root.state} />
         <TurnBadge thread={thread} />
-        {root.status === "sent" && root.kind !== "post" && <Badge tone="outline">Waiting for a session</Badge>}
+        {root.status === "sent" && root.state === "open" && root.kind !== "post" && <Badge tone="outline">Waiting for a session</Badge>}
         {root.posted && <Badge tone="outline">{root.posted.pending ? "On GitHub, pending" : "On GitHub"}</Badge>}
         {!open && (
           <p className="min-w-0 basis-full truncate text-muted-foreground text-sm">

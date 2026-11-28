@@ -88,7 +88,7 @@ function Delivery({ message }: { message: Message }) {
   if (message.kind === "post") {
     return <span className="text-muted-foreground text-xs">Not sent to Claude</span>;
   }
-  if (message.status === "sent") {
+  if (message.status === "sent" && message.state === "open") {
     return <Badge tone="outline">Waiting for a session</Badge>;
   }
   return message.status === "delivered" && message.state === "open" ? <span className="text-muted-foreground">sent to Claude</span> : null;

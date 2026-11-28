@@ -44,14 +44,14 @@ function IssueCrumb({ issue, linear }: { issue: IssueLink; linear: boolean }) {
   );
 }
 
-function Crumbs({ layer }: { layer: Layer }) {
+function Crumbs({ layer, facts }: { layer: Layer; facts: boolean }) {
   const { meta } = layer;
   const ref = meta.number ? `${meta.repo}#${meta.number}` : meta.repo;
   const keys = new Set(layer.issueKeys);
   // GitHub's, so a branch with no PR yet has nothing to show here.
   const opened = useGithub(layer.id, layer.capabilities.github).data?.pr?.openedAt;
   return (
-    <p className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 pr-24 text-[13px] sm:pr-40 text-muted-foreground max-sm:-order-2">
+    <p className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 pr-10 text-[13px] text-muted-foreground sm:pr-40">
       {https(meta.url) ? (
         <a href={meta.url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
           {ref}
@@ -59,18 +59,18 @@ function Crumbs({ layer }: { layer: Layer }) {
       ) : (
         <span>{ref}</span>
       )}
-      <span className="font-mono text-[12.5px] max-sm:hidden">
-        {meta.base} ← {meta.head}
-      </span>
+      {facts && (
+        <span className="font-mono text-[12.5px] max-sm:hidden">
+          {meta.base} ← {meta.head}
+        </span>
+      )}
       {opened ? (
         <span title={fullDate(opened)}>opened {ago(opened)}</span>
       ) : (
         // Its space is kept while GitHub answers, so the line doesn't wrap and push the page down a moment later.
         layer.capabilities.github && <span className="invisible">opened 00 days ago</span>
       )}
-      {meta.issues.map(issue => (
-        <IssueCrumb key={issue.ref} issue={issue} linear={keys.has(issue.ref.toUpperCase())} />
-      ))}
+      {facts && meta.issues.map(issue => <IssueCrumb key={issue.ref} issue={issue} linear={keys.has(issue.ref.toUpperCase())} />)}
     </p>
   );
 }
@@ -154,12 +154,12 @@ export function Header({ layer }: { layer: number }) {
   const chips = shown.issueKeys.filter(key => !linked.has(key));
   return (
     <header className="grid grid-cols-[minmax(0,1fr)] gap-2 border-b pb-3">
-      <Crumbs layer={shown} />
+      <Crumbs layer={shown} facts={tab !== "overview"} />
       <h1 className="text-balance font-serif text-2xl leading-tight tracking-tight sm:text-3xl">
         <Prose text={meta.title || "Untitled review"} layer={layer} />
       </h1>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-muted-foreground">
-        {meta.author && <span className="text-foreground/80">{meta.author}</span>}
+        {meta.author && tab !== "overview" && <span className="text-foreground/80">{meta.author}</span>}
         <LineCount layer={layer} />
         <Progress layer={shown} />
         <Avatars people={others} size="md" />
@@ -170,9 +170,7 @@ export function Header({ layer }: { layer: number }) {
       </div>
       {/* On a stack the chips keep a row of their own, so a layer with more of them doesn't make the header taller and move the page. */}
       {stacked && <ReadyChips layer={layer} />}
-      {/* On a phone the title and chips wrap to a different height for each layer, so the tabs and the layer picker
-          sit above them, where they stay put under the thumb. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 max-sm:-order-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <TabList tab={tab} setTab={setTab} />
         <LayerNav />
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]">

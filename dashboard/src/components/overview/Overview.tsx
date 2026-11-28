@@ -15,7 +15,7 @@ export function Overview({ layer }: { layer: number }) {
     return null;
   }
   return (
-    <div className="mt-6 grid gap-8">
+    <div className="mt-6 grid max-w-4xl gap-8">
       <StackPanel />
       <PrDetails layer={shown} />
       {shown.summary && <PersonaSummary summary={shown.summary} personas={shown.personas} layer={layer} />}

@@ -40,6 +40,16 @@ function subscribeWide(changed: () => void) {
 // Split view needs the room; below 860px the page stays unified, as the template does.
 export const useWide = () => useSyncExternalStore(subscribeWide, () => matchMedia(WIDE).matches);
 
+const PHONE = "(max-width: 639px)";
+
+function subscribePhone(changed: () => void) {
+  const query = matchMedia(PHONE);
+  query.addEventListener("change", changed);
+  return () => query.removeEventListener("change", changed);
+}
+
+export const usePhone = () => useSyncExternalStore(subscribePhone, () => matchMedia(PHONE).matches);
+
 const onNear = new WeakMap<Element, () => void>();
 let observer: IntersectionObserver | null = null;
 

@@ -91,6 +91,8 @@ export function ShareButton() {
       <PopoverTrigger asChild>
         <button
           type="button"
+          // The word is hidden on a phone, which would leave the button with no name.
+          aria-label={waiting.length ? `Share, ${waiting.length} waiting to be let in` : "Share"}
           className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-transparent px-2 text-muted-foreground text-sm hover:border-border hover:bg-card hover:text-foreground focus-visible:border-border focus-visible:bg-card focus-visible:text-foreground data-[state=open]:border-border data-[state=open]:bg-card"
         >
           <Share2 className="size-4" />
